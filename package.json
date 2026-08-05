@@ -1,0 +1,20 @@
+{
+  "name": "blackjack4",
+  "version": "1.0.0",
+  "description": "4人対戦ブラックジャック - made by hiro",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "pg": "^8.11.5",
+    "socket.io": "^4.7.5"
+  },
+  "author": "hiro (https://github.com/h1ro223)",
+  "license": "MIT"
+}

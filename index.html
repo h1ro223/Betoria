@@ -10,17 +10,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./style.css">
 </head>
-<body>
+<body data-screen="title">
 
 <!-- ============ ヘッダー ============ -->
 <header id="topbar">
-  <div class="brand">
+  <button type="button" class="brand" id="brandBtn" title="タイトルへ戻る">
     <span class="brand-mark">♠</span>
     <span class="brand-name">BLACKJACK<em>4</em></span>
-  </div>
+  </button>
 
   <div class="topbar-right">
-    <div class="medal-readout">
+    <div class="medal-readout" id="medalReadout">
       <span class="medal-label">所持メダル</span>
       <span class="medal-value led" id="medalCount">1000</span>
     </div>
@@ -33,44 +33,146 @@
       </span>
     </button>
 
-    <button type="button" class="icon-btn" id="menuBtn" title="メニュー" aria-haspopup="dialog">
+    <button type="button" class="icon-btn" id="menuBtn" title="メニュー">
       <span class="icon-btn-glyph">☰</span>
+    </button>
+
+    <button type="button" class="account-btn" id="accountBtn" title="アカウント">
+      <span class="account-avatar" id="accountAvatar">?</span>
+      <span class="account-lv" id="accountLv" hidden>Lv.1</span>
     </button>
   </div>
 </header>
 
-<!-- ============ テーブル ============ -->
-<main id="table">
+<!-- ============ 画面 ============ -->
+<main id="app">
 
-  <!-- ディーラー -->
-  <section id="dealerArea">
-    <div class="seat-head">
-      <span class="seat-name">DEALER</span>
-      <div class="total-box">
-        <span class="total-cap">合計</span>
-        <span class="total-num led" id="dealerTotal">--</span>
-      </div>
+  <!-- ---------- タイトル ---------- -->
+  <section class="screen" id="screenTitle">
+    <div class="title-hero">
+      <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
+      <h1 class="title-logo">BLACKJACK<em>4</em></h1>
+      <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
     </div>
-    <div class="cards" id="dealerCards"></div>
+
+    <nav class="title-menu">
+      <button type="button" class="title-btn is-main" id="toSingleBtn">
+        <span class="title-btn-icon">🂡</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">シングルプレイ</span>
+          <span class="title-btn-desc">CPUと一緒にオフラインで遊ぶ</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="toOnlineBtn">
+        <span class="title-btn-icon">🌐</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">オンラインプレイ</span>
+          <span class="title-btn-desc">部屋を作って友達と対戦</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="toRulesBtn">
+        <span class="title-btn-icon">📖</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">ルール</span>
+          <span class="title-btn-desc">遊び方と配当を確認</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="toSettingsBtn">
+        <span class="title-btn-icon">⚙️</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">設定</span>
+          <span class="title-btn-desc">BGM・効果音・人数</span>
+        </span>
+      </button>
+    </nav>
   </section>
 
-  <!-- 中央メッセージ -->
-  <div id="messageBar">
-    <span id="messageText">ベット額を決めてください</span>
-  </div>
+  <!-- ---------- ロビー ---------- -->
+  <section class="screen" id="screenLobby" hidden>
+    <div class="page-head">
+      <button type="button" class="back-btn" id="lobbyBackBtn">← タイトル</button>
+      <h2 class="page-title">オンラインプレイ</h2>
+      <span class="conn-badge" id="connBadge">接続中…</span>
+    </div>
 
-  <!-- 席 -->
-  <section id="seats">
-    <div class="ai-row" id="aiRow"></div>
-    <div class="human-wrap" id="humanWrap"></div>
+    <div class="lobby-grid">
+
+      <div class="card-block">
+        <h3 class="block-title">部屋を作成</h3>
+        <p class="block-note">あなたがホストになります。ルームIDは自動で発行されます。</p>
+        <label class="field-label">参加人数</label>
+        <div class="seg" id="createSeg">
+          <button type="button" class="seg-btn" data-max="2">2人</button>
+          <button type="button" class="seg-btn" data-max="3">3人</button>
+          <button type="button" class="seg-btn is-on" data-max="4">4人</button>
+        </div>
+        <button type="button" class="btn btn-primary btn-wide" id="createRoomBtn">部屋を作成</button>
+      </div>
+
+      <div class="card-block">
+        <div class="block-head">
+          <h3 class="block-title">部屋に参加</h3>
+          <button type="button" class="mini-btn" id="refreshRoomsBtn">更新</button>
+        </div>
+        <div class="room-list" id="roomList">
+          <p class="empty-note">読み込み中…</p>
+        </div>
+        <div class="join-direct">
+          <input type="text" id="joinIdInput" class="text-input" placeholder="ルームID" maxlength="4"
+                 autocomplete="off" autocapitalize="characters" spellcheck="false">
+          <button type="button" class="btn btn-ghost" id="joinIdBtn">IDで参加</button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ---------- 待機ルーム ---------- -->
+  <section class="screen" id="screenRoom" hidden>
+    <div class="page-head">
+      <button type="button" class="back-btn" id="roomLeaveBtn">← 退出</button>
+      <h2 class="page-title">待機ルーム</h2>
+      <span class="conn-badge" id="roomCountBadge">1/4</span>
+    </div>
+
+    <div class="room-id-box">
+      <span class="room-id-cap">ルームID</span>
+      <span class="room-id led" id="roomIdText">----</span>
+      <button type="button" class="mini-btn" id="copyIdBtn">コピー</button>
+    </div>
+
+    <div class="member-list" id="memberList"></div>
+
+    <p class="room-hint" id="roomHint">ホストが開始するのを待っています…</p>
+    <button type="button" class="btn btn-primary btn-wide" id="startGameBtn" hidden>ゲーム開始</button>
+  </section>
+
+  <!-- ---------- ゲーム ---------- -->
+  <section class="screen" id="screenGame" hidden>
+    <section id="dealerArea">
+      <div class="seat-head">
+        <span class="seat-name">DEALER</span>
+        <div class="total-box">
+          <span class="total-cap">合計</span>
+          <span class="total-num led" id="dealerTotal">--</span>
+        </div>
+      </div>
+      <div class="cards" id="dealerCards"></div>
+    </section>
+
+    <div id="messageBar"><span id="messageText">ベット額を決めてください</span></div>
+
+    <section id="seats">
+      <div class="ai-row" id="aiRow"></div>
+      <div class="human-wrap" id="humanWrap"></div>
+    </section>
   </section>
 
 </main>
 
 <!-- ============ 操作パネル ============ -->
-<footer id="controls">
+<footer id="controls" hidden>
 
-  <!-- ベットフェーズ -->
   <div class="panel" id="betPanel">
     <div class="bet-display">
       <span class="bet-label">ベット額</span>
@@ -90,7 +192,6 @@
     </div>
   </div>
 
-  <!-- アクションフェーズ -->
   <div class="panel" id="actionPanel" hidden>
     <button type="button" class="btn btn-hit" id="hitBtn">
       <span class="btn-main">ヒット</span>
@@ -102,9 +203,12 @@
     </button>
   </div>
 
-  <!-- 次ラウンド -->
   <div class="panel" id="nextPanel" hidden>
     <button type="button" class="btn btn-primary btn-wide" id="nextBtn">次のラウンドへ</button>
+  </div>
+
+  <div class="panel" id="waitPanel" hidden>
+    <p class="wait-text" id="waitText">他のプレイヤーを待っています…</p>
   </div>
 
 </footer>
@@ -120,7 +224,6 @@
         <span class="ad-remain-cap">秒</span>
       </span>
     </div>
-
     <div class="ad-stage">
       <video id="adVideo" playsinline muted preload="auto"></video>
       <div class="ad-fallback" id="adFallback" hidden>
@@ -132,7 +235,6 @@
       </div>
       <div class="ad-progress"><span id="adProgressBar"></span></div>
     </div>
-
     <div class="ad-foot">
       <button type="button" class="sound-btn" id="adSoundBtn" title="音を出す" aria-label="音を出す">🔇</button>
       <button type="button" class="btn btn-primary" id="adCloseBtn" disabled>あと5秒</button>
@@ -140,31 +242,159 @@
   </div>
 </div>
 
-<!-- ============ メニュー ============ -->
-<div class="overlay" id="menuOverlay" hidden>
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="メニュー">
+<!-- ============ アカウント ============ -->
+<div class="overlay" id="accountOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="アカウント">
     <div class="sheet-head">
-      <h2>メニュー</h2>
-      <button type="button" class="close-btn" id="menuCloseBtn" aria-label="閉じる">✕</button>
+      <h2 id="accountTitle">アカウント</h2>
+      <button type="button" class="close-btn" id="accountCloseBtn" aria-label="閉じる">✕</button>
     </div>
 
     <div class="sheet-body">
 
-      <div class="sheet-section">
-        <h3>戦績</h3>
-        <div class="stat-grid">
-          <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="stRounds">0</span></div>
-          <div class="stat"><span class="stat-key">勝ち</span><span class="stat-val led" id="stWin">0</span></div>
-          <div class="stat"><span class="stat-key">負け</span><span class="stat-val led" id="stLose">0</span></div>
-          <div class="stat"><span class="stat-key">引き分け</span><span class="stat-val led" id="stPush">0</span></div>
-          <div class="stat"><span class="stat-key">BJ</span><span class="stat-val led" id="stBj">0</span></div>
-          <div class="stat"><span class="stat-key">最高メダル</span><span class="stat-val led" id="stMax">1000</span></div>
+      <!-- 未ログイン -->
+      <div id="authView">
+        <div class="seg" id="authTabs">
+          <button type="button" class="seg-btn is-on" data-tab="login">ログイン</button>
+          <button type="button" class="seg-btn" data-tab="register">新規登録</button>
         </div>
+
+        <p class="sheet-note" id="authNote">アカウントを作るとメダル・戦績・レベルが保存され、オンライン対戦に参加できます。</p>
+
+        <label class="field-label" for="authName">ユーザー名<span class="field-hint">英数字1〜8文字</span></label>
+        <input type="text" id="authName" class="text-input" maxlength="8" autocomplete="username"
+               autocapitalize="off" spellcheck="false" placeholder="hiro">
+
+        <label class="field-label" for="authPass">パスワード<span class="field-hint">英数字1〜8文字</span></label>
+        <input type="password" id="authPass" class="text-input" maxlength="8" autocomplete="current-password"
+               placeholder="••••">
+
+        <p class="form-error" id="authError" hidden></p>
+        <button type="button" class="btn btn-primary btn-wide" id="authSubmitBtn">ログイン</button>
+      </div>
+
+      <!-- ログイン済み -->
+      <div id="profileView" hidden>
+        <div class="profile-head">
+          <span class="profile-avatar" id="profileAvatar">H</span>
+          <div class="profile-id">
+            <span class="profile-name" id="profileName">-</span>
+            <span class="profile-level led" id="profileLevel">Lv.1</span>
+          </div>
+        </div>
+
+        <div class="exp-block">
+          <div class="exp-row">
+            <span class="exp-cap">次のレベルまで</span>
+            <span class="exp-num" id="expText">0 / 100</span>
+          </div>
+          <div class="exp-bar"><span id="expFill"></span></div>
+        </div>
+
+        <div class="sheet-section">
+          <h3>所持メダル</h3>
+          <div class="profile-medal led" id="profileMedal">1000</div>
+        </div>
+
+        <div class="sheet-section">
+          <h3>戦績</h3>
+          <div class="stat-grid">
+            <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="stRounds">0</span></div>
+            <div class="stat"><span class="stat-key">勝ち</span><span class="stat-val led" id="stWin">0</span></div>
+            <div class="stat"><span class="stat-key">負け</span><span class="stat-val led" id="stLose">0</span></div>
+            <div class="stat"><span class="stat-key">引き分け</span><span class="stat-val led" id="stPush">0</span></div>
+            <div class="stat"><span class="stat-key">BJ</span><span class="stat-val led" id="stBj">0</span></div>
+            <div class="stat"><span class="stat-key">勝率</span><span class="stat-val led" id="stRate">0%</span></div>
+          </div>
+        </div>
+
+        <button type="button" class="btn btn-ghost btn-wide" id="logoutBtn">ログアウト</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ ルール ============ -->
+<div class="overlay" id="rulesOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="ルール">
+    <div class="sheet-head">
+      <h2>ルール</h2>
+      <button type="button" class="close-btn" id="rulesCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>基本</h3>
+        <ul class="rule-list">
+          <li>手札の合計を <b>21</b> に近づけます。21を超えると即負け(バースト)。</li>
+          <li>2〜10は数字通り、J・Q・Kは10、Aは<b>1または11</b>の有利な方。</li>
+          <li><b>ヒット</b>でカードを1枚追加、<b>スタンド</b>で手札を確定。</li>
+          <li>ディーラーは合計<b>17以上</b>になるまで引き続けます。</li>
+          <li>プレイヤー同士は戦いません。全員がディーラーと勝負します。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>配当</h3>
+        <ul class="rule-list">
+          <li><b>ブラックジャック</b>(最初の2枚で21)… ベットの2.5倍</li>
+          <li><b>勝ち</b> … ベットの2倍</li>
+          <li><b>引き分け</b>(プッシュ)… ベットが返却</li>
+          <li><b>負け・バースト</b> … ベット没収</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>レベルと経験値</h3>
+        <ul class="rule-list">
+          <li>1ラウンド遊ぶごとに <b>+10 EXP</b>。</li>
+          <li>結果に応じて追加 … ブラックジャック <b>+40</b> / 勝ち <b>+25</b> / 引き分け <b>+12</b> / 負け <b>+5</b>。</li>
+          <li>次のレベルに必要なEXPは <b>100 + (現在Lv−1)×50</b>。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>オンライン</h3>
+        <ul class="rule-list">
+          <li>ホストが<b>部屋を作成</b>し、発行された<b>4桁のルームID</b>を共有します。</li>
+          <li>全員が揃ったらホストが<b>ゲーム開始</b>を押します。</li>
+          <li>各自ベットを決め、全員が揃ったら<b>ホストがカードを配ります</b>。</li>
+          <li>手番は30秒。時間切れは自動でスタンドになります。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 設定 ============ -->
+<div class="overlay" id="settingsOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="設定">
+    <div class="sheet-head">
+      <h2>設定</h2>
+      <button type="button" class="close-btn" id="settingsCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+
+      <div class="sheet-section">
+        <h3>BGM</h3>
+        <div class="toggle-row">
+          <span class="toggle-label">BGMを再生する</span>
+          <button type="button" class="switch is-on" id="bgmSwitch" role="switch" aria-checked="true"><span></span></button>
+        </div>
+        <label class="field-label" for="bgmVol">音量 <span class="field-hint" id="bgmVolText">40%</span></label>
+        <input type="range" id="bgmVol" class="range" min="0" max="100" value="40">
       </div>
 
       <div class="sheet-section">
-        <h3>参加人数</h3>
-        <p class="sheet-note">次のラウンドから反映されます。</p>
+        <h3>効果音</h3>
+        <div class="toggle-row">
+          <span class="toggle-label">効果音を鳴らす</span>
+          <button type="button" class="switch is-on" id="seSwitch" role="switch" aria-checked="true"><span></span></button>
+        </div>
+        <label class="field-label" for="seVol">音量 <span class="field-hint" id="seVolText">60%</span></label>
+        <input type="range" id="seVol" class="range" min="0" max="100" value="60">
+      </div>
+
+      <div class="sheet-section">
+        <h3>シングルプレイの人数</h3>
+        <p class="sheet-note">自分を含めた席数です。空席はCPUが埋めます。</p>
         <div class="seg" id="seatSeg">
           <button type="button" class="seg-btn" data-seats="1">1人</button>
           <button type="button" class="seg-btn" data-seats="2">2人</button>
@@ -174,21 +404,9 @@
       </div>
 
       <div class="sheet-section">
-        <h3>ルール</h3>
-        <ul class="rule-list">
-          <li>手札の合計を <b>21</b> に近づけます。21を超えると即負け(バースト)。</li>
-          <li>2〜10は数字通り、J・Q・Kは10、Aは<b>1または11</b>の有利な方。</li>
-          <li><b>ヒット</b>でカードを1枚追加、<b>スタンド</b>で手札を確定。</li>
-          <li>ディーラーは合計<b>17以上</b>になるまで引き続けます。</li>
-          <li>最初の2枚が21(A+10点札)は<b>ブラックジャック</b>で配当2.5倍。</li>
-          <li>ディーラーと同点は引き分け(プッシュ)でベットが返却されます。</li>
-          <li>山札は6デッキ。残りが少なくなると自動でシャッフルします。</li>
-        </ul>
-      </div>
-
-      <div class="sheet-section">
-        <h3>リセット</h3>
-        <button type="button" class="btn btn-ghost btn-wide" id="resetBtn">メダルと戦績を初期化</button>
+        <h3>データ</h3>
+        <p class="sheet-note">未ログイン時のシングルプレイのメダルを初期化します。</p>
+        <button type="button" class="btn btn-ghost btn-wide" id="resetBtn">メダルを1000に戻す</button>
       </div>
 
     </div>
@@ -198,10 +416,20 @@
 <!-- ============ トースト ============ -->
 <div id="toast" hidden><span id="toastText"></span></div>
 
+<!-- ============ レベルアップ演出 ============ -->
+<div id="levelUp" hidden>
+  <div class="levelup-inner">
+    <span class="levelup-cap">LEVEL UP</span>
+    <span class="levelup-num led" id="levelUpNum">2</span>
+  </div>
+</div>
+
 <!-- ============ クレジット ============ -->
 <div id="credit">
   made by <a href="https://github.com/h1ro223" target="_blank" rel="noopener noreferrer">hiro / ヒロ</a>
 </div>
+
+<audio id="bgm" src="./BGM.mp4" loop preload="auto"></audio>
 
 <script src="./script.js"></script>
 </body>
