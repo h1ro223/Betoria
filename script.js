@@ -221,7 +221,6 @@ function createCardEl(card, faceDown, animate){
     node.className = 'card' + (card.red ? ' red' : '');
     node.innerHTML =
       '<span class="rank">' + card.rank + '</span>' +
-      '<span class="suit-sm">' + card.mark + '</span>' +
       '<span class="suit-lg">' + card.mark + '</span>';
   }
   if (animate) requestAnimationFrame(() => node.classList.add('in'));
@@ -230,6 +229,7 @@ function createCardEl(card, faceDown, animate){
 }
 
 function renderDealer(){
+  document.body.dataset.phase = state.phase;
   el.dealerCards.innerHTML = '';
   const hand = state.dealer.hand;
   const shown = state.dealer.shown || 0;
@@ -241,7 +241,7 @@ function renderDealer(){
   state.dealer.shown = hand.length;
   state.dealer.flip = false;
 
-  el.dealerTotal.className = 'seat-total led';
+  el.dealerTotal.className = 'total-num led';
   if (hand.length === 0){
     el.dealerTotal.textContent = '--';
     return;
@@ -261,7 +261,7 @@ function seatMarkup(seat){
   const v = handValue(seat.hand);
   const scoreText = seat.hand.length ? v.total : '--';
 
-  let scoreClass = 'seat-score led';
+  let scoreClass = 'total-num led';
   if (seat.hand.length){
     if (v.bust) scoreClass += ' is-bust';
     else if (isBlackjack(seat.hand)) scoreClass += ' is-bj';
@@ -274,17 +274,23 @@ function seatMarkup(seat){
   return '' +
     '<div class="seat-top">' +
       '<span class="seat-label">' + seat.name + '</span>' +
-      '<span class="' + scoreClass + '">' + scoreText + '</span>' +
+      '<div class="total-box">' +
+        '<span class="total-cap">合計</span>' +
+        '<span class="' + scoreClass + '">' + scoreText + '</span>' +
+      '</div>' +
     '</div>' +
     '<div class="cards"></div>' +
     badge +
-    '<span class="seat-meta">' +
-      '<span>BET<b>' + seat.bet + '</b></span>' +
-      '<span>MEDAL<b>' + seat.medal + '</b></span>' +
-    '</span>';
+    '<div class="seat-meta">' +
+      '<span class="meta-chip is-bet"><span class="meta-key">ベット</span>' +
+        '<span class="meta-val">' + seat.bet + '</span></span>' +
+      '<span class="meta-chip"><span class="meta-key">メダル</span>' +
+        '<span class="meta-val">' + seat.medal + '</span></span>' +
+    '</div>';
 }
 
 function renderSeats(){
+  document.body.dataset.phase = state.phase;
   el.aiRow.innerHTML = '';
   el.humanWrap.innerHTML = '';
 
@@ -673,7 +679,7 @@ function openAd(){
   el.adVideo.loop = true;
   el.adVideo.currentTime = 0;
   el.adVideo.src = src;
-  el.adSoundBtn.textContent = '音を出す';
+  setSoundIcon();
   el.adProgress.style.width = '0%';
 
   el.adOverlay.hidden = false;
@@ -738,9 +744,16 @@ function onAdError(){
   el.adFallback.hidden = false;
 }
 
+function setSoundIcon(){
+  const muted = el.adVideo.muted;
+  el.adSoundBtn.textContent = muted ? '🔇' : '🔊';
+  el.adSoundBtn.title = muted ? '音を出す' : '音を消す';
+  el.adSoundBtn.setAttribute('aria-label', muted ? '音を出す' : '音を消す');
+}
+
 function toggleAdSound(){
   el.adVideo.muted = !el.adVideo.muted;
-  el.adSoundBtn.textContent = el.adVideo.muted ? '音を出す' : '音を消す';
+  setSoundIcon();
   if (!el.adVideo.muted){
     const play = el.adVideo.play();
     if (play && typeof play.catch === 'function') play.catch(() => {});

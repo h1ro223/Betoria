@@ -20,14 +20,19 @@
   </div>
 
   <div class="topbar-right">
-    <div class="medal-readout" id="medalReadout">
-      <span class="medal-label">MEDAL</span>
+    <div class="medal-readout">
+      <span class="medal-label">所持メダル</span>
       <span class="medal-value led" id="medalCount">1000</span>
     </div>
-    <button type="button" class="icon-btn" id="adBtn" title="広告を見てメダルを受け取る">
-      <span class="icon-btn-glyph">▶</span>
-      <span class="icon-btn-text">+100</span>
+
+    <button type="button" class="ad-btn" id="adBtn">
+      <span class="ad-btn-icon">🎁</span>
+      <span class="ad-btn-body">
+        <span class="ad-btn-title">広告を見る</span>
+        <span class="ad-btn-gain">メダル +100</span>
+      </span>
     </button>
+
     <button type="button" class="icon-btn" id="menuBtn" title="メニュー" aria-haspopup="dialog">
       <span class="icon-btn-glyph">☰</span>
     </button>
@@ -41,7 +46,10 @@
   <section id="dealerArea">
     <div class="seat-head">
       <span class="seat-name">DEALER</span>
-      <span class="seat-total led" id="dealerTotal">--</span>
+      <div class="total-box">
+        <span class="total-cap">合計</span>
+        <span class="total-num led" id="dealerTotal">--</span>
+      </div>
     </div>
     <div class="cards" id="dealerCards"></div>
   </section>
@@ -65,8 +73,9 @@
   <!-- ベットフェーズ -->
   <div class="panel" id="betPanel">
     <div class="bet-display">
-      <span class="bet-label">BET</span>
+      <span class="bet-label">ベット額</span>
       <span class="bet-value led" id="betValue">0</span>
+      <span class="bet-unit">メダル</span>
     </div>
     <div class="chip-row">
       <button type="button" class="chip chip-10"  data-chip="10">10</button>
@@ -76,15 +85,21 @@
     </div>
     <div class="bet-actions">
       <button type="button" class="btn btn-ghost" id="betClearBtn">クリア</button>
-      <button type="button" class="btn btn-ghost" id="betMaxBtn">MAX</button>
-      <button type="button" class="btn btn-primary" id="dealBtn">配る</button>
+      <button type="button" class="btn btn-ghost" id="betMaxBtn">全額</button>
+      <button type="button" class="btn btn-primary" id="dealBtn">カードを配る</button>
     </div>
   </div>
 
   <!-- アクションフェーズ -->
   <div class="panel" id="actionPanel" hidden>
-    <button type="button" class="btn btn-hit"   id="hitBtn">ヒット</button>
-    <button type="button" class="btn btn-stand" id="standBtn">スタンド</button>
+    <button type="button" class="btn btn-hit" id="hitBtn">
+      <span class="btn-main">ヒット</span>
+      <span class="btn-sub">もう1枚引く</span>
+    </button>
+    <button type="button" class="btn btn-stand" id="standBtn">
+      <span class="btn-main">スタンド</span>
+      <span class="btn-sub">この手札で勝負</span>
+    </button>
   </div>
 
   <!-- 次ラウンド -->
@@ -99,7 +114,11 @@
   <div class="ad-frame" role="dialog" aria-modal="true" aria-label="広告">
     <div class="ad-head">
       <span class="ad-tag">スポンサー</span>
-      <span class="ad-timer led" id="adTimer">30</span>
+      <span class="ad-remain">
+        <span class="ad-remain-cap">残り</span>
+        <span class="ad-timer led" id="adTimer">30</span>
+        <span class="ad-remain-cap">秒</span>
+      </span>
     </div>
 
     <div class="ad-stage">
@@ -115,8 +134,8 @@
     </div>
 
     <div class="ad-foot">
-      <button type="button" class="btn btn-ghost btn-sm" id="adSoundBtn">音を出す</button>
-      <button type="button" class="btn btn-primary btn-sm" id="adCloseBtn" disabled>あと5秒</button>
+      <button type="button" class="sound-btn" id="adSoundBtn" title="音を出す" aria-label="音を出す">🔇</button>
+      <button type="button" class="btn btn-primary" id="adCloseBtn" disabled>あと5秒</button>
     </div>
   </div>
 </div>
