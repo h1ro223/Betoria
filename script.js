@@ -22,6 +22,7 @@ const MIN_BET         = 10;
 const DEALER_STAND    = 17;
 const CPU_STAND       = 17;
 
+const BGM_FILE     = './BGM.mp3';
 const AD_FILES     = ['./ad/ad1.mp4', './ad/ad2.mp4', './ad/ad3.mp4'];
 const AD_REWARD    = 100;
 const AD_SKIP_SEC  = 5;
@@ -93,6 +94,7 @@ function saveSettings(){
 const audio = {
   ctx: null,
   master: null,
+  bgmBus: null,
   started: false,
 
   init(){
@@ -100,14 +102,31 @@ const audio = {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     this.ctx = new AC();
+
+    /* SE用バス */
     this.master = this.ctx.createGain();
     this.master.gain.value = settings.seVol / 100;
     this.master.connect(this.ctx.destination);
+
+    /* BGM用バス(HTMLAudioを使わないので iOS でも音量が効き、
+       Now Playing / Dynamic Island にも表示されない) */
+    this.bgmBus = this.ctx.createGain();
+    this.bgmBus.gain.value = 0;
+    this.bgmBus.connect(this.ctx.destination);
+  },
+
+  /* iOSは着信などで中断されるので都度復帰させる */
+  resume(){
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted'){
+      const p = this.ctx.resume();
+      if (p && p.catch) p.catch(() => {});
+    }
   },
 
   unlock(){
     this.init();
-    if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume();
+    this.resume();
     this.started = true;
     bgm.apply();
   },
@@ -153,7 +172,7 @@ const audio = {
     if (!settings.seOn) return;
     this.init();
     if (!this.ctx) return;
-    if (this.ctx.state === 'suspended') this.ctx.resume();
+    this.resume();
 
     switch (name){
       case 'deal':  this.noise(0.13, 0.16, 1800); this.tone(320, 0.07, 'triangle', 0.08); break;
@@ -172,21 +191,124 @@ const audio = {
   }
 };
 
+/* decodeAudioData は Safari 系だと callback 形式しか無い場合があるので両対応 */
+function decodeAudio(ctx, arrayBuffer){
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const ok = (b) => { if (!settled){ settled = true; resolve(b); } };
+    const ng = (e) => { if (!settled){ settled = true; reject(e); } };
+    let ret;
+    try { ret = ctx.decodeAudioData(arrayBuffer, ok, ng); }
+    catch (e){ return ng(e); }
+    if (ret && typeof ret.then === 'function') ret.then(ok, ng);
+  });
+}
+
+/* BGM: HTMLAudioElement を使わず WebAudio で鳴らす。
+   ・iOS は HTMLMediaElement.volume を無視するが GainNode なら効く
+   ・Now Playing に載らないので Dynamic Island / ロック画面に出ない */
 const bgm = {
-  el: null,
+  raw: null,        // 取得済みの圧縮データ
+  buffer: null,     // デコード済み
+  source: null,     // 再生中のノード
+  ducked: false,
+  failed: false,
+  fetching: null,
+  decoding: null,
+  stopTimer: null,
+
+  /* 音声ファイルの取得(AudioContext 不要なので先に走らせられる) */
+  prefetch(){
+    if (this.raw || this.buffer || this.failed) return Promise.resolve();
+    if (this.fetching) return this.fetching;
+    this.fetching = fetch(BGM_FILE, { cache: 'force-cache' })
+      .then(res => { if (!res.ok) throw new Error('HTTP ' + res.status); return res.arrayBuffer(); })
+      .then(buf => { this.raw = buf; })
+      .catch(() => { this.failed = true; })
+      .then(() => { this.fetching = null; renderBgmStatus(); });
+    return this.fetching;
+  },
+
+  /* デコード(AudioContext が必要) */
+  async prepare(){
+    if (this.buffer) return this.buffer;
+    if (this.failed || !audio.ctx) return null;
+    if (this.decoding) return this.decoding;
+
+    await this.prefetch();
+    if (!this.raw || this.failed) return null;
+
+    const data = this.raw;
+    this.raw = null;   // decodeAudioData は渡した ArrayBuffer を detach する
+    this.decoding = decodeAudio(audio.ctx, data)
+      .then(b => { this.buffer = b; return b; })
+      .catch(() => { this.failed = true; renderBgmStatus(); return null; })
+      .then(b => { this.decoding = null; return b; });
+    return this.decoding;
+  },
+
+  gainTarget(){
+    if (!settings.bgmOn || this.failed) return 0;
+    return (settings.bgmVol / 100) * (this.ducked ? 0.18 : 1);
+  },
+
+  /* 音量反映(スライダー操作でもプチノイズが出ないよう必ずランプさせる) */
+  applyGain(fadeSec){
+    const bus = audio.bgmBus;
+    if (!bus || !audio.ctx) return;
+    const now = audio.ctx.currentTime;
+    const cur = bus.gain.value;
+    bus.gain.cancelScheduledValues(now);
+    bus.gain.setValueAtTime(cur, now);
+    bus.gain.linearRampToValueAtTime(this.gainTarget(), now + (fadeSec == null ? 0.12 : fadeSec));
+  },
+
+  async start(){
+    if (this.source || !settings.bgmOn) return;
+    audio.init();
+    const buf = await this.prepare();
+    if (!buf) return;
+    if (!settings.bgmOn || this.source) return;   // 待っている間に切られた場合
+
+    clearTimeout(this.stopTimer);
+    const src = audio.ctx.createBufferSource();
+    src.buffer = buf;
+    src.loop = true;
+    src.connect(audio.bgmBus);
+    src.start(0);
+    this.source = src;
+
+    audio.bgmBus.gain.cancelScheduledValues(audio.ctx.currentTime);
+    audio.bgmBus.gain.setValueAtTime(0.0001, audio.ctx.currentTime);
+    this.applyGain(0.9);
+  },
+
+  stop(){
+    this.applyGain(0.35);
+    const src = this.source;
+    this.source = null;
+    if (!src) return;
+    clearTimeout(this.stopTimer);
+    this.stopTimer = setTimeout(() => {
+      try { src.stop(); src.disconnect(); } catch {}
+    }, 420);
+  },
+
   apply(){
-    if (!this.el) return;
-    this.el.volume = settings.bgmVol / 100;
-    if (settings.bgmOn && audio.started){
-      const p = this.el.play();
-      if (p && p.catch) p.catch(() => {});
+    if (!audio.started) return;   // 初回操作前はブラウザに弾かれるので何もしない
+    audio.init();
+    audio.resume();
+    if (settings.bgmOn){
+      if (this.source) this.applyGain();
+      else this.start();
     } else {
-      this.el.pause();
+      this.stop();
     }
   },
+
   duck(on){
-    if (!this.el) return;
-    this.el.volume = (settings.bgmVol / 100) * (on ? 0.15 : 1);
+    this.ducked = on;
+    if (this.source) this.applyGain(0.25);
   }
 };
 
@@ -300,14 +422,13 @@ const el = {
   seatSeg: $('seatSeg'),
   resetBtn: $('resetBtn'),
 
+  bgmStatus: $('bgmStatus'),
+
   toast: $('toast'),
   toastText: $('toastText'),
   levelUp: $('levelUp'),
-  levelUpNum: $('levelUpNum'),
-  bgmEl: $('bgm')
+  levelUpNum: $('levelUpNum')
 };
-
-bgm.el = el.bgmEl;
 
 /* =========================================================
    5. 共通状態
@@ -1159,7 +1280,7 @@ function updateOnlinePanels(state){
 
   if (state.phase === 'bet'){
     if (!me.ready){
-      bet = clamp(bet, 0, me.medal);
+      bet = clamp(bet, 0, myMedal());
       renderBet();
       el.dealBtn.textContent = 'ベットを確定';
       showPanel('bet');
@@ -1316,11 +1437,17 @@ async function closeAd(){
     store.set('bj4_guestMedal', String(guestMedal));
   }
 
-  if (view.mode === 'single' && view.phase === 'bet'){
-    view.seats[0].medal = myMedal();
-    renderTable();
-    renderBet();
-    setMessage('ベット額を決めてください');
+  if (view.phase === 'bet'){
+    if (view.mode === 'single'){
+      view.seats[0].medal = myMedal();
+      renderTable();
+      setMessage('ベット額を決めてください');
+    } else if (online.socket && online.socket.connected){
+      /* サーバーが持つルーム内のメダルは接続時のスナップショットなので
+         広告で増えた分をDBから読み直させる */
+      online.socket.emit('player:sync');
+    }
+    renderBet();   // チップボタンの有効/無効を再計算(これが無いと進行不能になる)
   }
   renderMedal();
   audio.play('win');
@@ -1340,6 +1467,12 @@ function setSoundIcon(){
 function openOverlay(node){ node.hidden = false; }
 function closeOverlay(node){ node.hidden = true; }
 
+function renderBgmStatus(){
+  if (!el.bgmStatus) return;
+  el.bgmStatus.hidden = !bgm.failed;
+  if (bgm.failed) el.bgmStatus.textContent = 'BGM.mp3 が見つからないため、BGMは再生されません。';
+}
+
 function renderSettings(){
   el.bgmSwitch.classList.toggle('is-on', settings.bgmOn);
   el.bgmSwitch.setAttribute('aria-checked', String(settings.bgmOn));
@@ -1353,6 +1486,8 @@ function renderSettings(){
 
   el.seatSeg.querySelectorAll('.seg-btn').forEach(b =>
     b.classList.toggle('is-on', Number(b.dataset.seats) === settings.seats));
+
+  renderBgmStatus();
 }
 
 /* =========================================================
@@ -1517,8 +1652,10 @@ el.bgmSwitch.addEventListener('click', () => {
 el.bgmVol.addEventListener('input', () => {
   settings.bgmVol = Number(el.bgmVol.value);
   el.bgmVolText.textContent = settings.bgmVol + '%';
-  saveSettings(); bgm.apply();
+  saveSettings();
+  bgm.applyGain(0.06);   // ドラッグ中は短いランプで追従させる
 });
+el.bgmVol.addEventListener('change', () => { saveSettings(); bgm.apply(); });
 el.seSwitch.addEventListener('click', () => {
   settings.seOn = !settings.seOn;
   saveSettings(); renderSettings();
@@ -1580,6 +1717,13 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  audio.resume();
+  bgm.apply();
+});
+window.addEventListener('pageshow', () => { audio.resume(); bgm.apply(); });
+
 window.addEventListener('beforeunload', () => {
   if (online.socket) online.socket.emit('room:leave');
 });
@@ -1589,6 +1733,7 @@ window.addEventListener('beforeunload', () => {
    ========================================================= */
 async function init(){
   buildShoe();
+  if (settings.bgmOn) bgm.prefetch();
   setAuthMode('login');
   renderSettings();
   renderAccountUi();

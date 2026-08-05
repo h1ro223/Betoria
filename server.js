@@ -560,7 +560,9 @@ io.on('connection', (socket) => {
 
   socket.on('room:list', () => socket.emit('room:list', roomList()));
 
-  socket.on('room:create', ({ maxPlayers } = {}) => {
+  socket.on('room:create', async ({ maxPlayers } = {}) => {
+    if (findRoomBySid(socket.id)) return;
+    await refreshSocketUser(socket);
     if (findRoomBySid(socket.id)) return;
     const room = createRoom(maxPlayers);
     room.hostName = name;
@@ -571,13 +573,18 @@ io.on('connection', (socket) => {
     broadcastLobby(io);
   });
 
-  socket.on('room:join', ({ id } = {}) => {
+  socket.on('room:join', async ({ id } = {}) => {
     const room = rooms.get(String(id || '').toUpperCase());
     if (!room) return socket.emit('room:error', 'その部屋は存在しません');
     if (room.phase !== 'lobby') return socket.emit('room:error', 'その部屋はゲーム中です');
     if (room.players.length >= room.maxPlayers) return socket.emit('room:error', 'その部屋は満員です');
     if (room.players.some(p => p.name === name)) return socket.emit('room:error', '既に参加しています');
     if (findRoomBySid(socket.id)) return;
+
+    await refreshSocketUser(socket);
+    if (findRoomBySid(socket.id)) return;
+    if (room.phase !== 'lobby' || room.players.length >= room.maxPlayers)
+      return socket.emit('room:error', 'その部屋には参加できませんでした');
 
     room.players.push(makePlayer(socket));
     socket.join(room.id);
@@ -598,18 +605,57 @@ io.on('connection', (socket) => {
     broadcastLobby(io);
   });
 
-  socket.on('game:bet', ({ amount } = {}) => {
+  socket.on('game:bet', async ({ amount } = {}) => {
     const room = findRoomBySid(socket.id);
     if (!room || room.phase !== 'bet') return;
     const p = room.players.find(x => x.sid === socket.id);
     if (!p || p.ready) return;
+
     const bet = Math.floor(Number(amount) || 0);
-    if (bet < MIN_BET || bet > p.medal) return socket.emit('room:error', 'ベット額が不正です');
+    if (bet < MIN_BET) return socket.emit('room:error', 'ベット額が不正です');
+
+    /* ルーム内のメダルは古い可能性があるのでDBを正として判定する
+       (広告視聴などで途中増減しても正しく処理できる) */
+    let u;
+    try { u = await db.findUser(p.name); }
+    catch (e){ console.error('[bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
+    if (!u) return socket.emit('room:error', 'アカウントが見つかりません');
+
+    if (bet > u.medal){
+      p.medal = u.medal;
+      broadcast(io, room);
+      socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+      return socket.emit('room:error', 'メダルが足りません');
+    }
+    if (p.ready) return;   // 待っている間に確定済みになっていないか再確認
+
+    u.medal -= bet;
+    try { await db.saveUser(u); }
+    catch (e){ console.error('[bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
+
     p.bet = bet;
     p.ready = true;
-    p.medal -= bet;
-    db.findUser(p.name).then(u => { if (u){ u.medal -= bet; db.saveUser(u); } });
+    p.medal = u.medal;
+    p.level = u.level;
+    socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+
     room.message = room.players.filter(x => x.ready).length + '/' + room.players.length + ' 人がベット済み';
+    broadcast(io, room);
+  });
+
+  /* 広告視聴などでDB側のメダルが変わったときに読み直す */
+  socket.on('player:sync', async () => {
+    let u;
+    try { u = await db.findUser(name); } catch { return; }
+    if (!u) return;
+    socket.data.medal = u.medal;
+    socket.data.level = u.level;
+    socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+
+    const room = findRoomBySid(socket.id);
+    if (!room) return;
+    const p = room.players.find(x => x.sid === socket.id);
+    if (p && !p.ready){ p.medal = u.medal; p.level = u.level; }
     broadcast(io, room);
   });
 
@@ -654,6 +700,16 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => leaveRoom(socket));
 });
+
+/* 接続時のスナップショットではなくDBの最新値をsocketに載せ直す */
+async function refreshSocketUser(socket){
+  try {
+    const u = await db.findUser(socket.data.name);
+    if (!u) return;
+    socket.data.medal = u.medal;
+    socket.data.level = u.level;
+  } catch (e){ console.error('[refresh]', e.message); }
+}
 
 function makePlayer(socket){
   return {
