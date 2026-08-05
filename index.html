@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#08201B">
+<title>BLACKJACK 4 - 4人対戦ブラックジャック</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+
+<!-- ============ ヘッダー ============ -->
+<header id="topbar">
+  <div class="brand">
+    <span class="brand-mark">♠</span>
+    <span class="brand-name">BLACKJACK<em>4</em></span>
+  </div>
+
+  <div class="topbar-right">
+    <div class="medal-readout" id="medalReadout">
+      <span class="medal-label">MEDAL</span>
+      <span class="medal-value led" id="medalCount">1000</span>
+    </div>
+    <button type="button" class="icon-btn" id="adBtn" title="広告を見てメダルを受け取る">
+      <span class="icon-btn-glyph">▶</span>
+      <span class="icon-btn-text">+100</span>
+    </button>
+    <button type="button" class="icon-btn" id="menuBtn" title="メニュー" aria-haspopup="dialog">
+      <span class="icon-btn-glyph">☰</span>
+    </button>
+  </div>
+</header>
+
+<!-- ============ テーブル ============ -->
+<main id="table">
+
+  <!-- ディーラー -->
+  <section id="dealerArea">
+    <div class="seat-head">
+      <span class="seat-name">DEALER</span>
+      <span class="seat-total led" id="dealerTotal">--</span>
+    </div>
+    <div class="cards" id="dealerCards"></div>
+  </section>
+
+  <!-- 中央メッセージ -->
+  <div id="messageBar">
+    <span id="messageText">ベット額を決めてください</span>
+  </div>
+
+  <!-- 席 -->
+  <section id="seats">
+    <div class="ai-row" id="aiRow"></div>
+    <div class="human-wrap" id="humanWrap"></div>
+  </section>
+
+</main>
+
+<!-- ============ 操作パネル ============ -->
+<footer id="controls">
+
+  <!-- ベットフェーズ -->
+  <div class="panel" id="betPanel">
+    <div class="bet-display">
+      <span class="bet-label">BET</span>
+      <span class="bet-value led" id="betValue">0</span>
+    </div>
+    <div class="chip-row">
+      <button type="button" class="chip chip-10"  data-chip="10">10</button>
+      <button type="button" class="chip chip-50"  data-chip="50">50</button>
+      <button type="button" class="chip chip-100" data-chip="100">100</button>
+      <button type="button" class="chip chip-500" data-chip="500">500</button>
+    </div>
+    <div class="bet-actions">
+      <button type="button" class="btn btn-ghost" id="betClearBtn">クリア</button>
+      <button type="button" class="btn btn-ghost" id="betMaxBtn">MAX</button>
+      <button type="button" class="btn btn-primary" id="dealBtn">配る</button>
+    </div>
+  </div>
+
+  <!-- アクションフェーズ -->
+  <div class="panel" id="actionPanel" hidden>
+    <button type="button" class="btn btn-hit"   id="hitBtn">ヒット</button>
+    <button type="button" class="btn btn-stand" id="standBtn">スタンド</button>
+  </div>
+
+  <!-- 次ラウンド -->
+  <div class="panel" id="nextPanel" hidden>
+    <button type="button" class="btn btn-primary btn-wide" id="nextBtn">次のラウンドへ</button>
+  </div>
+
+</footer>
+
+<!-- ============ 広告モーダル ============ -->
+<div class="overlay" id="adOverlay" hidden>
+  <div class="ad-frame" role="dialog" aria-modal="true" aria-label="広告">
+    <div class="ad-head">
+      <span class="ad-tag">スポンサー</span>
+      <span class="ad-timer led" id="adTimer">30</span>
+    </div>
+
+    <div class="ad-stage">
+      <video id="adVideo" playsinline muted preload="auto"></video>
+      <div class="ad-fallback" id="adFallback" hidden>
+        <div class="ad-fallback-inner">
+          <div class="ad-fallback-mark">♦</div>
+          <p class="ad-fallback-title">広告を再生しています</p>
+          <p class="ad-fallback-note">動画ファイルが見つかりません</p>
+        </div>
+      </div>
+      <div class="ad-progress"><span id="adProgressBar"></span></div>
+    </div>
+
+    <div class="ad-foot">
+      <button type="button" class="btn btn-ghost btn-sm" id="adSoundBtn">音を出す</button>
+      <button type="button" class="btn btn-primary btn-sm" id="adCloseBtn" disabled>あと5秒</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ メニュー ============ -->
+<div class="overlay" id="menuOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="メニュー">
+    <div class="sheet-head">
+      <h2>メニュー</h2>
+      <button type="button" class="close-btn" id="menuCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+
+    <div class="sheet-body">
+
+      <div class="sheet-section">
+        <h3>戦績</h3>
+        <div class="stat-grid">
+          <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="stRounds">0</span></div>
+          <div class="stat"><span class="stat-key">勝ち</span><span class="stat-val led" id="stWin">0</span></div>
+          <div class="stat"><span class="stat-key">負け</span><span class="stat-val led" id="stLose">0</span></div>
+          <div class="stat"><span class="stat-key">引き分け</span><span class="stat-val led" id="stPush">0</span></div>
+          <div class="stat"><span class="stat-key">BJ</span><span class="stat-val led" id="stBj">0</span></div>
+          <div class="stat"><span class="stat-key">最高メダル</span><span class="stat-val led" id="stMax">1000</span></div>
+        </div>
+      </div>
+
+      <div class="sheet-section">
+        <h3>参加人数</h3>
+        <p class="sheet-note">次のラウンドから反映されます。</p>
+        <div class="seg" id="seatSeg">
+          <button type="button" class="seg-btn" data-seats="1">1人</button>
+          <button type="button" class="seg-btn" data-seats="2">2人</button>
+          <button type="button" class="seg-btn" data-seats="3">3人</button>
+          <button type="button" class="seg-btn is-on" data-seats="4">4人</button>
+        </div>
+      </div>
+
+      <div class="sheet-section">
+        <h3>ルール</h3>
+        <ul class="rule-list">
+          <li>手札の合計を <b>21</b> に近づけます。21を超えると即負け(バースト)。</li>
+          <li>2〜10は数字通り、J・Q・Kは10、Aは<b>1または11</b>の有利な方。</li>
+          <li><b>ヒット</b>でカードを1枚追加、<b>スタンド</b>で手札を確定。</li>
+          <li>ディーラーは合計<b>17以上</b>になるまで引き続けます。</li>
+          <li>最初の2枚が21(A+10点札)は<b>ブラックジャック</b>で配当2.5倍。</li>
+          <li>ディーラーと同点は引き分け(プッシュ)でベットが返却されます。</li>
+          <li>山札は6デッキ。残りが少なくなると自動でシャッフルします。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>リセット</h3>
+        <button type="button" class="btn btn-ghost btn-wide" id="resetBtn">メダルと戦績を初期化</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============ トースト ============ -->
+<div id="toast" hidden><span id="toastText"></span></div>
+
+<!-- ============ クレジット ============ -->
+<div id="credit">
+  made by <a href="https://github.com/h1ro223" target="_blank" rel="noopener noreferrer">hiro / ヒロ</a>
+</div>
+
+<script src="./script.js"></script>
+</body>
+</html>
