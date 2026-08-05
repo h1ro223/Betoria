@@ -26,7 +26,7 @@ const AD_FILES     = ['./ad/ad1.mp4', './ad/ad2.mp4', './ad/ad3.mp4'];
 const AD_REWARD    = 100;
 const AD_SKIP_SEC  = 5;
 const AD_FULL_SEC  = 30;
-const AD_SKIP_RATE = 0.8;
+const AD_SKIP_RATE = 0.95;
 
 const DEAL_MS     = 240;
 const CPU_THINK_MS = 620;
