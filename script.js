@@ -74,9 +74,9 @@ const store = (() => {
 
 const settings = {
   bgmOn: store.get('bj4_bgmOn') !== '0',
-  bgmVol: Number(store.get('bj4_bgmVol') ?? 40),
+  bgmVol: Number(store.get('bj4_bgmVol') ?? 100),
   seOn: store.get('bj4_seOn') !== '0',
-  seVol: Number(store.get('bj4_seVol') ?? 60),
+  seVol: Number(store.get('bj4_seVol') ?? 100),
   seats: Number(store.get('bj4_seats') ?? 4)
 };
 
