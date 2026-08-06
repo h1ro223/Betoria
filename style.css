@@ -298,6 +298,11 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   background: rgba(201,162,39,.13);
   box-shadow: 0 0 0 1px rgba(201,162,39,.34), 0 0 26px rgba(201,162,39,.18);
 }
+.seat.is-out{
+  --seat-accent: rgba(255,255,255,.08);
+  opacity: .5;
+  filter: grayscale(.6);
+}
 
 .seat-top{
   display: flex;
@@ -794,6 +799,11 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   .medal-label{ font-size: 9px; }
   .medal-value{ font-size: 24px; }
   .medal-readout{ padding: 4px 9px; }
+  #topbar{ gap: 6px; padding-left: 8px; padding-right: 8px; }
+  .topbar-right{ gap: 5px; }
+  .icon-btn{ min-width: 38px; padding: 7px 8px; }
+  .icon-btn-glyph{ font-size: 15px; }
+  .account-btn{ min-width: 40px; padding: 4px 5px; }
   #table{ padding-left: 6px; padding-right: 6px; }
   .ai-row{ gap: 5px; }
   .cards{ gap: 4px; }
@@ -817,6 +827,11 @@ body[data-phase="bet"] .cards{ min-height: 0; }
 @media (max-width: 380px){
   .ai-row .seat{ padding: 8px 6px 10px; }
   .seat-label{ font-size: 12px; }
+  .medal-label{ display: none; }
+  .medal-readout{ padding: 4px 7px; }
+  .medal-value{ font-size: 21px; }
+  .topbar-right{ gap: 4px; }
+  .icon-btn{ min-width: 34px; padding: 6px 6px; }
 }
 
 /* 広い画面では自分の席を横1列にして高さを抑える */
@@ -1397,4 +1412,247 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   .account-btn{ min-width: 44px; padding: 5px 6px; }
   .account-avatar{ width: 26px; height: 26px; font-size: 15px; }
   .room-id-box{ flex-direction: column; gap: 8px; padding: 14px; }
+}
+
+/* =========================================================
+   23. v2.0 追加要素
+   ========================================================= */
+
+/* バージョンバッジ / 更新履歴ボタン */
+.version-badge{
+  margin-top: 14px;
+  padding: 5px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(0,0,0,.3);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--brass);
+  transition: background .18s, border-color .18s;
+}
+.version-badge:hover{ background: rgba(201,162,39,.16); border-color: var(--brass); }
+
+/* 退出ボタン(ヘッダー) */
+.leave-btn .icon-btn-glyph{ color: var(--ivory); }
+.leave-btn:hover{ background: rgba(196,52,46,.16); border-color: var(--crimson); }
+
+/* モード選択セグメント(2列/4列) */
+.seg-2{ display: grid; grid-template-columns: 1fr 1fr; }
+.seg-4{ display: grid; grid-template-columns: repeat(4, 1fr); }
+.seg-2 .seg-btn, .seg-4 .seg-btn{ padding: 11px 4px; font-size: 13px; }
+
+.mode-desc{
+  margin: -3px 0 2px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--smoke);
+}
+
+/* チェックボックス行(CPU自動補充など) */
+.checkbox-row{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 4px 0;
+}
+.checkbox{
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  border: 1px solid var(--hairline);
+  background: rgba(0,0,0,.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .18s, border-color .18s;
+}
+.checkbox span{
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  background: transparent;
+  transition: background .15s, transform .15s;
+  position: relative;
+}
+.checkbox[aria-checked="true"]{ background: rgba(201,162,39,.24); border-color: var(--brass); }
+.checkbox[aria-checked="true"] span{ background: var(--led); box-shadow: 0 0 8px var(--led-glow); }
+.checkbox-label{
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.checkbox-label .field-hint{ font-weight: 500; color: var(--smoke); font-size: 11px; }
+
+/* 待機ルームのモードバッジ */
+.room-mode-badge{
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--brass);
+  color: var(--brass);
+  background: rgba(0,0,0,.4);
+}
+.room-mode-badge.is-champ{ border-color: var(--led); color: var(--led); text-shadow: 0 0 8px var(--led-glow); }
+.room-id-box{ position: relative; }
+
+.room-row-tag{
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  color: var(--smoke);
+  vertical-align: middle;
+}
+.room-row-tag.is-champ{ border-color: var(--brass); color: var(--brass); }
+
+/* カウントダウン画面 */
+#screenCountdown{ align-items: center; justify-content: center; }
+.countdown-wrap{ text-align: center; }
+.countdown-cap{
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .2em;
+  color: var(--smoke);
+  margin-bottom: 10px;
+}
+.countdown-num{
+  display: block;
+  font-size: clamp(120px, 34vw, 220px);
+  line-height: 1;
+  animation: countPop .82s var(--ease);
+}
+@keyframes countPop{
+  0%{ transform: scale(1.6); opacity: 0; }
+  30%{ transform: scale(1); opacity: 1; }
+  100%{ transform: scale(1); opacity: 1; }
+}
+
+/* チャンピオン結果画面 */
+.standings-list{ display: flex; flex-direction: column; gap: 10px; }
+.standing-row{
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(0,0,0,.28);
+}
+.standing-row.is-you{ border-color: rgba(201,162,39,.55); background: rgba(201,162,39,.1); }
+.standing-row.is-eliminated{ opacity: .55; }
+.standing-rank{
+  flex: 0 0 auto;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+  background: rgba(0,0,0,.35);
+  border: 1px solid var(--hairline);
+}
+.standing-rank.is-first{ background: linear-gradient(160deg, #E0B72F, #8A701A); color: #12100A; border-color: #E4C24A; }
+.standing-info{ flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.standing-name{ font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; }
+.standing-meta{ font-size: 12px; color: var(--smoke); }
+.standing-exp{
+  flex: 0 0 auto;
+  text-align: right;
+  font-family: var(--font-display);
+  font-size: 19px;
+  color: var(--led);
+}
+.champion-end-actions{ padding-top: 6px; }
+
+/* サレンダーボタン */
+.btn-surrender{ background: linear-gradient(180deg, #565656, #2B2B2B); border-color: rgba(255,255,255,.22); }
+.btn-surrender:hover{ background: linear-gradient(180deg, #666, #333); border-color: rgba(255,255,255,.4); }
+
+/* 危険操作(アカウント削除・サレンダー確認) */
+.danger-link{
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 8px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: #FF7B72;
+  text-align: center;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.danger-link:hover{ color: #FF9A92; }
+
+.delete-box{
+  margin-top: 10px;
+  padding: 14px;
+  border: 1px solid var(--crimson);
+  border-radius: 10px;
+  background: rgba(196,52,46,.08);
+}
+.delete-warn{ margin: 0 0 10px; font-size: 12.5px; line-height: 1.7; color: #FFB6B2; }
+.delete-actions{ display: flex; gap: 10px; margin-top: 12px; }
+.btn-danger{ background: linear-gradient(180deg, #A33C36, #5C1D19); border-color: rgba(196,52,46,.6); color: var(--ivory); }
+.btn-danger:hover{ background: linear-gradient(180deg, #B84640, #6B231E); }
+
+.sheet-narrow{ width: min(400px, 100%); }
+.confirm-text{ margin: 4px 0 0; font-size: 14px; line-height: 1.8; }
+.confirm-text b{ color: #FF9A92; }
+
+/* =========================================================
+   24. モバイル操作の誤爆防止
+   ========================================================= */
+html{
+  touch-action: pan-x pan-y;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+body{
+  overscroll-behavior: none;
+  touch-action: pan-y;
+}
+/* ゲーム中の画面はスクロール自体させない(1画面に収める設計のため) */
+body[data-screen="game"],
+body[data-screen="countdown"],
+body[data-screen="room"]{
+  touch-action: none;
+  overflow: hidden;
+  position: fixed;
+  inset: 0;
+  width: 100%;
+}
+button, .chip, .seg-btn, .checkbox, .switch, a{
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  touch-action: manipulation;
+}
+.card, #dealerArea, .seat, #controls, #topbar{
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+/* フォーム入力は選択・コピペを許可する(ユーザー名/パスワード/ルームIDのため) */
+input, textarea{
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
 }

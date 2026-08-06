@@ -1,5 +1,5 @@
 /* =========================================================
-   BLACKJACK 4 - server.js
+   BLACKJACK 4 - server.js  (v2.0)
    made by hiro / ヒロ   https://github.com/h1ro223
    Render(無料枠)向け  Express + Socket.io + PostgreSQL
    DATABASE_URL が無い場合はメモリ保存で動作します(ローカル検証用)
@@ -15,6 +15,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
+const APP_VERSION = '2.0.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -33,7 +34,8 @@ const db = (() => {
       async init(){},
       async findUser(name){ return users.get(name) || null; },
       async createUser(row){ users.set(row.username, row); return row; },
-      async saveUser(row){ users.set(row.username, row); return row; }
+      async saveUser(row){ users.set(row.username, row); return row; },
+      async deleteUser(name){ return users.delete(name); }
     };
   }
 
@@ -45,25 +47,35 @@ const db = (() => {
     max: 5
   });
 
-  const COLS = 'username, pass_hash, medal, level, exp, rounds, wins, losses, pushes, bj';
+  const COLS = 'username, pass_hash, medal, level, exp, rounds, wins, losses, pushes, bj, ' +
+               'champ_plays, champ_wins, champ_losses, champ_draws';
 
   return {
     kind: 'postgres',
     async init(){
       await pool.query(`
         CREATE TABLE IF NOT EXISTS users(
-          username   TEXT PRIMARY KEY,
-          pass_hash  TEXT NOT NULL,
-          medal      INTEGER NOT NULL DEFAULT ${INITIAL_MEDAL},
-          level      INTEGER NOT NULL DEFAULT 1,
-          exp        INTEGER NOT NULL DEFAULT 0,
-          rounds     INTEGER NOT NULL DEFAULT 0,
-          wins       INTEGER NOT NULL DEFAULT 0,
-          losses     INTEGER NOT NULL DEFAULT 0,
-          pushes     INTEGER NOT NULL DEFAULT 0,
-          bj         INTEGER NOT NULL DEFAULT 0,
-          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          username     TEXT PRIMARY KEY,
+          pass_hash    TEXT NOT NULL,
+          medal        INTEGER NOT NULL DEFAULT ${INITIAL_MEDAL},
+          level        INTEGER NOT NULL DEFAULT 1,
+          exp          INTEGER NOT NULL DEFAULT 0,
+          rounds       INTEGER NOT NULL DEFAULT 0,
+          wins         INTEGER NOT NULL DEFAULT 0,
+          losses       INTEGER NOT NULL DEFAULT 0,
+          pushes       INTEGER NOT NULL DEFAULT 0,
+          bj           INTEGER NOT NULL DEFAULT 0,
+          champ_plays  INTEGER NOT NULL DEFAULT 0,
+          champ_wins   INTEGER NOT NULL DEFAULT 0,
+          champ_losses INTEGER NOT NULL DEFAULT 0,
+          champ_draws  INTEGER NOT NULL DEFAULT 0,
+          created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )`);
+      /* 既存テーブルへのマイグレーション(v1.0からの引き継ぎ用) */
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_plays  INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_wins   INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_losses INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_draws  INTEGER NOT NULL DEFAULT 0`);
       console.log('[db] PostgreSQL 接続OK');
     },
     async findUser(name){
@@ -72,18 +84,26 @@ const db = (() => {
     },
     async createUser(row){
       await pool.query(
-        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
-         row.rounds, row.wins, row.losses, row.pushes, row.bj]);
+         row.rounds, row.wins, row.losses, row.pushes, row.bj,
+         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws]);
       return row;
     },
     async saveUser(row){
       await pool.query(
         `UPDATE users SET medal=$2, level=$3, exp=$4, rounds=$5,
-         wins=$6, losses=$7, pushes=$8, bj=$9 WHERE username=$1`,
+         wins=$6, losses=$7, pushes=$8, bj=$9,
+         champ_plays=$10, champ_wins=$11, champ_losses=$12, champ_draws=$13
+         WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
-         row.rounds, row.wins, row.losses, row.pushes, row.bj]);
+         row.rounds, row.wins, row.losses, row.pushes, row.bj,
+         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws]);
       return row;
+    },
+    async deleteUser(name){
+      const r = await pool.query(`DELETE FROM users WHERE username=$1`, [name]);
+      return r.rowCount > 0;
     }
   };
 })();
@@ -141,12 +161,24 @@ const EXP_WIN   = 25;
 const EXP_BJ    = 40;
 const EXP_PUSH  = 12;
 const EXP_LOSE  = 5;
+const EXP_SURRENDER = 6;
 const MAX_LEVEL = 99;
+
+/* チャンピオンモードのEXP係数
+   ・1ラウンドあたりの基礎EXPはエンジョイモードの「参加+10」を基準に1.25倍
+   ・参加人数が多いほど難易度が上がるため倍率を上乗せ(2人=1.2 / 3人=1.4 / 4人=1.6)
+   ・脱落(0枚)の場合は経過ラウンド分の50%
+   ・生き残った場合(2〜4位含む)は経過ラウンド分の100%+順位ボーナス */
+const CHAMPION_MULT = 1.25;
+const CHAMPION_RANK_BONUS = { 1: 80, 2: 40, 3: 20, 4: 8 };
+
+function championFactor(playerCount){ return 1 + (Math.max(playerCount, 2) - 1) * 0.2; }
+function championRoundExp(playerCount){ return EXP_ROUND * CHAMPION_MULT * championFactor(playerCount); }
 
 function expToNext(level){ return 100 + (level - 1) * 50; }
 
 function addExp(user, gain){
-  user.exp += gain;
+  user.exp += Math.max(0, Math.round(gain));
   let up = 0;
   while (user.level < MAX_LEVEL && user.exp >= expToNext(user.level)){
     user.exp -= expToNext(user.level);
@@ -158,19 +190,30 @@ function addExp(user, gain){
 }
 
 function expForResult(kind){
-  if (kind === 'bj')   return EXP_ROUND + EXP_BJ;
-  if (kind === 'win')  return EXP_ROUND + EXP_WIN;
-  if (kind === 'push') return EXP_ROUND + EXP_PUSH;
+  if (kind === 'bj')        return EXP_ROUND + EXP_BJ;
+  if (kind === 'win')       return EXP_ROUND + EXP_WIN;
+  if (kind === 'push')      return EXP_ROUND + EXP_PUSH;
+  if (kind === 'surrender') return EXP_SURRENDER;
   return EXP_ROUND + EXP_LOSE;
 }
 
-function applyResult(user, kind){
+function applyEnjoyResult(user, kind){
   user.rounds++;
   if (kind === 'bj'){ user.wins++; user.bj++; }
   else if (kind === 'win')  user.wins++;
   else if (kind === 'push') user.pushes++;
-  else user.losses++;
+  else user.losses++;   // lose / surrender
   return addExp(user, expForResult(kind));
+}
+
+/* チャンピオンモード終了時の結果反映
+   rankKind: 'win'(1位) | 'draw'(1位タイ) | 'lose'(2〜4位 or 脱落) */
+function applyChampionResult(user, { rankKind, expGain }){
+  user.champ_plays++;
+  if (rankKind === 'win') user.champ_wins++;
+  else if (rankKind === 'draw') user.champ_draws++;
+  else user.champ_losses++;
+  return addExp(user, expGain);
 }
 
 function publicUser(u){
@@ -184,7 +227,11 @@ function publicUser(u){
     wins: u.wins,
     losses: u.losses,
     pushes: u.pushes,
-    bj: u.bj
+    bj: u.bj,
+    champPlays: u.champ_plays,
+    champWins: u.champ_wins,
+    champLosses: u.champ_losses,
+    champDraws: u.champ_draws
   };
 }
 
@@ -199,7 +246,15 @@ const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const DECK_COUNT   = 6;
 const MIN_BET      = 10;
 const DEALER_STAND = 17;
+const CPU_STAND    = 17;
+const CPU_MEDAL    = 1000;
+const CPU_REFILL   = 500;
+const CPU_NAMES    = ['CPU ハル', 'CPU ミナ', 'CPU レオ'];
 const TURN_LIMIT_MS = 30000;
+const CPU_TURN_MS   = 900;
+const COUNTDOWN_SEC = 3;
+const CHAMPION_START_MEDAL = 1000;
+const CHAMPION_ROUND_MAX = 200;
 
 function buildShoe(){
   const shoe = [];
@@ -246,19 +301,28 @@ function makeRoomId(){
   return id;
 }
 
-function createRoom(maxPlayers){
+function createRoom(opts){
+  const mode = opts.mode === 'champion' ? 'champion' : 'enjoy';
   const room = {
     id: makeRoomId(),
-    maxPlayers: Math.min(Math.max(Number(maxPlayers) || 4, 2), 4),
+    mode,
+    maxPlayers: Math.min(Math.max(Number(opts.maxPlayers) || 4, 2), 4),
+    cpuFill: mode === 'enjoy' && !!opts.cpuFill,          // チャンピオンでは常に無効
+    championRounds: mode === 'champion'
+      ? Math.min(Math.max(Number(opts.championRounds) || 10, 1), CHAMPION_ROUND_MAX)
+      : null,
     hostName: null,
-    players: [],            // {name, sid, level, bet, hand, done, result, ready}
-    phase: 'lobby',         // lobby | bet | play | dealer | result
+    players: [],            // {name, sid, cpu, level, medal, bet, hand, done, surrendered, ready, connected, eliminated}
+    phase: 'lobby',         // lobby | countdown | bet | play | dealer | result | champion_end
     dealer: { hand: [], hole: true },
     shoe: buildShoe(),
     activeIndex: -1,
     turnTimer: null,
+    cpuTimer: null,
+    countdownTimer: null,
     message: '',
-    round: 0
+    round: 0,
+    standings: null
   };
   rooms.set(room.id, room);
   return room;
@@ -266,6 +330,8 @@ function createRoom(maxPlayers){
 
 function destroyRoom(room){
   if (room.turnTimer) clearTimeout(room.turnTimer);
+  if (room.cpuTimer) clearTimeout(room.cpuTimer);
+  if (room.countdownTimer) clearTimeout(room.countdownTimer);
   rooms.delete(room.id);
 }
 
@@ -273,8 +339,12 @@ function roomList(){
   const out = [];
   for (const r of rooms.values()){
     if (r.phase !== 'lobby') continue;
-    if (r.players.length === 0 || r.players.length >= r.maxPlayers) continue;
-    out.push({ id: r.id, count: r.players.length, max: r.maxPlayers, host: r.hostName });
+    const humanN = r.players.filter(p => !p.cpu).length;
+    if (humanN === 0 || humanN >= r.maxPlayers) continue;
+    out.push({
+      id: r.id, count: humanN, max: r.maxPlayers, host: r.hostName,
+      mode: r.mode, championRounds: r.championRounds, cpuFill: r.cpuFill
+    });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
 }
@@ -285,6 +355,9 @@ function findRoomBySid(sid){
   return null;
 }
 
+function humanCount(room){ return room.players.filter(p => !p.cpu).length; }
+function activePlayers(room){ return room.players.filter(p => !p.eliminated); }
+
 /* 手札は自分以外にも見せる(ブラックジャックは公開情報) */
 function roomState(room, forName){
   const dealerHand = room.dealer.hand.map((c, i) =>
@@ -292,8 +365,11 @@ function roomState(room, forName){
 
   return {
     id: room.id,
+    mode: room.mode,
     phase: room.phase,
     maxPlayers: room.maxPlayers,
+    cpuFill: room.cpuFill,
+    championRounds: room.championRounds,
     hostName: room.hostName,
     isHost: forName === room.hostName,
     round: room.round,
@@ -301,8 +377,10 @@ function roomState(room, forName){
     activeName: room.activeIndex >= 0 && room.players[room.activeIndex]
       ? room.players[room.activeIndex].name : null,
     dealer: { hand: dealerHand, hole: room.dealer.hole },
+    standings: room.standings,
     players: room.players.map(p => ({
       name: p.name,
+      cpu: !!p.cpu,
       level: p.level,
       medal: p.medal,
       bet: p.bet,
@@ -311,6 +389,7 @@ function roomState(room, forName){
       ready: p.ready,
       result: p.result,
       connected: p.connected,
+      eliminated: !!p.eliminated,
       isYou: p.name === forName
     }))
   };
@@ -330,15 +409,83 @@ function broadcastLobby(io){
 /* =========================================================
    6. ゲーム進行(サーバー権威)
    ========================================================= */
+function fillCpuSeats(room){
+  if (room.mode !== 'enjoy' || !room.cpuFill) return;
+  const need = room.maxPlayers - room.players.length;
+  for (let i = 0; i < need; i++){
+    const name = CPU_NAMES[i % CPU_NAMES.length] + (i >= CPU_NAMES.length ? (Math.floor(i / CPU_NAMES.length) + 1) : '');
+    room.players.push({
+      name, sid: null, cpu: true, level: 0, medal: CPU_MEDAL,
+      bet: 0, hand: [], done: false, surrendered: false, ready: false,
+      result: null, connected: true, eliminated: false
+    });
+  }
+}
+
+function removeCpuSeats(room){
+  room.players = room.players.filter(p => !p.cpu);
+}
+
 function resetRound(room){
   room.dealer = { hand: [], hole: true };
   room.activeIndex = -1;
   room.phase = 'bet';
   room.message = 'ベット額を決めてください';
   for (const p of room.players){
-    p.bet = 0; p.hand = []; p.done = false; p.result = null; p.ready = false;
+    p.bet = 0; p.hand = []; p.done = false; p.surrendered = false;
+    p.result = null; p.ready = false;
   }
   if (room.shoe.length < DECK_COUNT * 52 * 0.25) room.shoe = buildShoe();
+  autoBetCpu(room);
+}
+
+function autoBetCpu(room){
+  const cpus = room.players.filter(p => p.cpu && !p.ready);
+  if (cpus.length === 0) return;
+  if (room.cpuTimer) clearTimeout(room.cpuTimer);
+  room.cpuTimer = setTimeout(() => {
+    for (const p of cpus){
+      if (p.medal < MIN_BET) p.medal = CPU_REFILL;
+      const opts = [10, 50, 100, 500].filter(v => v <= p.medal);
+      p.bet = opts.length ? opts[crypto.randomInt(opts.length)] : MIN_BET;
+      p.ready = true;
+    }
+  }, 500);
+}
+
+function beginCountdown(io, room){
+  room.phase = 'countdown';
+  room.message = 'まもなく開始します';
+  let n = COUNTDOWN_SEC;
+  broadcastCountdown(io, room, n);
+  room.countdownTimer = setInterval(() => {
+    n--;
+    if (n <= 0){
+      clearInterval(room.countdownTimer);
+      room.countdownTimer = null;
+      if (room.mode === 'champion'){
+        for (const p of room.players){
+          p.medal = CHAMPION_START_MEDAL;
+          p.eliminated = false;
+          p.eliminatedAtRound = null;
+        }
+        room.round = 0;
+        room.standings = null;
+      }
+      resetRound(room);
+      broadcast(io, room);
+      broadcastLobby(io);
+      return;
+    }
+    broadcastCountdown(io, room, n);
+  }, 1000);
+}
+
+function broadcastCountdown(io, room, n){
+  for (const p of room.players){
+    if (!p.sid) continue;
+    io.to(p.sid).emit('room:countdown', { n });
+  }
 }
 
 function dealRound(io, room){
@@ -377,8 +524,14 @@ function nextTurn(io, room){
   }
 
   room.activeIndex = i;
-  room.message = room.players[i].name + ' さんのターン';
+  const cur = room.players[i];
+  room.message = cur.name + ' さんのターン';
   broadcast(io, room);
+
+  if (cur.cpu){
+    room.cpuTimer = setTimeout(() => cpuPlayTurn(io, room), CPU_TURN_MS);
+    return;
+  }
 
   room.turnTimer = setTimeout(() => {
     const p = room.players[room.activeIndex];
@@ -390,10 +543,23 @@ function nextTurn(io, room){
   }, TURN_LIMIT_MS);
 }
 
+function cpuPlayTurn(io, room){
+  const p = room.players[room.activeIndex];
+  if (!p || !p.cpu){ return; }
+  const v = handValue(p.hand);
+  if (v.bust || v.total >= CPU_STAND){
+    p.done = true;
+    return nextTurn(io, room);
+  }
+  p.hand.push(room.shoe.pop());
+  broadcast(io, room);
+  room.cpuTimer = setTimeout(() => cpuPlayTurn(io, room), CPU_TURN_MS);
+}
+
 function dealerTurn(io, room){
   room.phase = 'dealer';
   room.dealer.hole = false;
-  const alive = room.players.some(p => p.bet > 0 && !handValue(p.hand).bust);
+  const alive = room.players.some(p => p.bet > 0 && !p.surrendered && !handValue(p.hand).bust);
   if (alive){
     while (handValue(room.dealer.hand).total < DEALER_STAND){
       room.dealer.hand.push(room.shoe.pop());
@@ -407,6 +573,7 @@ function dealerTurn(io, room){
 
 async function finishRound(io, room){
   if (room.turnTimer){ clearTimeout(room.turnTimer); room.turnTimer = null; }
+  if (room.cpuTimer){ clearTimeout(room.cpuTimer); room.cpuTimer = null; }
   room.phase = 'result';
   room.dealer.hole = false;
 
@@ -415,40 +582,136 @@ async function finishRound(io, room){
 
   for (const p of room.players){
     if (p.bet <= 0){ p.result = null; continue; }
-    const v = handValue(p.hand);
-    const bj = isBlackjack(p.hand);
-    let payout = 0, kind, label;
 
-    if (v.bust){ kind = 'lose'; label = 'BUST'; }
-    else if (bj && !dbj){ payout = Math.floor(p.bet * 2.5); kind = 'bj'; label = 'BLACKJACK'; }
-    else if (bj && dbj){ payout = p.bet; kind = 'push'; label = 'PUSH'; }
-    else if (dbj){ kind = 'lose'; label = 'LOSE'; }
-    else if (dv.bust){ payout = p.bet * 2; kind = 'win'; label = 'WIN'; }
-    else if (v.total > dv.total){ payout = p.bet * 2; kind = 'win'; label = 'WIN'; }
-    else if (v.total < dv.total){ kind = 'lose'; label = 'LOSE'; }
-    else { payout = p.bet; kind = 'push'; label = 'PUSH'; }
+    if (p.surrendered){
+      const payout = Math.floor(p.bet / 2);
+      p.result = { kind: 'surrender', label: 'SURRENDER', payout, net: payout - p.bet };
+    } else {
+      const v = handValue(p.hand);
+      const bj = isBlackjack(p.hand);
+      let payout = 0, kind, label;
 
-    p.result = { kind, label, payout, net: payout - p.bet };
+      if (v.bust){ kind = 'lose'; label = 'BUST'; }
+      else if (bj && !dbj){ payout = Math.floor(p.bet * 2.5); kind = 'bj'; label = 'BLACKJACK'; }
+      else if (bj && dbj){ payout = p.bet; kind = 'push'; label = 'PUSH'; }
+      else if (dbj){ kind = 'lose'; label = 'LOSE'; }
+      else if (dv.bust){ payout = p.bet * 2; kind = 'win'; label = 'WIN'; }
+      else if (v.total > dv.total){ payout = p.bet * 2; kind = 'win'; label = 'WIN'; }
+      else if (v.total < dv.total){ kind = 'lose'; label = 'LOSE'; }
+      else { payout = p.bet; kind = 'push'; label = 'PUSH'; }
 
-    try {
-      const u = await db.findUser(p.name);
-      if (u){
-        u.medal += payout;
-        const up = applyResult(u, kind);
-        await db.saveUser(u);
-        p.medal = u.medal;
-        p.level = u.level;
-        if (p.sid) io.to(p.sid).emit('account:update', { user: publicUser(u), levelUp: up });
-      }
-    } catch (e){ console.error('[result]', e.message); }
+      p.result = { kind, label, payout, net: payout - p.bet };
+    }
+
+    p.medal += p.result.payout;
+
+    if (room.mode === 'enjoy' && !p.cpu){
+      try {
+        const u = await db.findUser(p.name);
+        if (u){
+          u.medal += p.result.payout;
+          const up = applyEnjoyResult(u, p.result.kind);
+          await db.saveUser(u);
+          p.level = u.level;
+          if (p.sid) io.to(p.sid).emit('account:update', { user: publicUser(u), levelUp: up });
+        }
+      } catch (e){ console.error('[result]', e.message); }
+    }
+
+    if (room.mode === 'champion' && p.medal <= 0 && !p.eliminated){
+      p.medal = 0;
+      p.eliminated = true;
+      p.eliminatedAtRound = room.round;
+    }
   }
 
   room.message = 'ラウンド終了';
   broadcast(io, room);
+
+  if (room.mode === 'champion') await maybeEndChampionship(io, room);
 }
 
 /* =========================================================
-   7. HTTP API
+   7. チャンピオンシップの終了判定・EXP付与
+   ========================================================= */
+async function maybeEndChampionship(io, room){
+  const alive = activePlayers(room);
+  const reachedLimit = room.round >= room.championRounds;
+  const soleSurvivor = alive.length <= 1 && room.players.length > 1;
+
+  if (!reachedLimit && !soleSurvivor) return;
+
+  const total = room.players.length;
+  const perRound = championRoundExp(total);
+
+  /* 順位付け: 生存者は所持メダル降順、脱落者はその後ろに脱落順(遅いほど上位) */
+  const ranked = [...room.players].sort((a, b) => {
+    if (a.eliminated !== b.eliminated) return a.eliminated ? 1 : -1;
+    if (!a.eliminated) return b.medal - a.medal;
+    return (b.eliminatedAtRound || 0) - (a.eliminatedAtRound || 0);
+  });
+
+  /* 同メダルは同順位(引き分け)にする */
+  let rank = 0;
+  for (let i = 0; i < ranked.length; i++){
+    if (i === 0){ rank = 1; }
+    else {
+      const prev = ranked[i - 1];
+      const same = !ranked[i].eliminated && !prev.eliminated && ranked[i].medal === prev.medal;
+      if (!same) rank = i + 1;
+    }
+    ranked[i].rank = rank;
+  }
+  const isDraw = new Map();
+  for (let i = 0; i < ranked.length; i++){
+    const dup = ranked.filter(x => x.rank === ranked[i].rank).length > 1;
+    isDraw.set(ranked[i].name, dup);
+  }
+
+  const results = [];
+  for (const p of ranked){
+    const roundsElapsed = p.eliminated ? (p.eliminatedAtRound || room.round) : room.round;
+
+    let expGain, rankKind;
+    if (p.eliminated){
+      expGain = Math.round(roundsElapsed * perRound * 0.5);
+      rankKind = 'lose';
+    } else {
+      const bonus = Math.round((CHAMPION_RANK_BONUS[Math.min(p.rank, 4)] || 0) * championFactor(total));
+      expGain = Math.round(roundsElapsed * perRound * 1.0) + bonus;
+      rankKind = p.rank === 1 ? (isDraw.get(p.name) ? 'draw' : 'win') : 'lose';
+    }
+
+    let levelUp = 0, userAfter = null;
+    if (!p.cpu){
+      try {
+        const u = await db.findUser(p.name);
+        if (u){
+          levelUp = applyChampionResult(u, { rankKind, expGain });
+          await db.saveUser(u);
+          userAfter = publicUser(u);
+          p.level = u.level;
+        }
+      } catch (e){ console.error('[champion]', e.message); }
+    }
+
+    results.push({
+      name: p.name, cpu: !!p.cpu, rank: p.rank, medal: p.medal,
+      eliminated: !!p.eliminated, expGain, rankKind
+    });
+
+    if (p.sid && userAfter) io.to(p.sid).emit('account:update', { user: userAfter, levelUp });
+  }
+
+  room.standings = results;
+  room.phase = 'champion_end';
+  room.message = '大会終了';
+  broadcast(io, room);
+  broadcastLobby(io);
+}
+
+/* =========================================================
+   8. HTTP API
    ========================================================= */
 const app = express();
 app.use(express.json({ limit: '16kb' }));
@@ -464,6 +727,14 @@ async function currentUser(req){
   return await db.findUser(name);
 }
 
+function blankUserRow(username, pass_hash){
+  return {
+    username, pass_hash, medal: INITIAL_MEDAL, level: 1, exp: 0,
+    rounds: 0, wins: 0, losses: 0, pushes: 0, bj: 0,
+    champ_plays: 0, champ_wins: 0, champ_losses: 0, champ_draws: 0
+  };
+}
+
 app.post('/api/register', async (req, res) => {
   try {
     const { username, password } = req.body || {};
@@ -471,11 +742,7 @@ app.post('/api/register', async (req, res) => {
     if (!PASS_RE.test(password || '')) return res.status(400).json({ error: 'パスワードは英数字1〜8文字です' });
     if (await db.findUser(username)) return res.status(409).json({ error: 'そのユーザー名は使われています' });
 
-    const row = {
-      username, pass_hash: hashPassword(password),
-      medal: INITIAL_MEDAL, level: 1, exp: 0,
-      rounds: 0, wins: 0, losses: 0, pushes: 0, bj: 0
-    };
+    const row = blankUserRow(username, hashPassword(password));
     await db.createUser(row);
     res.json({ token: makeToken(username), user: publicUser(row) });
   } catch (e){
@@ -503,6 +770,21 @@ app.get('/api/me', async (req, res) => {
   res.json({ user: publicUser(u) });
 });
 
+app.delete('/api/account', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  const { password } = req.body || {};
+  if (!verifyPassword(String(password || ''), u.pass_hash))
+    return res.status(401).json({ error: 'パスワードが違います' });
+  try {
+    await db.deleteUser(u.username);
+    res.json({ ok: true });
+  } catch (e){
+    console.error('[delete]', e);
+    res.status(500).json({ error: '削除に失敗しました' });
+  }
+});
+
 /* シングルプレイの結果反映 */
 app.post('/api/result', async (req, res) => {
   const u = await currentUser(req);
@@ -511,12 +793,12 @@ app.post('/api/result', async (req, res) => {
   const bet = Math.floor(Number(req.body?.bet) || 0);
   const payout = Math.floor(Number(req.body?.payout) || 0);
   const kind = String(req.body?.kind || '');
-  if (!['win','lose','push','bj'].includes(kind)) return res.status(400).json({ error: '不正な結果です' });
+  if (!['win','lose','push','bj','surrender'].includes(kind)) return res.status(400).json({ error: '不正な結果です' });
   if (bet < MIN_BET || bet > u.medal + bet) return res.status(400).json({ error: '不正なベット額です' });
   if (payout < 0 || payout > bet * 3) return res.status(400).json({ error: '不正な配当です' });
 
   u.medal = u.medal - bet + payout;
-  const up = applyResult(u, kind);
+  const up = applyEnjoyResult(u, kind);
   await db.saveUser(u);
   res.json({ user: publicUser(u), levelUp: up });
 });
@@ -534,10 +816,10 @@ app.post('/api/ad', async (req, res) => {
   res.json({ user: publicUser(u) });
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: rooms.size }));
+app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: rooms.size, version: APP_VERSION }));
 
 /* =========================================================
-   8. Socket.io
+   9. Socket.io
    ========================================================= */
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
@@ -560,11 +842,12 @@ io.on('connection', (socket) => {
 
   socket.on('room:list', () => socket.emit('room:list', roomList()));
 
-  socket.on('room:create', async ({ maxPlayers } = {}) => {
+  socket.on('room:create', async ({ maxPlayers, mode, cpuFill, championRounds } = {}) => {
     if (findRoomBySid(socket.id)) return;
     await refreshSocketUser(socket);
     if (findRoomBySid(socket.id)) return;
-    const room = createRoom(maxPlayers);
+
+    const room = createRoom({ maxPlayers, mode, cpuFill, championRounds });
     room.hostName = name;
     room.players.push(makePlayer(socket));
     socket.join(room.id);
@@ -577,13 +860,13 @@ io.on('connection', (socket) => {
     const room = rooms.get(String(id || '').toUpperCase());
     if (!room) return socket.emit('room:error', 'その部屋は存在しません');
     if (room.phase !== 'lobby') return socket.emit('room:error', 'その部屋はゲーム中です');
-    if (room.players.length >= room.maxPlayers) return socket.emit('room:error', 'その部屋は満員です');
+    if (humanCount(room) >= room.maxPlayers) return socket.emit('room:error', 'その部屋は満員です');
     if (room.players.some(p => p.name === name)) return socket.emit('room:error', '既に参加しています');
     if (findRoomBySid(socket.id)) return;
 
     await refreshSocketUser(socket);
     if (findRoomBySid(socket.id)) return;
-    if (room.phase !== 'lobby' || room.players.length >= room.maxPlayers)
+    if (room.phase !== 'lobby' || humanCount(room) >= room.maxPlayers)
       return socket.emit('room:error', 'その部屋には参加できませんでした');
 
     room.players.push(makePlayer(socket));
@@ -595,14 +878,23 @@ io.on('connection', (socket) => {
 
   socket.on('room:leave', () => leaveRoom(socket));
 
+  socket.on('room:cpuFill', ({ on } = {}) => {
+    const room = findRoomBySid(socket.id);
+    if (!room || room.hostName !== name || room.phase !== 'lobby' || room.mode !== 'enjoy') return;
+    room.cpuFill = !!on;
+    broadcast(io, room);
+  });
+
   socket.on('room:start', () => {
     const room = findRoomBySid(socket.id);
     if (!room || room.hostName !== name) return;
     if (room.phase !== 'lobby') return;
-    if (room.players.length < 1) return;
-    resetRound(room);
-    broadcast(io, room);
-    broadcastLobby(io);
+    if (humanCount(room) < 1) return;
+
+    removeCpuSeats(room);
+    if (room.mode === 'enjoy' && room.cpuFill) fillCpuSeats(room);
+
+    beginCountdown(io, room);
   });
 
   socket.on('game:bet', async ({ amount } = {}) => {
@@ -614,8 +906,14 @@ io.on('connection', (socket) => {
     const bet = Math.floor(Number(amount) || 0);
     if (bet < MIN_BET) return socket.emit('room:error', 'ベット額が不正です');
 
-    /* ルーム内のメダルは古い可能性があるのでDBを正として判定する
-       (広告視聴などで途中増減しても正しく処理できる) */
+    if (room.mode === 'champion'){
+      if (bet > p.medal) return socket.emit('room:error', '大会用メダルが足りません');
+      p.bet = bet; p.ready = true; p.medal -= bet;
+      room.message = room.players.filter(x => x.ready).length + '/' + room.players.length + ' 人がベット済み';
+      return broadcast(io, room);
+    }
+
+    /* エンジョイモード: DBを正として判定 */
     let u;
     try { u = await db.findUser(p.name); }
     catch (e){ console.error('[bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
@@ -627,35 +925,16 @@ io.on('connection', (socket) => {
       socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
       return socket.emit('room:error', 'メダルが足りません');
     }
-    if (p.ready) return;   // 待っている間に確定済みになっていないか再確認
+    if (p.ready) return;
 
     u.medal -= bet;
     try { await db.saveUser(u); }
     catch (e){ console.error('[bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
 
-    p.bet = bet;
-    p.ready = true;
-    p.medal = u.medal;
-    p.level = u.level;
+    p.bet = bet; p.ready = true; p.medal = u.medal; p.level = u.level;
     socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
 
     room.message = room.players.filter(x => x.ready).length + '/' + room.players.length + ' 人がベット済み';
-    broadcast(io, room);
-  });
-
-  /* 広告視聴などでDB側のメダルが変わったときに読み直す */
-  socket.on('player:sync', async () => {
-    let u;
-    try { u = await db.findUser(name); } catch { return; }
-    if (!u) return;
-    socket.data.medal = u.medal;
-    socket.data.level = u.level;
-    socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
-
-    const room = findRoomBySid(socket.id);
-    if (!room) return;
-    const p = room.players.find(x => x.sid === socket.id);
-    if (p && !p.ready){ p.medal = u.medal; p.level = u.level; }
     broadcast(io, room);
   });
 
@@ -691,10 +970,49 @@ io.on('connection', (socket) => {
     nextTurn(io, room);
   });
 
+  /* サレンダー: 最初の2枚(まだ1枚も引いていない)の時だけ有効 */
+  socket.on('game:surrender', () => {
+    const room = findRoomBySid(socket.id);
+    if (!room || room.phase !== 'play') return;
+    const p = room.players[room.activeIndex];
+    if (!p || p.sid !== socket.id || p.done || p.hand.length !== 2) return;
+    p.surrendered = true;
+    p.done = true;
+    room.message = p.name + ' さんがサレンダー';
+    nextTurn(io, room);
+  });
+
   socket.on('game:next', () => {
     const room = findRoomBySid(socket.id);
-    if (!room || room.hostName !== name || room.phase !== 'result') return;
-    resetRound(room);
+    if (!room || room.hostName !== name) return;
+    if (room.phase === 'result'){
+      resetRound(room);
+      broadcast(io, room);
+    } else if (room.phase === 'champion_end'){
+      room.phase = 'lobby';
+      room.standings = null;
+      room.players.forEach(p => { p.eliminated = false; p.medal = 0; p.ready = false; });
+      broadcast(io, room);
+      broadcastLobby(io);
+    }
+  });
+
+  /* 大会を退出(観戦中でも可)。以降の経験値は加算されない */
+  socket.on('room:leaveChampionship', () => leaveRoom(socket));
+
+  /* 広告視聴などでDB側のメダルが変わったときに読み直す */
+  socket.on('player:sync', async () => {
+    let u;
+    try { u = await db.findUser(name); } catch { return; }
+    if (!u) return;
+    socket.data.medal = u.medal;
+    socket.data.level = u.level;
+    socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+
+    const room = findRoomBySid(socket.id);
+    if (!room) return;
+    const p = room.players.find(x => x.sid === socket.id);
+    if (p && !p.ready && room.mode === 'enjoy'){ p.medal = u.medal; p.level = u.level; }
     broadcast(io, room);
   });
 
@@ -715,10 +1033,11 @@ function makePlayer(socket){
   return {
     name: socket.data.name,
     sid: socket.id,
+    cpu: false,
     level: socket.data.level,
     medal: socket.data.medal,
-    bet: 0, hand: [], done: false, ready: false,
-    result: null, connected: true
+    bet: 0, hand: [], done: false, surrendered: false, ready: false,
+    result: null, connected: true, eliminated: false, eliminatedAtRound: null
   };
 }
 
@@ -731,10 +1050,11 @@ function leaveRoom(socket){
   room.players.splice(idx, 1);
   socket.leave(room.id);
 
-  if (room.players.length === 0){ destroyRoom(room); return broadcastLobby(io); }
+  const remainingHumans = room.players.filter(p => !p.cpu);
+  if (remainingHumans.length === 0){ destroyRoom(room); return broadcastLobby(io); }
 
   if (room.hostName === left.name){
-    room.hostName = room.players[0].name;
+    room.hostName = remainingHumans[0].name;
     room.message = 'ホストが退出したため ' + room.hostName + ' さんがホストになりました';
   }
 
@@ -748,8 +1068,8 @@ function leaveRoom(socket){
 }
 
 /* =========================================================
-   9. 起動
+   10. 起動
    ========================================================= */
 db.init()
-  .then(() => server.listen(PORT, () => console.log('[server] listening on ' + PORT)))
+  .then(() => server.listen(PORT, () => console.log('[server] v' + APP_VERSION + ' listening on ' + PORT)))
   .catch((e) => { console.error('[db] 初期化に失敗:', e); process.exit(1); });

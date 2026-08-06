@@ -321,26 +321,41 @@ const el = {
   body: document.body,
   brandBtn: $('brandBtn'),
   medalReadout: $('medalReadout'),
+  medalLabel: $('medalLabel'),
   medalCount: $('medalCount'),
   adBtn: $('adBtn'),
   menuBtn: $('menuBtn'),
   accountBtn: $('accountBtn'),
   accountAvatar: $('accountAvatar'),
   accountLv: $('accountLv'),
+  leaveBtn: $('leaveBtn'),
+  gameRulesBtn: $('gameRulesBtn'),
 
   screenTitle: $('screenTitle'),
   screenLobby: $('screenLobby'),
   screenRoom: $('screenRoom'),
+  screenCountdown: $('screenCountdown'),
+  screenChampionEnd: $('screenChampionEnd'),
   screenGame: $('screenGame'),
 
   toSingleBtn: $('toSingleBtn'),
   toOnlineBtn: $('toOnlineBtn'),
   toRulesBtn: $('toRulesBtn'),
   toSettingsBtn: $('toSettingsBtn'),
+  changelogBtn: $('changelogBtn'),
+  changelogOverlay: $('changelogOverlay'),
+  changelogCloseBtn: $('changelogCloseBtn'),
 
   lobbyBackBtn: $('lobbyBackBtn'),
   connBadge: $('connBadge'),
+  createModeSeg: $('createModeSeg'),
+  createModeDesc: $('createModeDesc'),
   createSeg: $('createSeg'),
+  createCpuRow: $('createCpuRow'),
+  createCpuCheck: $('createCpuCheck'),
+  createChampRow: $('createChampRow'),
+  champRoundSeg: $('champRoundSeg'),
+  champRoundCustom: $('champRoundCustom'),
   createRoomBtn: $('createRoomBtn'),
   refreshRoomsBtn: $('refreshRoomsBtn'),
   roomList: $('roomList'),
@@ -349,11 +364,20 @@ const el = {
 
   roomLeaveBtn: $('roomLeaveBtn'),
   roomCountBadge: $('roomCountBadge'),
+  roomModeBadge: $('roomModeBadge'),
   roomIdText: $('roomIdText'),
   copyIdBtn: $('copyIdBtn'),
+  roomCpuRow: $('roomCpuRow'),
+  roomCpuCheck: $('roomCpuCheck'),
   memberList: $('memberList'),
   roomHint: $('roomHint'),
   startGameBtn: $('startGameBtn'),
+
+  countdownCap: $('countdownCap'),
+  countdownNum: $('countdownNum'),
+
+  standingsList: $('standingsList'),
+  championBackBtn: $('championBackBtn'),
 
   dealerCards: $('dealerCards'),
   dealerTotal: $('dealerTotal'),
@@ -370,10 +394,15 @@ const el = {
   actionPanel: $('actionPanel'),
   hitBtn: $('hitBtn'),
   standBtn: $('standBtn'),
+  surrenderBtn: $('surrenderBtn'),
   nextPanel: $('nextPanel'),
   nextBtn: $('nextBtn'),
   waitPanel: $('waitPanel'),
   waitText: $('waitText'),
+
+  surrenderOverlay: $('surrenderOverlay'),
+  surrenderCancelBtn: $('surrenderCancelBtn'),
+  surrenderConfirmBtn: $('surrenderConfirmBtn'),
 
   adOverlay: $('adOverlay'),
   adVideo: $('adVideo'),
@@ -406,7 +435,18 @@ const el = {
   stPush: $('stPush'),
   stBj: $('stBj'),
   stRate: $('stRate'),
+  champPlays: $('champPlays'),
+  champWins: $('champWins'),
+  champLosses: $('champLosses'),
+  champDraws: $('champDraws'),
+  champRate: $('champRate'),
   logoutBtn: $('logoutBtn'),
+  showDeleteBtn: $('showDeleteBtn'),
+  deleteBox: $('deleteBox'),
+  deletePass: $('deletePass'),
+  deleteError: $('deleteError'),
+  deleteCancelBtn: $('deleteCancelBtn'),
+  deleteConfirmBtn: $('deleteConfirmBtn'),
 
   rulesOverlay: $('rulesOverlay'),
   rulesCloseBtn: $('rulesCloseBtn'),
@@ -435,9 +475,10 @@ const el = {
    ========================================================= */
 const view = {
   mode: 'single',        // single | online
+  onlineMode: 'enjoy',   // enjoy | champion (online時のみ有効)
   phase: 'bet',
   dealer: { hand: [], hole: true },
-  seats: [],             // {name, level, medal, bet, hand, result, isYou, active, ready, cpu}
+  seats: [],             // {name, level, medal, bet, hand, result, isYou, active, ready, cpu, eliminated}
   message: '',
   tone: ''
 };
@@ -591,13 +632,16 @@ function seatMarkup(seat){
   }
 
   let tag = '';
-  if (seat.result){
+  if (seat.eliminated){
+    tag = '<span class="result-badge" data-r="lose">脱落・観戦中</span>';
+  } else if (seat.result){
     tag = '<span class="result-badge" data-r="' + seat.result.kind + '">' + seat.result.label + '</span>';
   } else if (view.mode === 'online' && view.phase === 'bet' && seat.ready){
     tag = '<span class="result-badge" data-r="push">READY</span>';
   }
 
   const lv = seat.level ? '<span class="member-lv">Lv.' + seat.level + '</span>' : '';
+  const medalLabel = (view.mode === 'online' && view.onlineMode === 'champion') ? '大会メダル' : 'メダル';
 
   return '' +
     '<div class="seat-top">' +
@@ -612,7 +656,7 @@ function seatMarkup(seat){
     '<div class="seat-meta">' +
       '<span class="meta-chip is-bet"><span class="meta-key">ベット</span>' +
         '<span class="meta-val">' + seat.bet + '</span></span>' +
-      '<span class="meta-chip"><span class="meta-key">メダル</span>' +
+      '<span class="meta-chip"><span class="meta-key">' + medalLabel + '</span>' +
         '<span class="meta-val">' + seat.medal + '</span></span>' +
     '</div>';
 }
@@ -626,6 +670,7 @@ function renderSeats(){
     const box = document.createElement('div');
     box.className = 'seat' + (seat.isYou ? ' is-human' : '');
     if (seat.active) box.classList.add('is-active');
+    if (seat.eliminated) box.classList.add('is-out');
     box.innerHTML = seatMarkup(seat);
 
     const cardsBox = box.querySelector('.cards');
@@ -647,13 +692,29 @@ function myMedal(){
 }
 
 function renderMedal(){
-  el.medalCount.textContent = myMedal();
+  if (view.mode === 'online' && view.onlineMode === 'champion'){
+    const me = view.seats.find(s => s.isYou);
+    el.medalCount.textContent = me ? me.medal : 0;
+  } else {
+    el.medalCount.textContent = myMedal();
+  }
   ledTick(el.medalCount);
+  if (el.medalLabel){
+    el.medalLabel.textContent = (view.mode === 'online' && view.onlineMode === 'champion') ? '大会メダル' : '所持メダル';
+  }
+}
+
+function betCap(){
+  if (view.mode === 'online' && view.onlineMode === 'champion'){
+    const me = view.seats.find(s => s.isYou);
+    return me ? me.medal : 0;
+  }
+  return myMedal();
 }
 
 function renderBet(){
   el.betValue.textContent = bet;
-  const medal = myMedal();
+  const medal = betCap();
   el.betClearBtn.disabled = bet === 0;
   el.betMaxBtn.disabled = medal < MIN_BET;
   el.dealBtn.disabled = bet < MIN_BET;
@@ -679,11 +740,15 @@ function showScreen(name){
   el.screenTitle.hidden = name !== 'title';
   el.screenLobby.hidden = name !== 'lobby';
   el.screenRoom.hidden  = name !== 'room';
+  el.screenCountdown.hidden = name !== 'countdown';
+  el.screenChampionEnd.hidden = name !== 'championEnd';
   el.screenGame.hidden  = name !== 'game';
 
   el.controls.hidden = name !== 'game';
   el.adBtn.hidden = name !== 'game';
   el.menuBtn.hidden = name !== 'game';
+  el.gameRulesBtn.hidden = name !== 'game';
+  el.leaveBtn.hidden = !(name === 'game' || name === 'room');
   el.medalReadout.hidden = !(name === 'game' || account.user);
   el.brandBtn.disabled = name === 'title';
   window.scrollTo(0, 0);
@@ -746,6 +811,9 @@ function renderProfile(){
   el.authView.hidden = !!u;
   el.profileView.hidden = !u;
   el.accountTitle.textContent = u ? 'マイページ' : 'アカウント';
+  el.deleteBox.hidden = true;
+  el.deletePass.value = '';
+  el.deleteError.hidden = true;
   if (!u) return;
 
   el.profileAvatar.textContent = u.username.charAt(0).toUpperCase();
@@ -764,6 +832,14 @@ function renderProfile(){
   el.stBj.textContent = u.bj;
   const decided = u.wins + u.losses;
   el.stRate.textContent = decided ? Math.round((u.wins / decided) * 100) + '%' : '0%';
+
+  const cp = u.champPlays || 0, cw = u.champWins || 0, cl = u.champLosses || 0, cd = u.champDraws || 0;
+  el.champPlays.textContent = cp;
+  el.champWins.textContent = cw;
+  el.champLosses.textContent = cl;
+  el.champDraws.textContent = cd;
+  const champDecided = cw + cl;
+  el.champRate.textContent = champDecided ? Math.round((cw / champDecided) * 100) + '%' : '0%';
 }
 
 function showLevelUp(level){
@@ -826,6 +902,32 @@ async function submitAuth(){
   }
 }
 
+function deleteError(msg){
+  el.deleteError.textContent = msg;
+  el.deleteError.hidden = false;
+  audio.play('error');
+}
+
+async function submitDeleteAccount(){
+  const password = el.deletePass.value;
+  if (!password) return deleteError('パスワードを入力してください');
+
+  el.deleteConfirmBtn.disabled = true;
+  el.deleteError.hidden = true;
+  try {
+    await api('/api/account', { method: 'DELETE', body: JSON.stringify({ password }) });
+    if (online.socket){ online.socket.disconnect(); online.socket = null; }
+    clearAccount();
+    closeOverlay(el.accountOverlay);
+    toast('アカウントを削除しました');
+    if (screen !== 'title') showScreen('title');
+  } catch (e){
+    deleteError(e.message);
+  } finally {
+    el.deleteConfirmBtn.disabled = false;
+  }
+}
+
 /* =========================================================
    11. シングルプレイ
    ========================================================= */
@@ -871,7 +973,7 @@ function singleBetPhase(){
   if (view.seats.length !== settings.seats) makeSingleSeats(settings.seats);
 
   view.seats.forEach(s => {
-    s.hand = []; s.bet = 0; s.result = null; s.done = false; s.playing = false; s.active = false;
+    s.hand = []; s.bet = 0; s.result = null; s.done = false; s.playing = false; s.active = false; s.surrendered = false;
     if (s.cpu && s.medal < MIN_BET) s.medal = CPU_REFILL;
   });
   view.seats[0].medal = myMedal();
@@ -977,6 +1079,9 @@ function updateActionButtons(){
   const off = single.busy || !seat || seat.done;
   el.hitBtn.disabled = off;
   el.standBtn.disabled = off;
+  const canSurrender = !!seat && seat.hand.length === 2 && !seat.done;
+  el.surrenderBtn.hidden = !canSurrender;
+  el.surrenderBtn.disabled = off;
 }
 
 async function singleHit(){
@@ -1017,6 +1122,19 @@ function singleStand(){
   audio.play('button');
   el.hitBtn.disabled = true;
   el.standBtn.disabled = true;
+  el.surrenderBtn.disabled = true;
+  if (single.resolveTurn) single.resolveTurn();
+}
+
+function singleSurrender(){
+  if (view.phase !== 'play' || single.busy) return;
+  const seat = view.seats[single.activeIndex];
+  if (!seat || !seat.isYou || seat.done || seat.hand.length !== 2) return;
+  audio.play('button');
+  el.hitBtn.disabled = true;
+  el.standBtn.disabled = true;
+  el.surrenderBtn.disabled = true;
+  seat.surrendered = true;
   if (single.resolveTurn) single.resolveTurn();
 }
 
@@ -1085,9 +1203,13 @@ async function singleSettle(){
 
   view.seats.forEach(s => {
     if (!s.playing){ s.result = null; return; }
-    const r = judge(s.hand, s.bet, view.dealer.hand);
-    s.medal += r.payout;
-    s.result = r;
+    if (s.surrendered){
+      const payout = Math.floor(s.bet / 2);
+      s.result = { payout, kind: 'surrender', label: 'SURRENDER' };
+    } else {
+      s.result = judge(s.hand, s.bet, view.dealer.hand);
+    }
+    s.medal += s.result.payout;
   });
 
   const me = view.seats[0];
@@ -1098,6 +1220,7 @@ async function singleSettle(){
     if (me.result.kind === 'bj'){ audio.play('bj'); setMessage('ブラックジャック! +' + net + ' メダル', 'good'); }
     else if (me.result.kind === 'win'){ audio.play('win'); setMessage('勝ち! +' + net + ' メダル', 'good'); }
     else if (me.result.kind === 'push'){ audio.play('push'); setMessage('引き分け。ベットが戻ります'); }
+    else if (me.result.kind === 'surrender'){ audio.play('push'); setMessage('サレンダー。' + net + ' メダル'); }
     else { audio.play('lose'); setMessage('負け… −' + me.bet + ' メダル', 'alert'); }
 
     if (account.user){
@@ -1126,7 +1249,10 @@ async function singleSettle(){
 /* =========================================================
    12. オンライン
    ========================================================= */
-const online = { socket: null, roomId: null, state: null, connecting: false, createMax: 4 };
+const online = {
+  socket: null, roomId: null, state: null, connecting: false,
+  createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10
+};
 
 function loadSocketIo(){
   return new Promise((resolve, reject) => {
@@ -1202,10 +1328,21 @@ function connectSocket(){
   sock.on('room:error', (msg) => { toast(msg); audio.play('error'); });
   sock.on('room:joined', ({ id }) => { online.roomId = id; audio.play('join'); });
   sock.on('room:state', onRoomState);
+  sock.on('room:countdown', ({ n }) => showCountdown(n));
   sock.on('account:update', ({ user, levelUp }) => {
     setAccount(user);
     if (levelUp > 0) showLevelUp(user.level);
   });
+}
+
+function showCountdown(n){
+  if (screen !== 'countdown') showScreen('countdown');
+  el.countdownCap.textContent = n > 0 ? 'まもなく開始します' : 'スタート!';
+  el.countdownNum.textContent = n > 0 ? n : 'GO';
+  el.countdownNum.classList.remove('tick');
+  void el.countdownNum.offsetWidth;
+  el.countdownNum.classList.add('tick');
+  audio.play(n > 0 ? 'chip' : 'win');
 }
 
 function renderRoomList(list){
@@ -1213,25 +1350,37 @@ function renderRoomList(list){
     el.roomList.innerHTML = '<p class="empty-note">参加できる部屋がありません。<br>部屋を作って友達を誘いましょう。</p>';
     return;
   }
-  el.roomList.innerHTML = list.map(r => '' +
+  el.roomList.innerHTML = list.map(r => {
+    const modeTag = r.mode === 'champion'
+      ? '<span class="room-row-tag is-champ">🏆 ' + r.championRounds + 'R</span>'
+      : '<span class="room-row-tag">エンジョイ</span>';
+    return '' +
     '<div class="room-row">' +
       '<span class="room-row-id">' + esc(r.id) + '</span>' +
       '<span class="room-row-meta">' +
-        '<span class="room-row-count">' + r.count + ' / ' + r.max + ' 人</span>' +
+        '<span class="room-row-count">' + r.count + ' / ' + r.max + ' 人 ' + modeTag + '</span>' +
         '<span class="room-row-host">ホスト: ' + esc(r.host || '-') + '</span>' +
       '</span>' +
       '<button type="button" class="mini-btn" data-join="' + esc(r.id) + '">参加</button>' +
-    '</div>').join('');
+    '</div>';
+  }).join('');
 }
 
 function onRoomState(state){
   online.state = state;
   online.roomId = state.id;
   view.mode = 'online';
+  view.onlineMode = state.mode;
 
   if (state.phase === 'lobby'){
     showScreen('room');
     renderRoomScreen(state);
+    return;
+  }
+
+  if (state.phase === 'champion_end'){
+    showScreen('championEnd');
+    renderStandings(state);
     return;
   }
 
@@ -1242,7 +1391,8 @@ function onRoomState(state){
   view.seats = state.players.map(p => ({
     name: p.name, level: p.level, medal: p.medal, bet: p.bet,
     hand: p.hand || [], result: p.result, isYou: p.isYou,
-    active: state.activeName === p.name, ready: p.ready, cpu: false
+    active: state.activeName === p.name, ready: p.ready, cpu: !!p.cpu,
+    eliminated: !!p.eliminated
   }));
 
   renderTable();
@@ -1251,9 +1401,35 @@ function onRoomState(state){
   updateOnlinePanels(state);
 }
 
+function renderStandings(state){
+  const standings = state.standings || [];
+  el.standingsList.innerHTML = standings.map(p => {
+    const isYou = p.name === (state.players.find(x => x.isYou) || {}).name;
+    const rankLabel = p.eliminated ? '脱落' : ('#' + p.rank);
+    const kindLabel = p.rankKind === 'win' ? '優勝' : p.rankKind === 'draw' ? '同率1位' : (p.eliminated ? '脱落' : '順位');
+    return '' +
+      '<div class="standing-row' + (isYou ? ' is-you' : '') + (p.eliminated ? ' is-eliminated' : '') + '">' +
+        '<span class="standing-rank' + (p.rank === 1 && !p.eliminated ? ' is-first' : '') + '">' + rankLabel + '</span>' +
+        '<div class="standing-info">' +
+          '<span class="standing-name">' + esc(p.name) + (p.cpu ? ' (CPU)' : '') + (isYou ? '(あなた)' : '') + '</span>' +
+          '<span class="standing-meta">' + kindLabel + ' ・ 大会メダル ' + p.medal + '</span>' +
+        '</div>' +
+        '<span class="standing-exp">' + (p.cpu ? '-' : '+' + p.expGain + ' EXP') + '</span>' +
+      '</div>';
+  }).join('');
+}
+
 function renderRoomScreen(state){
   el.roomIdText.textContent = state.id;
   el.roomCountBadge.textContent = state.players.length + '/' + state.maxPlayers;
+
+  if (state.mode === 'champion'){
+    el.roomModeBadge.textContent = '🏆 チャンピオン ' + state.championRounds + 'R';
+    el.roomModeBadge.classList.add('is-champ');
+  } else {
+    el.roomModeBadge.textContent = 'エンジョイ';
+    el.roomModeBadge.classList.remove('is-champ');
+  }
 
   const rows = state.players.map(p => '' +
     '<div class="member-row' + (p.isYou ? ' is-you' : '') + '">' +
@@ -1268,6 +1444,12 @@ function renderRoomScreen(state){
   }
   el.memberList.innerHTML = rows.join('');
 
+  el.roomCpuRow.hidden = state.mode !== 'enjoy';
+  if (state.mode === 'enjoy'){
+    el.roomCpuCheck.setAttribute('aria-checked', String(!!state.cpuFill));
+    el.roomCpuCheck.disabled = !state.isHost;
+  }
+
   el.startGameBtn.hidden = !state.isHost;
   el.roomHint.textContent = state.isHost
     ? '全員が揃ったら「ゲーム開始」を押してください。'
@@ -1278,14 +1460,19 @@ function updateOnlinePanels(state){
   const me = state.players.find(p => p.isYou);
   if (!me) return showPanel('none');
 
+  if (me.eliminated){
+    el.waitText.textContent = '脱落しました。このまま観戦できます(退出も可能です)。';
+    return showPanel('wait');
+  }
+
   if (state.phase === 'bet'){
     if (!me.ready){
-      bet = clamp(bet, 0, myMedal());
+      bet = clamp(bet, 0, betCap());
       renderBet();
       el.dealBtn.textContent = 'ベットを確定';
       showPanel('bet');
     } else if (state.isHost){
-      const allReady = state.players.every(p => p.ready);
+      const allReady = state.players.every(p => p.ready || p.eliminated);
       el.nextBtn.textContent = 'カードを配る';
       el.nextBtn.disabled = !allReady;
       el.nextBtn.dataset.act = 'deal';
@@ -1302,6 +1489,8 @@ function updateOnlinePanels(state){
     if (state.activeName === me.name && !me.done){
       el.hitBtn.disabled = false;
       el.standBtn.disabled = false;
+      el.surrenderBtn.hidden = (me.hand || []).length !== 2;
+      el.surrenderBtn.disabled = false;
       showPanel('action');
     } else {
       el.waitText.textContent = (state.activeName || '他のプレイヤー') + ' さんのターンです…';
@@ -1313,7 +1502,7 @@ function updateOnlinePanels(state){
   if (state.phase === 'result'){
     if (me.result){
       const k = me.result.kind;
-      audio.play(k === 'bj' ? 'bj' : k === 'win' ? 'win' : k === 'push' ? 'push' : 'lose');
+      audio.play(k === 'bj' ? 'bj' : k === 'win' ? 'win' : (k === 'push' || k === 'surrender') ? 'push' : 'lose');
     }
     if (state.isHost){
       el.nextBtn.textContent = '次のラウンドへ';
@@ -1343,7 +1532,7 @@ function leaveOnlineRoom(){
    ========================================================= */
 function addBet(amount){
   if (view.phase !== 'bet') return;
-  const next = clamp(bet + amount, 0, myMedal());
+  const next = clamp(bet + amount, 0, betCap());
   if (next === bet) return;
   bet = next;
   audio.play('chip');
@@ -1514,6 +1703,23 @@ el.brandBtn.addEventListener('click', () => {
   showScreen('title');
 });
 
+el.leaveBtn.addEventListener('click', () => {
+  audio.play('button');
+  if (view.mode === 'online' && (screen === 'room' || screen === 'game')){
+    if (!confirm('部屋から退出しますか?')) return;
+    leaveOnlineRoom();
+    showScreen('title');
+  } else if (screen === 'game'){
+    if (view.phase === 'play' && !confirm('タイトルに戻りますか?(このラウンドは終了扱いになります)')) return;
+    showScreen('title');
+  }
+});
+
+el.gameRulesBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.rulesOverlay); });
+
+el.changelogBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.changelogOverlay); });
+el.changelogCloseBtn.addEventListener('click', () => closeOverlay(el.changelogOverlay));
+
 /* --- ロビー --- */
 el.lobbyBackBtn.addEventListener('click', () => { audio.play('button'); showScreen('title'); });
 el.refreshRoomsBtn.addEventListener('click', () => {
@@ -1527,10 +1733,54 @@ el.createSeg.addEventListener('click', (e) => {
   el.createSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
   audio.play('chip');
 });
+
+el.createModeSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  online.createMode = b.dataset.mode;
+  el.createModeSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
+  const isChamp = online.createMode === 'champion';
+  el.createChampRow.hidden = !isChamp;
+  el.createCpuRow.hidden = isChamp;
+  el.createModeDesc.textContent = isChamp
+    ? '全員に大会専用メダル1000枚を配布して競う特別モード。最終順位に応じてEXPが変わります。'
+    : '気軽に遊べる通常モード。メダルはアカウントに反映されます。';
+  audio.play('chip');
+});
+
+el.createCpuCheck.addEventListener('click', () => {
+  online.createCpuFill = !online.createCpuFill;
+  el.createCpuCheck.setAttribute('aria-checked', String(online.createCpuFill));
+  audio.play('button');
+});
+
+el.champRoundSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  el.champRoundSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
+  if (b.dataset.rounds === 'custom'){
+    el.champRoundCustom.hidden = false;
+    el.champRoundCustom.focus();
+    online.createRounds = clamp(Number(el.champRoundCustom.value) || 10, 1, 200);
+  } else {
+    el.champRoundCustom.hidden = true;
+    online.createRounds = Number(b.dataset.rounds);
+  }
+  audio.play('chip');
+});
+el.champRoundCustom.addEventListener('input', () => {
+  online.createRounds = clamp(Number(el.champRoundCustom.value) || 1, 1, 200);
+});
+
 el.createRoomBtn.addEventListener('click', () => {
   if (!online.socket || !online.socket.connected) return toast('サーバーに接続していません');
   audio.play('button');
-  online.socket.emit('room:create', { maxPlayers: online.createMax });
+  online.socket.emit('room:create', {
+    maxPlayers: online.createMax,
+    mode: online.createMode,
+    cpuFill: online.createCpuFill,
+    championRounds: online.createRounds
+  });
 });
 el.roomList.addEventListener('click', (e) => {
   const b = e.target.closest('[data-join]');
@@ -1554,10 +1804,22 @@ el.startGameBtn.addEventListener('click', () => {
   audio.play('button');
   online.socket.emit('room:start');
 });
+el.roomCpuCheck.addEventListener('click', () => {
+  if (el.roomCpuCheck.disabled || !online.socket) return;
+  const next = el.roomCpuCheck.getAttribute('aria-checked') !== 'true';
+  online.socket.emit('room:cpuFill', { on: next });
+  audio.play('button');
+});
 el.copyIdBtn.addEventListener('click', async () => {
   const id = el.roomIdText.textContent;
   try { await navigator.clipboard.writeText(id); toast('ルームID ' + id + ' をコピーしました'); }
   catch { toast('ルームID: ' + id); }
+});
+el.championBackBtn.addEventListener('click', () => {
+  audio.play('button');
+  if (online.socket) online.socket.emit('game:next');
+  showScreen('lobby');
+  if (online.socket) online.socket.emit('room:list');
 });
 
 /* --- ゲーム操作 --- */
@@ -1570,14 +1832,14 @@ el.betClearBtn.addEventListener('click', () => {
 });
 el.betMaxBtn.addEventListener('click', () => {
   if (view.phase !== 'bet') return;
-  bet = myMedal(); audio.play('chip'); ledTick(el.betValue); renderBet();
+  bet = betCap(); audio.play('chip'); ledTick(el.betValue); renderBet();
 });
 el.dealBtn.addEventListener('click', confirmBet);
 
 el.hitBtn.addEventListener('click', () => {
   if (view.mode === 'online'){
     audio.play('button');
-    el.hitBtn.disabled = true; el.standBtn.disabled = true;
+    el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
     if (online.socket) online.socket.emit('game:hit');
   } else singleHit();
 });
@@ -1585,9 +1847,26 @@ el.hitBtn.addEventListener('click', () => {
 el.standBtn.addEventListener('click', () => {
   if (view.mode === 'online'){
     audio.play('button');
-    el.hitBtn.disabled = true; el.standBtn.disabled = true;
+    el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
     if (online.socket) online.socket.emit('game:stand');
   } else singleStand();
+});
+
+el.surrenderBtn.addEventListener('click', () => {
+  if (el.surrenderBtn.disabled) return;
+  audio.play('button');
+  openOverlay(el.surrenderOverlay);
+});
+el.surrenderCancelBtn.addEventListener('click', () => closeOverlay(el.surrenderOverlay));
+el.surrenderConfirmBtn.addEventListener('click', () => {
+  closeOverlay(el.surrenderOverlay);
+  audio.play('button');
+  if (view.mode === 'online'){
+    el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
+    if (online.socket) online.socket.emit('game:surrender');
+  } else {
+    singleSurrender();
+  }
 });
 
 el.nextBtn.addEventListener('click', () => {
@@ -1638,6 +1917,24 @@ el.logoutBtn.addEventListener('click', () => {
   toast('ログアウトしました');
   if (screen !== 'title') showScreen('title');
 });
+
+el.showDeleteBtn.addEventListener('click', () => {
+  audio.play('button');
+  el.deleteBox.hidden = !el.deleteBox.hidden;
+  el.deletePass.value = '';
+  el.deleteError.hidden = true;
+  if (!el.deleteBox.hidden) el.deletePass.focus();
+});
+el.deleteCancelBtn.addEventListener('click', () => {
+  el.deleteBox.hidden = true;
+  el.deletePass.value = '';
+  el.deleteError.hidden = true;
+});
+el.deleteConfirmBtn.addEventListener('click', () => {
+  if (!confirm('本当にアカウントを削除しますか?この操作は取り消せません。')) return;
+  submitDeleteAccount();
+});
+el.deletePass.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.deleteConfirmBtn.click(); });
 
 /* --- ルール / 設定 --- */
 el.menuBtn.addEventListener('click', () => { audio.play('button'); renderSettings(); openOverlay(el.settingsOverlay); });
@@ -1694,12 +1991,12 @@ el.resetBtn.addEventListener('click', () => {
 });
 
 /* --- 全体 --- */
-[el.accountOverlay, el.rulesOverlay, el.settingsOverlay].forEach(node =>
+[el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay].forEach(node =>
   node.addEventListener('click', (e) => { if (e.target === node) closeOverlay(node); }));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
-    [el.accountOverlay, el.rulesOverlay, el.settingsOverlay].forEach(n => { if (!n.hidden) closeOverlay(n); });
+    [el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay].forEach(n => { if (!n.hidden) closeOverlay(n); });
     return;
   }
   if (!el.adOverlay.hidden) return;

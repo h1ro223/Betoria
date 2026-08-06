@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#08201B">
 <title>BLACKJACK 4 - 4人対戦ブラックジャック</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,8 +20,12 @@
   </button>
 
   <div class="topbar-right">
+    <button type="button" class="icon-btn" id="gameRulesBtn" title="ルール" hidden>
+      <span class="icon-btn-glyph">📖</span>
+    </button>
+
     <div class="medal-readout" id="medalReadout">
-      <span class="medal-label">所持メダル</span>
+      <span class="medal-label" id="medalLabel">所持メダル</span>
       <span class="medal-value led" id="medalCount">1000</span>
     </div>
 
@@ -41,6 +45,10 @@
       <span class="account-avatar" id="accountAvatar">?</span>
       <span class="account-lv" id="accountLv" hidden>Lv.1</span>
     </button>
+
+    <button type="button" class="icon-btn leave-btn" id="leaveBtn" title="退出" hidden>
+      <span class="icon-btn-glyph">👋</span>
+    </button>
   </div>
 </header>
 
@@ -53,6 +61,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
+      <button type="button" class="version-badge" id="changelogBtn">v2.0 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -100,12 +109,38 @@
       <div class="card-block">
         <h3 class="block-title">部屋を作成</h3>
         <p class="block-note">あなたがホストになります。ルームIDは自動で発行されます。</p>
+
+        <label class="field-label">モード</label>
+        <div class="seg seg-2" id="createModeSeg">
+          <button type="button" class="seg-btn is-on" data-mode="enjoy">エンジョイ</button>
+          <button type="button" class="seg-btn" data-mode="champion">チャンピオン</button>
+        </div>
+        <p class="mode-desc" id="createModeDesc">気軽に遊べる通常モード。メダルはアカウントに反映されます。</p>
+
         <label class="field-label">参加人数</label>
         <div class="seg" id="createSeg">
           <button type="button" class="seg-btn" data-max="2">2人</button>
           <button type="button" class="seg-btn" data-max="3">3人</button>
           <button type="button" class="seg-btn is-on" data-max="4">4人</button>
         </div>
+
+        <div id="createCpuRow" class="checkbox-row">
+          <button type="button" class="checkbox" id="createCpuCheck" role="checkbox" aria-checked="false"><span></span></button>
+          <span class="checkbox-label">CPUを自動補充<span class="field-hint">足りない人数分をCPUで埋めます</span></span>
+        </div>
+
+        <div id="createChampRow" hidden>
+          <label class="field-label">ラウンド数</label>
+          <div class="seg seg-4" id="champRoundSeg">
+            <button type="button" class="seg-btn is-on" data-rounds="10">10</button>
+            <button type="button" class="seg-btn" data-rounds="30">30</button>
+            <button type="button" class="seg-btn" data-rounds="50">50</button>
+            <button type="button" class="seg-btn" data-rounds="custom">自由入力</button>
+          </div>
+          <input type="number" id="champRoundCustom" class="text-input" min="1" max="200" placeholder="1〜200" hidden>
+          <p class="block-note">全員に大会専用メダル1000枚が配布されます(アカウントのメダルは減りません)。0枚になると脱落・観戦になります。</p>
+        </div>
+
         <button type="button" class="btn btn-primary btn-wide" id="createRoomBtn">部屋を作成</button>
       </div>
 
@@ -136,15 +171,40 @@
     </div>
 
     <div class="room-id-box">
+      <span class="room-mode-badge" id="roomModeBadge">エンジョイ</span>
       <span class="room-id-cap">ルームID</span>
       <span class="room-id led" id="roomIdText">----</span>
       <button type="button" class="mini-btn" id="copyIdBtn">コピー</button>
+    </div>
+
+    <div id="roomCpuRow" class="checkbox-row" hidden>
+      <button type="button" class="checkbox" id="roomCpuCheck" role="checkbox" aria-checked="false"><span></span></button>
+      <span class="checkbox-label">CPUを自動補充<span class="field-hint">足りない人数分をCPUで埋めます</span></span>
     </div>
 
     <div class="member-list" id="memberList"></div>
 
     <p class="room-hint" id="roomHint">ホストが開始するのを待っています…</p>
     <button type="button" class="btn btn-primary btn-wide" id="startGameBtn" hidden>ゲーム開始</button>
+  </section>
+
+  <!-- ---------- カウントダウン ---------- -->
+  <section class="screen" id="screenCountdown" hidden>
+    <div class="countdown-wrap">
+      <span class="countdown-cap" id="countdownCap">まもなく開始します</span>
+      <span class="countdown-num led" id="countdownNum">3</span>
+    </div>
+  </section>
+
+  <!-- ---------- チャンピオン結果 ---------- -->
+  <section class="screen" id="screenChampionEnd" hidden>
+    <div class="page-head">
+      <h2 class="page-title">大会結果</h2>
+    </div>
+    <div class="standings-list" id="standingsList"></div>
+    <div class="champion-end-actions">
+      <button type="button" class="btn btn-primary btn-wide" id="championBackBtn">ロビーへ戻る</button>
+    </div>
   </section>
 
   <!-- ---------- ゲーム ---------- -->
@@ -200,6 +260,10 @@
     <button type="button" class="btn btn-stand" id="standBtn">
       <span class="btn-main">スタンド</span>
       <span class="btn-sub">この手札で勝負</span>
+    </button>
+    <button type="button" class="btn btn-surrender" id="surrenderBtn" hidden>
+      <span class="btn-main">サレンダー</span>
+      <span class="btn-sub">半額没収で降りる</span>
     </button>
   </div>
 
@@ -297,7 +361,7 @@
         </div>
 
         <div class="sheet-section">
-          <h3>戦績</h3>
+          <h3>戦績(エンジョイモード)</h3>
           <div class="stat-grid">
             <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="stRounds">0</span></div>
             <div class="stat"><span class="stat-key">勝ち</span><span class="stat-val led" id="stWin">0</span></div>
@@ -308,7 +372,31 @@
           </div>
         </div>
 
+        <div class="sheet-section">
+          <h3>戦績(チャンピオンモード)</h3>
+          <div class="stat-grid">
+            <div class="stat"><span class="stat-key">プレイ数</span><span class="stat-val led" id="champPlays">0</span></div>
+            <div class="stat"><span class="stat-key">勝ち(1位)</span><span class="stat-val led" id="champWins">0</span></div>
+            <div class="stat"><span class="stat-key">負け(2〜4位)</span><span class="stat-val led" id="champLosses">0</span></div>
+            <div class="stat"><span class="stat-key">引き分け</span><span class="stat-val led" id="champDraws">0</span></div>
+            <div class="stat"><span class="stat-key">勝率</span><span class="stat-val led" id="champRate">0%</span></div>
+          </div>
+        </div>
+
         <button type="button" class="btn btn-ghost btn-wide" id="logoutBtn">ログアウト</button>
+
+        <button type="button" class="danger-link" id="showDeleteBtn">アカウントを削除する</button>
+
+        <div id="deleteBox" class="delete-box" hidden>
+          <p class="delete-warn">この操作は取り消せません。所持メダル・戦績・レベルもすべて削除されます。</p>
+          <label class="field-label" for="deletePass">パスワードを入力して確認</label>
+          <input type="password" id="deletePass" class="text-input" maxlength="8" placeholder="••••">
+          <p class="form-error" id="deleteError" hidden></p>
+          <div class="delete-actions">
+            <button type="button" class="btn btn-ghost" id="deleteCancelBtn">やめる</button>
+            <button type="button" class="btn btn-danger" id="deleteConfirmBtn">完全に削除する</button>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -340,13 +428,14 @@
           <li><b>勝ち</b> … ベットの2倍</li>
           <li><b>引き分け</b>(プッシュ)… ベットが返却</li>
           <li><b>負け・バースト</b> … ベット没収</li>
+          <li><b>サレンダー</b> … 最初の2枚の時だけ選択可。勝負を降りて、ベットの半分だけ没収されます。</li>
         </ul>
       </div>
       <div class="sheet-section">
         <h3>レベルと経験値</h3>
         <ul class="rule-list">
           <li>1ラウンド遊ぶごとに <b>+10 EXP</b>。</li>
-          <li>結果に応じて追加 … ブラックジャック <b>+40</b> / 勝ち <b>+25</b> / 引き分け <b>+12</b> / 負け <b>+5</b>。</li>
+          <li>結果に応じて追加 … ブラックジャック <b>+40</b> / 勝ち <b>+25</b> / 引き分け <b>+12</b> / 負け <b>+5</b> / サレンダー <b>+6</b>。</li>
           <li>次のレベルに必要なEXPは <b>100 + (現在Lv−1)×50</b>。</li>
         </ul>
       </div>
@@ -354,9 +443,19 @@
         <h3>オンライン</h3>
         <ul class="rule-list">
           <li>ホストが<b>部屋を作成</b>し、発行された<b>4桁のルームID</b>を共有します。</li>
-          <li>全員が揃ったらホストが<b>ゲーム開始</b>を押します。</li>
+          <li>全員が揃ったらホストが<b>ゲーム開始</b>を押すと、3・2・1のカウントダウン後に開始します。</li>
           <li>各自ベットを決め、全員が揃ったら<b>ホストがカードを配ります</b>。</li>
           <li>手番は30秒。時間切れは自動でスタンドになります。</li>
+          <li>エンジョイモードでは「CPUを自動補充」で人数の空きをCPUが埋められます。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>チャンピオンモード</h3>
+        <ul class="rule-list">
+          <li>プレイヤー全員に<b>大会専用メダル1000枚</b>が配られます(アカウントのメダルとは別で、CPUは参加しません)。</li>
+          <li><b>10・30・50ラウンド、または自由入力</b>から回数を選び、指定ラウンドが終わるか、自分以外が全員脱落するまで対戦します。</li>
+          <li>メダルが<b>0になると脱落</b>し、以降は観戦のみになります(途中退出も可能ですが、その回のEXPは受け取れません)。</li>
+          <li>結果に応じてEXPを獲得 … 生存して終了なら経過ラウンド分の<b>100%</b>+順位ボーナス、脱落した場合は脱落までの<b>50%</b>(いずれもエンジョイモードの<b>1.25倍</b>を基準に、参加人数が多いほど増加)。</li>
         </ul>
       </div>
     </div>
@@ -410,6 +509,53 @@
         <button type="button" class="btn btn-ghost btn-wide" id="resetBtn">メダルを1000に戻す</button>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ============ 更新履歴 ============ -->
+<div class="overlay" id="changelogOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="更新履歴">
+    <div class="sheet-head">
+      <h2>更新履歴</h2>
+      <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v2.0</h3>
+        <ul class="rule-list">
+          <li><b>サレンダー</b>を追加。最初の2枚で勝負を降り、ベットの半分だけ没収に抑えられます。</li>
+          <li>オンラインに<b>チャンピオンモード</b>を追加。全員に大会用メダル1000枚を配り、指定ラウンド後(または最後の1人になるまで)戦い、最終順位に応じてEXPを獲得します。</li>
+          <li>エンジョイモードのオンライン対戦に<b>CPU自動補充</b>を追加(人数が足りない分をCPUが埋めます)。</li>
+          <li>ホストの開始操作後に<b>3・2・1のカウントダウン</b>を表示するように変更。</li>
+          <li>ルームからの<b>退出ボタン(👋)</b>をゲーム画面に追加。</li>
+          <li>アカウントの<b>削除機能</b>を追加(パスワード確認あり)。</li>
+          <li>ゲーム画面からも<b>ルール(📖)</b>を確認できるように。</li>
+          <li>BGMをWebAudio化し、iPhoneでも音量調整が効くように改善。Dynamic Islandにも表示されなくなりました。</li>
+          <li>スマホでのダブルタップ拡大・長押しコピー・画面スクロールを抑制。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>v1.0</h3>
+        <ul class="rule-list">
+          <li>タイトル画面・アカウント機能(Lv/EXP/戦績)・BGM/SEを実装。</li>
+          <li>オンラインのルーム対戦(4桁ID・ホスト制)に対応。</li>
+          <li>シングルプレイ(CPU対戦)、広告視聴によるメダル獲得を実装。</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ サレンダー確認 ============ -->
+<div class="overlay" id="surrenderOverlay" hidden>
+  <div class="sheet sheet-narrow" role="dialog" aria-modal="true" aria-label="サレンダー確認">
+    <div class="sheet-body">
+      <p class="confirm-text">サレンダーすると勝負を降り、ベットの<b>半分</b>が没収されます。よろしいですか?</p>
+      <div class="delete-actions">
+        <button type="button" class="btn btn-ghost" id="surrenderCancelBtn">やめる</button>
+        <button type="button" class="btn btn-danger" id="surrenderConfirmBtn">サレンダーする</button>
+      </div>
     </div>
   </div>
 </div>
