@@ -512,12 +512,14 @@ body[data-phase="bet"] .cards{ min-height: 0; }
 
 .btn{
   flex: 1 1 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 3px;
-  padding: 15px 14px;
+  padding: 15px 12px;
+  white-space: nowrap;
   border-radius: 10px;
   border: 1px solid var(--hairline);
   background: rgba(0,0,0,.32);
@@ -536,8 +538,14 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   color: rgba(243,238,226,.8);
 }
 
-.btn-main{ font-size: clamp(17px, 4vw, 20px); line-height: 1.1; }
-.btn-sub{ font-size: 11px; font-weight: 500; letter-spacing: .04em; opacity: .78; }
+.btn-main{ font-size: clamp(15px, 3.6vw, 20px); line-height: 1.15; white-space: nowrap; }
+.btn-sub{
+  font-size: clamp(10px, 2.6vw, 11px);
+  font-weight: 500;
+  letter-spacing: .02em;
+  opacity: .78;
+  white-space: nowrap;
+}
 
 .btn-primary{
   background: linear-gradient(180deg, #D8B02C, #96750F);
@@ -1656,3 +1664,481 @@ input, textarea{
   user-select: text;
   -webkit-touch-callout: default;
 }
+
+/* =========================================================
+   25. v2.1 ゲーム内ツールバー / ラウンド表示
+   ========================================================= */
+.game-bar{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+}
+.game-bar-spacer{ flex: 1 1 auto; }
+
+.round-chip{
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid rgba(201,162,39,.45);
+  border-radius: 999px;
+  background: rgba(0,0,0,.4);
+  box-shadow: inset 0 0 18px rgba(0,0,0,.45);
+}
+.round-cap{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .14em;
+  color: var(--smoke);
+}
+.round-now{ font-size: clamp(20px, 4.6vw, 26px); }
+.round-sep{ font-size: 13px; color: var(--smoke); }
+.round-max{
+  font-family: var(--font-display);
+  font-size: clamp(16px, 3.6vw, 20px);
+  color: rgba(243,238,226,.82);
+}
+
+.tool-row{ display: flex; gap: 8px; flex: 0 0 auto; }
+
+.tool-btn{
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 19px;
+  line-height: 1;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: rgba(0,0,0,.36);
+  transition: background .18s, border-color .18s, transform .12s;
+}
+.tool-btn:hover{ background: rgba(201,162,39,.16); border-color: var(--brass); }
+.tool-btn:active{ transform: scale(.92); }
+.tool-btn.is-exit:hover{ background: rgba(196,52,46,.18); border-color: var(--crimson); }
+
+/* =========================================================
+   26. 演出(HIT / BLACKJACK など)
+   ========================================================= */
+#fxLayer{
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.fx-text{
+  font-family: var(--font-display);
+  letter-spacing: .1em;
+  line-height: 1;
+  text-align: center;
+  opacity: 0;
+  white-space: nowrap;
+  max-width: 96vw;
+  padding: 0 2vw;
+}
+.fx-text.is-on{ animation: fxPop .85s var(--ease) forwards; }
+
+@keyframes fxPop{
+  0%{   opacity: 0; transform: scale(.55) translateY(14px); filter: blur(6px); }
+  22%{  opacity: 1; transform: scale(1.14) translateY(0);   filter: blur(0); }
+  38%{  transform: scale(1); }
+  74%{  opacity: 1; transform: scale(1); }
+  100%{ opacity: 0; transform: scale(1.06) translateY(-18px); }
+}
+
+/* 通常演出のトーン */
+.fx-text[data-fx="hit"]{
+  font-size: min(17vw, 130px);
+  color: #6BE3AE;
+  text-shadow: 0 0 26px rgba(63,191,143,.75), 0 6px 0 rgba(0,0,0,.45);
+}
+.fx-text[data-fx="stand"]{
+  font-size: min(13vw, 100px);
+  color: #FFD9D5;
+  text-shadow: 0 0 22px rgba(196,52,46,.6), 0 5px 0 rgba(0,0,0,.45);
+}
+.fx-text[data-fx="bust"]{
+  font-size: min(17vw, 130px);
+  color: #FF6B62;
+  text-shadow: 0 0 30px rgba(255,60,50,.8), 0 6px 0 rgba(0,0,0,.5);
+  animation-name: fxShake;
+}
+@keyframes fxShake{
+  0%{   opacity: 0; transform: scale(1.5); }
+  16%{  opacity: 1; transform: scale(1) translateX(0); }
+  24%{  transform: scale(1) translateX(-12px) rotate(-2deg); }
+  32%{  transform: scale(1) translateX(12px) rotate(2deg); }
+  40%{  transform: scale(1) translateX(-8px); }
+  48%{  transform: scale(1) translateX(8px); }
+  56%{  transform: scale(1) translateX(0); }
+  80%{  opacity: 1; }
+  100%{ opacity: 0; transform: scale(.9); }
+}
+.fx-text[data-fx="win"]{
+  font-size: min(16vw, 120px);
+  color: var(--led);
+  text-shadow: 0 0 30px var(--led-glow), 0 6px 0 rgba(0,0,0,.45);
+}
+.fx-text[data-fx="lose"]{
+  font-size: min(12vw, 90px);
+  color: rgba(243,238,226,.75);
+  text-shadow: 0 4px 0 rgba(0,0,0,.45);
+}
+.fx-text[data-fx="push"]{
+  font-size: min(12vw, 90px);
+  color: #9FD8FF;
+  text-shadow: 0 0 20px rgba(120,190,255,.5), 0 4px 0 rgba(0,0,0,.45);
+}
+.fx-text[data-fx="surrender"]{
+  font-size: min(9vw, 74px);
+  color: #C8C8C8;
+  text-shadow: 0 4px 0 rgba(0,0,0,.45);
+}
+
+/* ブラックジャックは別格の演出 */
+.fx-text[data-fx="blackjack"]{
+  font-size: min(9.2vw, 98px);
+  letter-spacing: .04em;
+  background: linear-gradient(100deg, #FFF2C0 0%, #FFC94A 25%, #FFFFFF 42%, #FFC94A 60%, #E0A21C 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 30px rgba(255,201,74,.85)) drop-shadow(0 6px 0 rgba(0,0,0,.4));
+  animation: fxJackpot 2s var(--ease) forwards, fxShine 2s linear;
+}
+@keyframes fxJackpot{
+  0%{   opacity: 0; transform: scale(.3) rotate(-8deg); }
+  14%{  opacity: 1; transform: scale(1.3) rotate(3deg); }
+  24%{  transform: scale(.94) rotate(-2deg); }
+  34%{  transform: scale(1.08) rotate(1deg); }
+  44%{  transform: scale(1) rotate(0); }
+  84%{  opacity: 1; transform: scale(1); }
+  100%{ opacity: 0; transform: scale(1.16); }
+}
+@keyframes fxShine{
+  0%{ background-position: 180% 0; }
+  100%{ background-position: -80% 0; }
+}
+
+/* 背景の光の輪 */
+.fx-burst{
+  position: absolute;
+  width: 26vmax;
+  height: 26vmax;
+  border-radius: 50%;
+  opacity: 0;
+  pointer-events: none;
+}
+.fx-burst.is-on{ animation: fxRing .9s var(--ease) forwards; }
+.fx-burst[data-fx="blackjack"]{
+  background:
+    radial-gradient(circle, rgba(255,201,74,.55) 0%, rgba(255,201,74,.12) 45%, transparent 70%),
+    radial-gradient(circle, rgba(2,10,8,.72) 0%, rgba(2,10,8,.4) 34%, transparent 62%);
+  animation: fxRing 1.9s var(--ease) forwards;
+}
+.fx-burst[data-fx="hit"]{
+  background:
+    radial-gradient(circle, rgba(63,191,143,.35) 0%, transparent 66%),
+    radial-gradient(circle, rgba(2,10,8,.68) 0%, rgba(2,10,8,.34) 32%, transparent 58%);
+}
+.fx-burst[data-fx="win"]{
+  background:
+    radial-gradient(circle, rgba(255,201,74,.35) 0%, transparent 66%),
+    radial-gradient(circle, rgba(2,10,8,.68) 0%, rgba(2,10,8,.34) 32%, transparent 58%);
+}
+.fx-burst[data-fx="bust"]{
+  background:
+    radial-gradient(circle, rgba(255,60,50,.4) 0%, transparent 66%),
+    radial-gradient(circle, rgba(2,10,8,.7) 0%, rgba(2,10,8,.36) 32%, transparent 58%);
+}
+.fx-burst[data-fx="stand"],
+.fx-burst[data-fx="lose"],
+.fx-burst[data-fx="push"],
+.fx-burst[data-fx="surrender"]{
+  background:
+    radial-gradient(circle, rgba(255,255,255,.1) 0%, transparent 66%),
+    radial-gradient(circle, rgba(2,10,8,.66) 0%, rgba(2,10,8,.32) 32%, transparent 58%);
+}
+
+@keyframes fxRing{
+  0%{   opacity: 0; transform: scale(.3); }
+  25%{  opacity: 1; }
+  100%{ opacity: 0; transform: scale(1.9); }
+}
+
+/* 紙吹雪(ブラックジャック時) */
+.fx-spark{
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  will-change: transform, opacity;
+  animation: fxSpark 1.5s var(--ease) forwards;
+}
+@keyframes fxSpark{
+  0%{   opacity: 0; transform: translate(-50%, -50%) scale(.4) rotate(0deg); }
+  12%{  opacity: 1; }
+  100%{
+    opacity: 0;
+    transform:
+      translate(calc(-50% + var(--sx)), calc(-50% + var(--sy)))
+      scale(1) rotate(var(--sr));
+  }
+}
+
+/* =========================================================
+   27. チャット
+   ========================================================= */
+#chatFab{
+  position: fixed;
+  right: clamp(10px, 3vw, 22px);
+  bottom: clamp(120px, 24vh, 190px);
+  z-index: 55;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline);
+  background: linear-gradient(160deg, #14453A, #08211B);
+  box-shadow: 0 6px 20px rgba(0,0,0,.55);
+  transition: transform .14s var(--ease), border-color .18s, background .18s;
+}
+#chatFab[hidden]{ display: none; }
+#chatFab:hover{ border-color: var(--brass); background: linear-gradient(160deg, #1B5747, #0B2A22); }
+#chatFab:active{ transform: scale(.92); }
+.chat-fab-icon{ font-size: 24px; line-height: 1; }
+
+.chat-badge{
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--crimson);
+  border: 2px solid #08211B;
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 18px;
+  color: #fff;
+}
+.chat-badge[hidden]{ display: none; }
+
+#chatPanel{
+  position: fixed;
+  right: clamp(10px, 3vw, 22px);
+  bottom: clamp(120px, 24vh, 190px);
+  z-index: 56;
+  width: min(370px, calc(100vw - 20px));
+  max-height: min(460px, 62dvh);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background: rgba(8,26,21,.97);
+  box-shadow: 0 16px 44px rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  animation: chatIn .22s var(--ease);
+}
+#chatPanel[hidden]{ display: none; }
+
+@keyframes chatIn{
+  from{ opacity: 0; transform: translateY(14px) scale(.97); }
+  to{   opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.chat-head{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--hairline);
+}
+.chat-title{
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .16em;
+  color: var(--brass);
+}
+
+.chat-log{
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-height: 120px;
+}
+.chat-empty{
+  margin: auto;
+  font-size: 12px;
+  color: var(--smoke);
+  text-align: center;
+  line-height: 1.8;
+}
+
+.chat-msg{ display: flex; flex-direction: column; gap: 3px; max-width: 84%; }
+.chat-msg.is-me{ align-self: flex-end; align-items: flex-end; }
+.chat-who{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--smoke);
+  padding: 0 4px;
+}
+.chat-body{
+  padding: 8px 13px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.09);
+  border: 1px solid rgba(255,255,255,.08);
+  font-size: 14px;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.chat-msg.is-me .chat-body{
+  background: rgba(201,162,39,.2);
+  border-color: rgba(201,162,39,.4);
+}
+.chat-msg.is-stamp .chat-body{
+  font-size: 34px;
+  line-height: 1.1;
+  padding: 4px 14px;
+  background: none;
+  border-color: transparent;
+}
+.chat-sys{
+  align-self: center;
+  font-size: 11px;
+  color: var(--smoke);
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.06);
+}
+
+.chat-stamps{
+  display: flex;
+  gap: 6px;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(201,162,39,.16);
+  overflow-x: auto;
+}
+.stamp-btn{
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  font-size: 22px;
+  line-height: 1;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(0,0,0,.32);
+  transition: background .16s, transform .12s, border-color .16s;
+}
+.stamp-btn:hover{ background: rgba(201,162,39,.16); border-color: var(--brass); }
+.stamp-btn:active{ transform: scale(.9); }
+
+.chat-input-row{
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px 12px;
+  border-top: 1px solid rgba(201,162,39,.16);
+}
+.chat-input-row .text-input{ flex: 1 1 auto; padding: 10px 12px; font-size: 15px; }
+.chat-input-row .btn{ flex: 0 0 auto; padding: 10px 18px; font-size: 14px; }
+
+/* 新着メッセージの浮き上がり表示 */
+#chatFloat{
+  position: fixed;
+  right: clamp(10px, 3vw, 22px);
+  bottom: calc(clamp(120px, 24vh, 190px) + 64px);
+  z-index: 54;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+  max-width: min(300px, 70vw);
+}
+.chat-float-item{
+  padding: 7px 13px;
+  border-radius: 12px;
+  background: rgba(8,26,21,.94);
+  border: 1px solid var(--hairline);
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 6px 18px rgba(0,0,0,.5);
+  animation: chatFloatIn .25s var(--ease);
+  word-break: break-word;
+}
+.chat-float-item b{ color: var(--brass); font-size: 11px; margin-right: 6px; }
+.chat-float-item.is-stamp{ font-size: 26px; padding: 4px 14px; }
+
+@keyframes chatFloatIn{
+  from{ opacity: 0; transform: translateX(20px); }
+  to{   opacity: 1; transform: translateX(0); }
+}
+
+/* =========================================================
+   28. スマホ最適化(v2.1)
+   ========================================================= */
+@media (max-width: 700px){
+  #chatPanel{
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    width: auto;
+    max-height: 58dvh;
+  }
+  #chatFab{ bottom: clamp(96px, 20vh, 150px); width: 50px; height: 50px; }
+  #chatFloat{ bottom: calc(clamp(96px, 20vh, 150px) + 58px); }
+  .tool-btn{ width: 40px; height: 40px; font-size: 18px; }
+  .game-bar{ min-height: 36px; }
+}
+
+@media (max-width: 420px){
+  .round-chip{ padding: 5px 11px; gap: 5px; }
+  .round-cap{ font-size: 9px; letter-spacing: .08em; }
+  .tool-row{ gap: 6px; }
+  .tool-btn{ width: 38px; height: 38px; font-size: 17px; border-radius: 10px; }
+}
+
+/* =========================================================
+   29. 操作パネルの詰め(v2.1)
+   ========================================================= */
+/* 「クリア/全額/カードを配る」は主ボタンを広めに */
+.bet-actions .btn-ghost{ flex: 0 1 auto; padding-left: 16px; padding-right: 16px; }
+.bet-actions .btn-primary{ flex: 2 1 0; }
+
+@media (max-width: 700px){
+  .btn{ padding: 13px 10px; }
+  .bet-actions{ gap: 8px; }
+  .bet-actions .btn-ghost{ padding-left: 12px; padding-right: 12px; font-size: 14px; }
+  #actionPanel{ gap: 8px; }
+}
+
+@media (max-width: 420px){
+  .btn{ padding: 12px 6px; gap: 2px; }
+  .btn-main{ font-size: 14px; letter-spacing: .02em; }
+  .btn-sub{ font-size: 9.5px; }
+  .bet-actions{ gap: 6px; }
+  .bet-actions .btn{ font-size: 13.5px; }
+  .bet-actions .btn-ghost{ padding-left: 8px; padding-right: 8px; }
+  .chip-row{ gap: 8px; }
+  .chip{ max-width: 64px; }
+}
+
+
+/* 待機ルームでは操作パネルが無いのでチャットを下げる */
+body[data-screen="room"] #chatFab,
+body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
+body[data-screen="room"] #chatFloat{ bottom: calc(clamp(14px, 3vh, 26px) + 64px); }

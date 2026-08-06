@@ -20,10 +20,6 @@
   </button>
 
   <div class="topbar-right">
-    <button type="button" class="icon-btn" id="gameRulesBtn" title="ルール" hidden>
-      <span class="icon-btn-glyph">📖</span>
-    </button>
-
     <div class="medal-readout" id="medalReadout">
       <span class="medal-label" id="medalLabel">所持メダル</span>
       <span class="medal-value led" id="medalCount">1000</span>
@@ -37,17 +33,9 @@
       </span>
     </button>
 
-    <button type="button" class="icon-btn" id="menuBtn" title="メニュー">
-      <span class="icon-btn-glyph">☰</span>
-    </button>
-
     <button type="button" class="account-btn" id="accountBtn" title="アカウント">
       <span class="account-avatar" id="accountAvatar">?</span>
       <span class="account-lv" id="accountLv" hidden>Lv.1</span>
-    </button>
-
-    <button type="button" class="icon-btn leave-btn" id="leaveBtn" title="退出" hidden>
-      <span class="icon-btn-glyph">👋</span>
     </button>
   </div>
 </header>
@@ -61,7 +49,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v2.0 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v2.1 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -209,6 +197,22 @@
 
   <!-- ---------- ゲーム ---------- -->
   <section class="screen" id="screenGame" hidden>
+
+    <div class="game-bar">
+      <div class="round-chip" id="roundChip" hidden>
+        <span class="round-cap">ラウンド</span>
+        <span class="round-now led" id="roundNow">1</span>
+        <span class="round-sep">/</span>
+        <span class="round-max" id="roundMax">30</span>
+      </div>
+      <div class="game-bar-spacer"></div>
+      <div class="tool-row">
+        <button type="button" class="tool-btn" id="gameRulesBtn" title="ルール" aria-label="ルール">📖</button>
+        <button type="button" class="tool-btn" id="menuBtn" title="設定" aria-label="設定">⚙️</button>
+        <button type="button" class="tool-btn is-exit" id="leaveBtn" title="退出" aria-label="退出">🚪</button>
+      </div>
+    </div>
+
     <section id="dealerArea">
       <div class="seat-head">
         <span class="seat-name">DEALER</span>
@@ -522,6 +526,16 @@
     </div>
     <div class="sheet-body">
       <div class="sheet-section">
+        <h3>v2.1</h3>
+        <ul class="rule-list">
+          <li>ヘッダーを整理し、<b>ルール(📖)・設定(⚙️)・退出(🚪)</b>をゲーム画面のツールバーへ移動しました。</li>
+          <li>チャンピオンモードに<b>ラウンド表示</b>(現在 / 総ラウンド)を追加。</li>
+          <li><b>チャット機能</b>を追加。待機ルーム・ゲーム中どちらでも、テキストと定型スタンプを送れます。</li>
+          <li>ヒット・スタンド・バースト・勝敗などに<b>カットイン演出</b>を追加。ブラックジャック時は特別演出になります。</li>
+          <li>ボタンの文字が折り返さないよう調整し、スマホ・PC両方で操作しやすくしました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>v2.0</h3>
         <ul class="rule-list">
           <li><b>サレンダー</b>を追加。最初の2枚で勝負を降り、ベットの半分だけ没収に抑えられます。</li>
@@ -557,6 +571,41 @@
         <button type="button" class="btn btn-danger" id="surrenderConfirmBtn">サレンダーする</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- ============ 演出オーバーレイ ============ -->
+<div id="fxLayer" aria-hidden="true">
+  <div class="fx-burst" id="fxBurst"></div>
+  <div class="fx-text" id="fxText"></div>
+</div>
+
+<!-- ============ チャット ============ -->
+<button type="button" id="chatFab" hidden aria-label="チャットを開く">
+  <span class="chat-fab-icon">💬</span>
+  <span class="chat-badge" id="chatBadge" hidden>0</span>
+</button>
+
+<div id="chatFloat" aria-hidden="true"></div>
+
+<div id="chatPanel" hidden>
+  <div class="chat-head">
+    <span class="chat-title">チャット</span>
+    <button type="button" class="close-btn" id="chatCloseBtn" aria-label="閉じる">✕</button>
+  </div>
+  <div class="chat-log" id="chatLog"></div>
+  <div class="chat-stamps" id="chatStamps">
+    <button type="button" class="stamp-btn" data-stamp="👍">👍</button>
+    <button type="button" class="stamp-btn" data-stamp="🎉">🎉</button>
+    <button type="button" class="stamp-btn" data-stamp="😂">😂</button>
+    <button type="button" class="stamp-btn" data-stamp="😭">😭</button>
+    <button type="button" class="stamp-btn" data-stamp="🔥">🔥</button>
+    <button type="button" class="stamp-btn" data-stamp="🙏">🙏</button>
+  </div>
+  <div class="chat-input-row">
+    <input type="text" id="chatInput" class="text-input" maxlength="60"
+           placeholder="メッセージを入力" autocomplete="off">
+    <button type="button" class="btn btn-primary" id="chatSendBtn">送信</button>
   </div>
 </div>
 

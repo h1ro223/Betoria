@@ -331,6 +331,24 @@ const el = {
   leaveBtn: $('leaveBtn'),
   gameRulesBtn: $('gameRulesBtn'),
 
+  roundChip: $('roundChip'),
+  roundNow: $('roundNow'),
+  roundMax: $('roundMax'),
+
+  fxLayer: $('fxLayer'),
+  fxText: $('fxText'),
+  fxBurst: $('fxBurst'),
+
+  chatFab: $('chatFab'),
+  chatBadge: $('chatBadge'),
+  chatPanel: $('chatPanel'),
+  chatCloseBtn: $('chatCloseBtn'),
+  chatLog: $('chatLog'),
+  chatStamps: $('chatStamps'),
+  chatInput: $('chatInput'),
+  chatSendBtn: $('chatSendBtn'),
+  chatFloat: $('chatFloat'),
+
   screenTitle: $('screenTitle'),
   screenLobby: $('screenLobby'),
   screenRoom: $('screenRoom'),
@@ -745,13 +763,25 @@ function showScreen(name){
   el.screenGame.hidden  = name !== 'game';
 
   el.controls.hidden = name !== 'game';
-  el.adBtn.hidden = name !== 'game';
-  el.menuBtn.hidden = name !== 'game';
-  el.gameRulesBtn.hidden = name !== 'game';
-  el.leaveBtn.hidden = !(name === 'game' || name === 'room');
+  el.adBtn.hidden = !(name === 'game' && !(view.mode === 'online' && view.onlineMode === 'champion'));
   el.medalReadout.hidden = !(name === 'game' || account.user);
   el.brandBtn.disabled = name === 'title';
+
+  updateRoundChip();
+  updateChatVisibility();
   window.scrollTo(0, 0);
+}
+
+function updateRoundChip(){
+  const champ = view.mode === 'online' && view.onlineMode === 'champion' && online.state;
+  if (!champ || screen !== 'game'){
+    el.roundChip.hidden = true;
+    return;
+  }
+  el.roundChip.hidden = false;
+  const now = Math.max(online.state.round || 0, 1);
+  el.roundNow.textContent = now;
+  el.roundMax.textContent = online.state.championRounds || '-';
 }
 
 /* =========================================================
@@ -840,6 +870,79 @@ function renderProfile(){
   el.champDraws.textContent = cd;
   const champDecided = cw + cl;
   el.champRate.textContent = champDecided ? Math.round((cw / champDecided) * 100) + '%' : '0%';
+}
+
+/* =========================================================
+   10.5 演出(画面中央のカットイン)
+   ========================================================= */
+const FX_LABEL = {
+  hit:       'HIT!',
+  stand:     'STAND',
+  bust:      'BUST!',
+  win:       'WIN!',
+  lose:      'LOSE',
+  push:      'PUSH',
+  surrender: 'SURRENDER',
+  blackjack: 'BLACKJACK!!'
+};
+
+const SPARK_COLORS = ['#FFC94A', '#FFF2C0', '#E0A21C', '#FFFFFF', '#5BE0AC'];
+let fxTimer = null;
+
+function showFx(type, label){
+  const text = label || FX_LABEL[type];
+  if (!text || !el.fxText) return;
+
+  clearTimeout(fxTimer);
+  el.fxLayer.querySelectorAll('.fx-spark').forEach(n => n.remove());
+
+  el.fxText.textContent = text;
+  el.fxText.dataset.fx = type;
+  el.fxBurst.dataset.fx = type;
+
+  /* アニメーションを確実に再生し直す */
+  el.fxText.classList.remove('is-on');
+  el.fxBurst.classList.remove('is-on');
+  void el.fxText.offsetWidth;
+  el.fxText.classList.add('is-on');
+  el.fxBurst.classList.add('is-on');
+
+  if (type === 'blackjack') spawnSparks(46);
+  else if (type === 'win') spawnSparks(18);
+
+  const dur = type === 'blackjack' ? 2000 : 900;
+  fxTimer = setTimeout(() => {
+    el.fxText.classList.remove('is-on');
+    el.fxBurst.classList.remove('is-on');
+  }, dur);
+}
+
+function spawnSparks(count){
+  const frag = document.createDocumentFragment();
+  for (let i = 0; i < count; i++){
+    const s = document.createElement('span');
+    s.className = 'fx-spark';
+    const angle = Math.random() * Math.PI * 2;
+    const dist = 120 + Math.random() * 320;
+    s.style.setProperty('--sx', Math.cos(angle) * dist + 'px');
+    s.style.setProperty('--sy', Math.sin(angle) * dist + 'px');
+    s.style.setProperty('--sr', (Math.random() * 720 - 360) + 'deg');
+    s.style.background = SPARK_COLORS[randInt(SPARK_COLORS.length)];
+    s.style.animationDelay = (Math.random() * 0.18).toFixed(2) + 's';
+    s.style.width = s.style.height = (6 + Math.random() * 8).toFixed(0) + 'px';
+    frag.appendChild(s);
+  }
+  el.fxLayer.appendChild(frag);
+  setTimeout(() => el.fxLayer.querySelectorAll('.fx-spark').forEach(n => n.remove()), 1800);
+}
+
+/* 精算結果の種類から演出を出す(自分の結果のみ) */
+function showResultFx(kind){
+  if (kind === 'bj') showFx('blackjack');
+  else if (kind === 'win') showFx('win');
+  else if (kind === 'push') showFx('push');
+  else if (kind === 'surrender') showFx('surrender');
+  else showFx('lose');
 }
 
 function showLevelUp(level){
@@ -1091,6 +1194,7 @@ async function singleHit(){
 
   single.busy = true;
   updateActionButtons();
+  showFx('hit');
   seat.hand.push(drawCard());
   audio.play('deal');
   renderTable();
@@ -1101,6 +1205,7 @@ async function singleHit(){
 
   if (v.bust){
     audio.play('bust');
+    showFx('bust');
     setMessage('バースト! ' + v.total, 'alert');
     await sleep(REVEAL_MS);
     if (single.resolveTurn) single.resolveTurn();
@@ -1120,6 +1225,7 @@ function singleStand(){
   const seat = view.seats[single.activeIndex];
   if (!seat || !seat.isYou || seat.done) return;
   audio.play('button');
+  showFx('stand');
   el.hitBtn.disabled = true;
   el.standBtn.disabled = true;
   el.surrenderBtn.disabled = true;
@@ -1131,6 +1237,7 @@ function singleSurrender(){
   const seat = view.seats[single.activeIndex];
   if (!seat || !seat.isYou || seat.done || seat.hand.length !== 2) return;
   audio.play('button');
+  showFx('surrender');
   el.hitBtn.disabled = true;
   el.standBtn.disabled = true;
   el.surrenderBtn.disabled = true;
@@ -1217,6 +1324,7 @@ async function singleSettle(){
 
   if (me.result){
     const net = me.result.payout - me.bet;
+    showResultFx(me.result.kind);
     if (me.result.kind === 'bj'){ audio.play('bj'); setMessage('ブラックジャック! +' + net + ' メダル', 'good'); }
     else if (me.result.kind === 'win'){ audio.play('win'); setMessage('勝ち! +' + net + ' メダル', 'good'); }
     else if (me.result.kind === 'push'){ audio.play('push'); setMessage('引き分け。ベットが戻ります'); }
@@ -1251,7 +1359,8 @@ async function singleSettle(){
    ========================================================= */
 const online = {
   socket: null, roomId: null, state: null, connecting: false,
-  createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10
+  createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10,
+  lastResultRound: -1
 };
 
 function loadSocketIo(){
@@ -1308,6 +1417,7 @@ function connectSocket(){
     online.connecting = false;
     setConn('on', '接続中');
     sock.emit('room:list');
+    updateChatVisibility();
   });
 
   sock.on('connect_error', (err) => {
@@ -1318,6 +1428,7 @@ function connectSocket(){
 
   sock.on('disconnect', () => {
     setConn('off', '切断されました');
+    updateChatVisibility();
     if (screen === 'room' || screen === 'game'){
       toast('サーバーとの接続が切れました');
       showScreen('lobby');
@@ -1329,6 +1440,7 @@ function connectSocket(){
   sock.on('room:joined', ({ id }) => { online.roomId = id; audio.play('join'); });
   sock.on('room:state', onRoomState);
   sock.on('room:countdown', ({ n }) => showCountdown(n));
+  sock.on('chat:new', onChatMessage);
   sock.on('account:update', ({ user, levelUp }) => {
     setAccount(user);
     if (levelUp > 0) showLevelUp(user.level);
@@ -1373,6 +1485,7 @@ function onRoomState(state){
   view.onlineMode = state.mode;
 
   if (state.phase === 'lobby'){
+    online.lastResultRound = -1;
     showScreen('room');
     renderRoomScreen(state);
     return;
@@ -1397,6 +1510,7 @@ function onRoomState(state){
 
   renderTable();
   renderMedal();
+  updateRoundChip();
   setMessage(state.message || '');
   updateOnlinePanels(state);
 }
@@ -1500,9 +1614,11 @@ function updateOnlinePanels(state){
   }
 
   if (state.phase === 'result'){
-    if (me.result){
+    if (me.result && online.lastResultRound !== state.round){
+      online.lastResultRound = state.round;
       const k = me.result.kind;
       audio.play(k === 'bj' ? 'bj' : k === 'win' ? 'win' : (k === 'push' || k === 'surrender') ? 'push' : 'lose');
+      showResultFx(k);
     }
     if (state.isHost){
       el.nextBtn.textContent = '次のラウンドへ';
@@ -1519,10 +1635,123 @@ function updateOnlinePanels(state){
   showPanel('none');
 }
 
+/* =========================================================
+   12.5 チャット
+   ========================================================= */
+const chat = { open: false, unread: 0, log: [], floatTimers: [] };
+
+function chatAvailable(){
+  return view.mode === 'online'
+      && online.socket && online.socket.connected
+      && (screen === 'room' || screen === 'game');
+}
+
+function updateChatVisibility(){
+  const on = chatAvailable();
+  el.chatFab.hidden = !on;
+  if (!on){
+    closeChat();
+    el.chatFloat.innerHTML = '';
+  }
+}
+
+function openChat(){
+  chat.open = true;
+  chat.unread = 0;
+  el.chatPanel.hidden = false;
+  el.chatBadge.hidden = true;
+  el.chatFloat.innerHTML = '';
+  renderChatLog();
+  el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  el.chatInput.focus();
+}
+
+function closeChat(){
+  chat.open = false;
+  el.chatPanel.hidden = true;
+}
+
+function renderChatLog(){
+  if (chat.log.length === 0){
+    el.chatLog.innerHTML = '<p class="chat-empty">まだメッセージはありません。<br>スタンプや短い一言を送ってみましょう。</p>';
+    return;
+  }
+  const me = account.user ? account.user.username : '';
+  el.chatLog.innerHTML = chat.log.map(m => {
+    if (m.kind === 'system'){
+      return '<div class="chat-sys">' + esc(m.body) + '</div>';
+    }
+    const mine = m.from === me;
+    const stampCls = m.kind === 'stamp' ? ' is-stamp' : '';
+    return '' +
+      '<div class="chat-msg' + (mine ? ' is-me' : '') + stampCls + '">' +
+        (mine ? '' : '<span class="chat-who">' + esc(m.from) + '</span>') +
+        '<span class="chat-body">' + esc(m.body) + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function pushChatFloat(m){
+  const node = document.createElement('div');
+  node.className = 'chat-float-item' + (m.kind === 'stamp' ? ' is-stamp' : '');
+  if (m.kind === 'system'){
+    node.textContent = m.body;
+  } else if (m.kind === 'stamp'){
+    node.innerHTML = '<b>' + esc(m.from) + '</b>' + esc(m.body);
+  } else {
+    node.innerHTML = '<b>' + esc(m.from) + '</b>' + esc(m.body);
+  }
+  el.chatFloat.appendChild(node);
+  while (el.chatFloat.children.length > 3) el.chatFloat.removeChild(el.chatFloat.firstChild);
+  setTimeout(() => { if (node.parentNode) node.remove(); }, 4200);
+}
+
+function onChatMessage(m){
+  chat.log.push(m);
+  if (chat.log.length > 120) chat.log.shift();
+
+  const me = account.user ? account.user.username : '';
+  const mine = m.from === me;
+
+  if (chat.open){
+    renderChatLog();
+    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  } else {
+    if (!mine){
+      pushChatFloat(m);
+      if (m.kind !== 'system'){
+        chat.unread++;
+        el.chatBadge.textContent = chat.unread > 99 ? '99+' : chat.unread;
+        el.chatBadge.hidden = false;
+      }
+    }
+  }
+  if (!mine && m.kind !== 'system') audio.play('chip');
+}
+
+function sendChatText(){
+  const text = el.chatInput.value.trim();
+  if (!text || !online.socket) return;
+  online.socket.emit('chat:send', { text });
+  el.chatInput.value = '';
+  audio.play('button');
+}
+
+function sendChatStamp(stamp){
+  if (!online.socket) return;
+  online.socket.emit('chat:send', { stamp });
+  audio.play('button');
+}
+
 function leaveOnlineRoom(){
   if (online.socket) online.socket.emit('room:leave');
   online.roomId = null;
   online.state = null;
+  online.lastResultRound = -1;
+  chat.log = [];
+  chat.unread = 0;
+  el.chatBadge.hidden = true;
+  closeChat();
   showScreen('lobby');
   if (online.socket) online.socket.emit('room:list');
 }
@@ -1839,6 +2068,7 @@ el.dealBtn.addEventListener('click', confirmBet);
 el.hitBtn.addEventListener('click', () => {
   if (view.mode === 'online'){
     audio.play('button');
+    showFx('hit');
     el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
     if (online.socket) online.socket.emit('game:hit');
   } else singleHit();
@@ -1847,6 +2077,7 @@ el.hitBtn.addEventListener('click', () => {
 el.standBtn.addEventListener('click', () => {
   if (view.mode === 'online'){
     audio.play('button');
+    showFx('stand');
     el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
     if (online.socket) online.socket.emit('game:stand');
   } else singleStand();
@@ -1862,6 +2093,7 @@ el.surrenderConfirmBtn.addEventListener('click', () => {
   closeOverlay(el.surrenderOverlay);
   audio.play('button');
   if (view.mode === 'online'){
+    showFx('surrender');
     el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
     if (online.socket) online.socket.emit('game:surrender');
   } else {
@@ -1988,6 +2220,21 @@ el.resetBtn.addEventListener('click', () => {
   if (screen === 'game' && view.mode === 'single'){ shoe = []; buildShoe(); singleBetPhase(); }
   closeOverlay(el.settingsOverlay);
   toast('メダルを初期化しました');
+});
+
+/* --- チャット --- */
+el.chatFab.addEventListener('click', () => {
+  audio.play('button');
+  if (chat.open) closeChat(); else openChat();
+});
+el.chatCloseBtn.addEventListener('click', () => { audio.play('button'); closeChat(); });
+el.chatSendBtn.addEventListener('click', sendChatText);
+el.chatInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter'){ e.preventDefault(); sendChatText(); }
+});
+el.chatStamps.addEventListener('click', (e) => {
+  const b = e.target.closest('.stamp-btn');
+  if (b) sendChatStamp(b.dataset.stamp);
 });
 
 /* --- 全体 --- */

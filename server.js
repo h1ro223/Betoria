@@ -15,7 +15,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '2.0.0';
+const APP_VERSION = '2.1.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -255,6 +255,7 @@ const CPU_TURN_MS   = 900;
 const COUNTDOWN_SEC = 3;
 const CHAMPION_START_MEDAL = 1000;
 const CHAMPION_ROUND_MAX = 200;
+const CHAT_STAMPS = ['👍', '🎉', '😂', '😭', '🔥', '🙏'];
 
 function buildShoe(){
   const shoe = [];
@@ -406,6 +407,14 @@ function broadcastLobby(io){
   io.emit('room:list', roomList());
 }
 
+/* チャット欄に流すシステムメッセージ */
+function chatSystem(io, room, body){
+  const msg = { from: null, body, kind: 'system', at: Date.now() };
+  for (const p of room.players){
+    if (p.sid) io.to(p.sid).emit('chat:new', msg);
+  }
+}
+
 /* =========================================================
    6. ゲーム進行(サーバー権威)
    ========================================================= */
@@ -427,6 +436,7 @@ function removeCpuSeats(room){
 }
 
 function resetRound(room){
+  room.round++;
   room.dealer = { hand: [], hole: true };
   room.activeIndex = -1;
   room.phase = 'bet';
@@ -489,7 +499,6 @@ function broadcastCountdown(io, room, n){
 }
 
 function dealRound(io, room){
-  room.round++;
   room.phase = 'play';
   room.dealer = { hand: [], hole: true };
 
@@ -872,6 +881,7 @@ io.on('connection', (socket) => {
     room.players.push(makePlayer(socket));
     socket.join(room.id);
     socket.emit('room:joined', { id: room.id });
+    chatSystem(io, room, name + ' さんが参加しました');
     broadcast(io, room);
     broadcastLobby(io);
   });
@@ -1000,6 +1010,32 @@ io.on('connection', (socket) => {
   /* 大会を退出(観戦中でも可)。以降の経験値は加算されない */
   socket.on('room:leaveChampionship', () => leaveRoom(socket));
 
+  /* チャット(待機ルーム・ゲーム中どちらでも使用可) */
+  socket.on('chat:send', ({ text, stamp } = {}) => {
+    const room = findRoomBySid(socket.id);
+    if (!room) return;
+
+    const now = Date.now();
+    const last = socket.data.lastChat || 0;
+    if (now - last < 350) return;                 // 連投防止
+    socket.data.lastChat = now;
+
+    let body, kind;
+    if (stamp){
+      if (!CHAT_STAMPS.includes(String(stamp))) return;
+      body = String(stamp); kind = 'stamp';
+    } else {
+      body = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (!body) return;
+      kind = 'text';
+    }
+
+    const msg = { from: name, body, kind, at: now };
+    for (const p of room.players){
+      if (p.sid) io.to(p.sid).emit('chat:new', msg);
+    }
+  });
+
   /* 広告視聴などでDB側のメダルが変わったときに読み直す */
   socket.on('player:sync', async () => {
     let u;
@@ -1053,9 +1089,12 @@ function leaveRoom(socket){
   const remainingHumans = room.players.filter(p => !p.cpu);
   if (remainingHumans.length === 0){ destroyRoom(room); return broadcastLobby(io); }
 
+  if (!left.cpu) chatSystem(io, room, left.name + ' さんが退出しました');
+
   if (room.hostName === left.name){
     room.hostName = remainingHumans[0].name;
     room.message = 'ホストが退出したため ' + room.hostName + ' さんがホストになりました';
+    chatSystem(io, room, room.hostName + ' さんが新しいホストになりました');
   }
 
   if (room.phase === 'play'){
