@@ -2142,3 +2142,12 @@ input, textarea{
 body[data-screen="room"] #chatFab,
 body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
 body[data-screen="room"] #chatFloat{ bottom: calc(clamp(14px, 3vh, 26px) + 64px); }
+
+/* モーション抑制時は、演出を「静止したカットイン」として見せる
+   (全体ルールで animation-duration が 0 になると一瞬で消えてしまうため) */
+@media (prefers-reduced-motion: reduce){
+  .fx-text.is-on{ animation: none !important; opacity: 1; transform: none; filter: none; }
+  .fx-burst.is-on{ animation: none !important; opacity: .75; transform: scale(1.1); }
+  .fx-spark{ display: none; }
+  .chat-float-item{ animation: none !important; }
+}
