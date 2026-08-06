@@ -742,6 +742,10 @@ function renderBet(){
 }
 
 function showPanel(name){
+  if (!el.chatFab.hidden){
+    requestAnimationFrame(anchorFabAboveControls);
+    setTimeout(anchorFabAboveControls, 140);   // レイアウト確定後にもう一度合わせる
+  }
   el.betPanel.hidden    = name !== 'bet';
   el.actionPanel.hidden = name !== 'action';
   el.nextPanel.hidden   = name !== 'next';
@@ -1649,7 +1653,9 @@ function chatAvailable(){
 function updateChatVisibility(){
   const on = chatAvailable();
   el.chatFab.hidden = !on;
-  if (!on){
+  if (on){
+    restoreChatFabPos();
+  } else {
     closeChat();
     el.chatFloat.innerHTML = '';
   }
@@ -1742,6 +1748,142 @@ function sendChatStamp(stamp){
   online.socket.emit('chat:send', { stamp });
   audio.play('button');
 }
+
+/* --- チャットFABのドラッグ移動 ---
+   位置は右下からのオフセット(px)で保持し、画面外にはみ出さないようclampする。
+   タップとドラッグを区別するため、一定距離動いたときだけ「移動」とみなす。 */
+const chatDrag = { active: false, moved: false, startX: 0, startY: 0, baseRight: 0, baseBottom: 0 };
+const CHAT_FAB_MARGIN = 8;
+
+function loadChatFabPos(){
+  try {
+    const raw = store.get('bj4_chatFabPos');
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    if (typeof p.right === 'number' && typeof p.bottom === 'number') return p;
+  } catch {}
+  return null;
+}
+
+function saveChatFabPos(right, bottom){
+  store.set('bj4_chatFabPos', JSON.stringify({ right, bottom }));
+}
+
+function clampFabPos(right, bottom){
+  const w = el.chatFab.offsetWidth || 54;
+  const h = el.chatFab.offsetHeight || 54;
+  const maxRight = window.innerWidth - w - CHAT_FAB_MARGIN;
+  const maxBottom = window.innerHeight - h - CHAT_FAB_MARGIN;
+  return {
+    right: clamp(right, CHAT_FAB_MARGIN, Math.max(CHAT_FAB_MARGIN, maxRight)),
+    bottom: clamp(bottom, CHAT_FAB_MARGIN, Math.max(CHAT_FAB_MARGIN, maxBottom))
+  };
+}
+
+function applyFabPos(right, bottom){
+  el.chatFab.style.top = 'auto';
+  el.chatFab.style.transform = 'none';
+  el.chatFab.style.right = right + 'px';
+  el.chatFab.style.bottom = bottom + 'px';
+  positionChatPanelNearFab();
+}
+
+/* パネル/未読ポップアップもFABの位置に追従させる */
+function positionChatPanelNearFab(){
+  if (window.innerWidth <= 700) return;   // スマホは全幅表示なのでCSS任せ
+  const right = parseFloat(el.chatFab.style.right || '22');
+  const bottom = parseFloat(el.chatFab.style.bottom || '190');
+  const panelBottom = bottom + el.chatFab.offsetHeight + 10;
+  el.chatPanel.style.right = right + 'px';
+  el.chatPanel.style.bottom = panelBottom + 'px';
+  el.chatFloat.style.right = right + 'px';
+  el.chatFloat.style.bottom = (panelBottom + 6) + 'px';
+}
+
+function restoreChatFabPos(){
+  const saved = loadChatFabPos();
+  if (saved){
+    const { right, bottom } = clampFabPos(saved.right, saved.bottom);
+    applyFabPos(right, bottom);
+    return;
+  }
+  anchorFabAboveControls();
+}
+
+/* 初期位置: 操作パネルの真上・右寄せ(チップやボタンと重ならない位置)
+   ユーザーがドラッグで動かした後は、その位置を優先する */
+function anchorFabAboveControls(){
+  if (loadChatFabPos()) return;
+  const ctlH = (screen === 'game' && !el.controls.hidden)
+    ? Math.round(el.controls.getBoundingClientRect().height) : 0;
+  const { right, bottom } = clampFabPos(12, ctlH + 22);
+  applyFabPos(right, bottom);
+}
+
+function fabPointerDown(e){
+  if (e.button !== undefined && e.button !== 0) return;
+  chatDrag.active = true;
+  chatDrag.moved = false;
+  const rect = el.chatFab.getBoundingClientRect();
+  const pt = e.touches ? e.touches[0] : e;
+  chatDrag.startX = pt.clientX;
+  chatDrag.startY = pt.clientY;
+  chatDrag.baseRight = window.innerWidth - rect.right;
+  chatDrag.baseBottom = window.innerHeight - rect.bottom;
+  window.addEventListener('pointermove', fabPointerMove);
+  window.addEventListener('pointerup', fabPointerUp);
+  window.addEventListener('touchmove', fabPointerMove, { passive: false });
+  window.addEventListener('touchend', fabPointerUp);
+}
+
+function fabPointerMove(e){
+  if (!chatDrag.active) return;
+  const pt = e.touches ? e.touches[0] : e;
+  const dx = pt.clientX - chatDrag.startX;
+  const dy = pt.clientY - chatDrag.startY;
+  if (!chatDrag.moved && Math.hypot(dx, dy) > 6) chatDrag.moved = true;
+  if (!chatDrag.moved) return;
+  if (e.cancelable) e.preventDefault();
+
+  const next = clampFabPos(chatDrag.baseRight - dx, chatDrag.baseBottom - dy);
+  applyFabPos(next.right, next.bottom);
+}
+
+function fabPointerUp(){
+  if (!chatDrag.active) return;
+  chatDrag.active = false;
+  window.removeEventListener('pointermove', fabPointerMove);
+  window.removeEventListener('pointerup', fabPointerUp);
+  window.removeEventListener('touchmove', fabPointerMove);
+  window.removeEventListener('touchend', fabPointerUp);
+
+  if (chatDrag.moved){
+    const right = parseFloat(el.chatFab.style.right || '0');
+    const bottom = parseFloat(el.chatFab.style.bottom || '0');
+    saveChatFabPos(right, bottom);
+    /* click イベントの直後発火をこのフレームだけ抑止 */
+    requestAnimationFrame(() => { chatDrag.moved = false; });
+  }
+}
+
+el.chatFab.addEventListener('pointerdown', fabPointerDown);
+el.chatFab.addEventListener('touchstart', fabPointerDown, { passive: true });
+
+/* 操作パネルの高さが変わったら(ベット↔アクション等)初期位置を追従させる */
+if (window.ResizeObserver){
+  new ResizeObserver(() => {
+    if (el.chatFab.hidden) return;
+    anchorFabAboveControls();
+  }).observe(el.controls);
+}
+
+window.addEventListener('resize', () => {
+  if (!el.chatFab.style.right) return;
+  const right = parseFloat(el.chatFab.style.right);
+  const bottom = parseFloat(el.chatFab.style.bottom);
+  const next = clampFabPos(right, bottom);
+  applyFabPos(next.right, next.bottom);
+});
 
 function leaveOnlineRoom(){
   if (online.socket) online.socket.emit('room:leave');
@@ -2224,6 +2366,7 @@ el.resetBtn.addEventListener('click', () => {
 
 /* --- チャット --- */
 el.chatFab.addEventListener('click', () => {
+  if (chatDrag.moved) return;   // ドラッグ直後のクリック発火は無視
   audio.play('button');
   if (chat.open) closeChat(); else openChat();
 });

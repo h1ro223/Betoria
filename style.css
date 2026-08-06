@@ -96,7 +96,7 @@ button:disabled{ cursor: not-allowed; }
   line-height: 1;
   white-space: nowrap;
 }
-.total-num{ font-size: clamp(30px, 6vw, 42px); }
+.total-num{ font-size: clamp(26px, 5vw, 34px); }
 
 /* ---------- 3. ヘッダー ---------- */
 #topbar{
@@ -212,15 +212,15 @@ button:disabled{ cursor: not-allowed; }
 
 /* ディーラー */
 #dealerArea{
-  --card-w: clamp(50px, 7vw, 66px);
+  --card-w: clamp(42px, 6vw, 58px);
   --card-h: calc(var(--card-w) * 1.45);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 12px 12px 14px;
+  gap: 8px;
+  padding: 10px 10px 11px;
   border: 1px solid var(--hairline);
-  border-radius: 14px;
+  border-radius: 13px;
   background:
     radial-gradient(90% 140% at 50% 0%, rgba(201,162,39,.1), transparent 70%),
     rgba(0,0,0,.24);
@@ -270,12 +270,12 @@ body[data-phase="bet"] .cards{ min-height: 0; }
 #messageText.good{  border-color: var(--jade);    color: #A6EBD0; }
 
 /* ---------- 5. 席 ---------- */
-#seats{ display: flex; flex-direction: column; gap: 10px; }
+#seats{ display: flex; flex-direction: column; gap: 7px; }
 
 .ai-row{
   display: flex;
   justify-content: center;
-  gap: clamp(8px, 1.6vw, 14px);
+  gap: clamp(6px, 1.2vw, 10px);
   flex-wrap: wrap;
 }
 
@@ -285,10 +285,10 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 12px 14px;
+  gap: 7px;
+  padding: 9px 10px 10px;
   border: 1px solid var(--seat-accent);
-  border-radius: 12px;
+  border-radius: 11px;
   background: rgba(0,0,0,.26);
   transition: border-color .25s, background .25s, box-shadow .25s;
 }
@@ -311,45 +311,46 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   gap: 10px;
 }
 .seat-label{
-  font-size: clamp(13px, 2.8vw, 15px);
+  font-size: clamp(12px, 2.6vw, 14px);
   font-weight: 700;
-  letter-spacing: .06em;
+  letter-spacing: .04em;
   color: rgba(243,238,226,.9);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.seat.is-human .seat-label{ color: var(--brass); font-size: clamp(15px, 3.2vw, 18px); }
+.seat.is-human .seat-label{ color: var(--brass); font-size: clamp(14px, 3vw, 17px); }
 
 /* 席内の合計ボックス */
-.ai-row .total-num{ font-size: clamp(26px, 5vw, 35px); }
-.human-wrap .total-num{ font-size: clamp(36px, 7vw, 50px); }
-.human-wrap .total-cap{ font-size: 12px; }
+.ai-row .total-box{ padding: 3px 8px 4px; gap: 5px; }
+.ai-row .total-num{ font-size: clamp(22px, 4.4vw, 30px); }
+.human-wrap .total-num{ font-size: clamp(26px, 5vw, 34px); }
+.human-wrap .total-cap{ font-size: 11px; }
 
 /* BET / MEDAL のチップ */
-.seat-meta{ display: flex; gap: 8px; }
+.seat-meta{ display: flex; gap: 6px; }
 .meta-chip{
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 6px;
-  padding: 6px 11px;
+  gap: 5px;
+  padding: 5px 9px;
   border: 1px solid rgba(255,255,255,.1);
-  border-radius: 8px;
+  border-radius: 7px;
   background: rgba(0,0,0,.32);
 }
 .meta-key{
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  letter-spacing: .12em;
+  letter-spacing: .08em;
   color: var(--smoke);
   white-space: nowrap;
 }
 .meta-val{
   font-family: var(--font-display);
-  font-size: clamp(19px, 4vw, 25px);
+  font-size: clamp(16px, 3.4vw, 21px);
   line-height: 1;
   font-variant-numeric: tabular-nums;
   color: var(--ivory);
@@ -358,17 +359,18 @@ body[data-phase="bet"] .cards{ min-height: 0; }
 
 /* 人間席 */
 .human-wrap .seat{
-  --card-w: clamp(56px, 9.5vw, 78px);
+  --card-w: clamp(48px, 8vw, 66px);
   --card-h: calc(var(--card-w) * 1.45);
   --seat-accent: rgba(201,162,39,.42);
-  padding: 14px;
+  padding: 11px;
+  gap: 8px;
 }
-.human-wrap .meta-chip{ padding: 8px 14px; }
-.human-wrap .meta-key{ font-size: 11px; }
-.human-wrap .meta-val{ font-size: clamp(22px, 4.6vw, 28px); }
+.human-wrap .meta-chip{ padding: 7px 12px; }
+.human-wrap .meta-key{ font-size: 10px; }
+.human-wrap .meta-val{ font-size: clamp(19px, 4vw, 24px); }
 
 .ai-row .seat{
-  --card-w: clamp(40px, 5.5vw, 54px);
+  --card-w: clamp(34px, 4.6vw, 46px);
   --card-h: calc(var(--card-w) * 1.45);
 }
 
@@ -376,9 +378,9 @@ body[data-phase="bet"] .cards{ min-height: 0; }
 .result-badge{
   align-self: center;
   font-family: var(--font-display);
-  font-size: clamp(17px, 3.6vw, 23px);
-  letter-spacing: .16em;
-  padding: 3px 18px;
+  font-size: clamp(14px, 3vw, 19px);
+  letter-spacing: .12em;
+  padding: 2px 14px;
   border-radius: 999px;
   border: 1px solid currentColor;
   line-height: 1.4;
@@ -817,9 +819,11 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   .cards{ gap: 4px; }
   .ai-row .seat{ padding: 9px 7px 11px; }
   .ai-row .seat-top{ gap: 5px; }
-  .ai-row .seat-label{ font-size: 11.5px; letter-spacing: 0; }
+  .ai-row .seat-label{ font-size: 11px; letter-spacing: 0; }
   .ai-row .total-cap{ display: none; }
-  .ai-row .total-box{ padding: 4px 8px 5px; }
+  .ai-row .total-box{ padding: 3px 7px 4px; }
+  .ai-row .total-num{ font-size: 21px; }
+  .ai-row .seat-top{ gap: 4px; }
   .ai-row .total-num{ font-size: 25px; }
   .meta-chip{
     flex-direction: column;
@@ -901,7 +905,7 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   to{   opacity: 1; transform: translateY(0); }
 }
 
-#screenGame{ gap: clamp(8px, 1.3vw, 12px); }
+#screenGame{ gap: clamp(6px, 1vw, 10px); }
 #controls[hidden]{ display: none; }
 
 /* =========================================================
@@ -1637,15 +1641,25 @@ body{
   overscroll-behavior: none;
   touch-action: pan-y;
 }
-/* ゲーム中の画面はスクロール自体させない(1画面に収める設計のため) */
+/* ゲーム中はヘッダー・操作パネルを固定し、中央の#appだけを縦スクロール可能にする
+   (4人プレイなど内容量が多い時に見切れず、指でスクロールして確認できるようにする) */
 body[data-screen="game"],
 body[data-screen="countdown"],
 body[data-screen="room"]{
-  touch-action: none;
+  touch-action: pan-y;   /* none にすると子孫の #app もスクロール不能になる */
   overflow: hidden;
   position: fixed;
   inset: 0;
   width: 100%;
+}
+body[data-screen="game"] #app,
+body[data-screen="room"] #app{
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 button, .chip, .seg-btn, .checkbox, .switch, a{
   -webkit-user-select: none;
@@ -1902,7 +1916,9 @@ input, textarea{
 #chatFab{
   position: fixed;
   right: clamp(10px, 3vw, 22px);
-  bottom: clamp(120px, 24vh, 190px);
+  top: 50%;
+  bottom: auto;
+  transform: translateY(-50%);
   z-index: 55;
   width: 54px;
   height: 54px;
@@ -1910,11 +1926,12 @@ input, textarea{
   border: 1px solid var(--hairline);
   background: linear-gradient(160deg, #14453A, #08211B);
   box-shadow: 0 6px 20px rgba(0,0,0,.55);
-  transition: transform .14s var(--ease), border-color .18s, background .18s;
+  transition: border-color .18s, background .18s;
+  touch-action: none;
 }
 #chatFab[hidden]{ display: none; }
 #chatFab:hover{ border-color: var(--brass); background: linear-gradient(160deg, #1B5747, #0B2A22); }
-#chatFab:active{ transform: scale(.92); }
+#chatFab:active{ transform: translateY(-50%) scale(.92); }
 .chat-fab-icon{ font-size: 24px; line-height: 1; }
 
 .chat-badge{
@@ -1937,7 +1954,7 @@ input, textarea{
 #chatPanel{
   position: fixed;
   right: clamp(10px, 3vw, 22px);
-  bottom: clamp(120px, 24vh, 190px);
+  bottom: clamp(210px, 34vh, 260px);
   z-index: 56;
   width: min(370px, calc(100vw - 20px));
   max-height: min(460px, 62dvh);
@@ -2060,7 +2077,8 @@ input, textarea{
 #chatFloat{
   position: fixed;
   right: clamp(10px, 3vw, 22px);
-  bottom: calc(clamp(120px, 24vh, 190px) + 64px);
+  top: calc(50% - 76px);
+  bottom: auto;
   z-index: 54;
   display: flex;
   flex-direction: column;
@@ -2099,8 +2117,8 @@ input, textarea{
     width: auto;
     max-height: 58dvh;
   }
-  #chatFab{ bottom: clamp(96px, 20vh, 150px); width: 50px; height: 50px; }
-  #chatFloat{ bottom: calc(clamp(96px, 20vh, 150px) + 58px); }
+  #chatFab{ top: 42%; width: 50px; height: 50px; }
+  #chatFloat{ top: calc(42% - 70px); }
   .tool-btn{ width: 40px; height: 40px; font-size: 18px; }
   .game-bar{ min-height: 36px; }
 }
@@ -2141,7 +2159,7 @@ input, textarea{
 /* 待機ルームでは操作パネルが無いのでチャットを下げる */
 body[data-screen="room"] #chatFab,
 body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
-body[data-screen="room"] #chatFloat{ bottom: calc(clamp(14px, 3vh, 26px) + 64px); }
+
 
 /* モーション抑制時は、演出を「静止したカットイン」として見せる
    (全体ルールで animation-duration が 0 になると一瞬で消えてしまうため) */
@@ -2150,4 +2168,30 @@ body[data-screen="room"] #chatFloat{ bottom: calc(clamp(14px, 3vh, 26px) + 64px)
   .fx-burst.is-on{ animation: none !important; opacity: .75; transform: scale(1.1); }
   .fx-spark{ display: none; }
   .chat-float-item{ animation: none !important; }
+}
+
+/* =========================================================
+   30. 4人プレイ時の圧縮(v2.2)
+   ========================================================= */
+/* 対戦相手のカードは、狭い画面でだけ少し重ねて1段に収める
+   (ランクは左上にあるので重なっても読める。PCでは重ねない) */
+@media (max-width: 700px){
+  .ai-row .cards{ gap: 0; }
+  .ai-row .card + .card{ margin-left: calc(var(--card-w) * -0.28); }
+}
+
+/* 名前が省略されないよう、合計ボックス側を縮ませない */
+.seat-top .total-box{ flex: 0 0 auto; }
+.seat-label{ flex: 1 1 auto; }
+
+@media (max-width: 520px){
+  .ai-row .card + .card{ margin-left: calc(var(--card-w) * -0.32); }
+  .ai-row .seat{ --card-w: 32px; --card-h: calc(var(--card-w) * 1.45); }
+  .ai-row .seat-label{ font-size: 10.5px; }
+  .ai-row .member-lv{ font-size: 13px; }
+  .game-bar{ min-height: 32px; }
+  #dealerArea{ padding: 7px 8px 8px; gap: 5px; }
+  .human-wrap .seat{ padding: 8px 10px 9px; gap: 6px; }
+  .seat{ gap: 6px; padding: 8px 8px 9px; }
+  .result-badge{ padding: 1px 12px; }
 }
