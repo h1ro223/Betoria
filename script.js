@@ -22,8 +22,8 @@ const MIN_BET         = 10;
 const DEALER_STAND    = 17;
 const CPU_STAND       = 17;
 
-const BGM_FILE     = './BGM.mp3';
-const AD_FILES     = ['./ad/ad1.mp4', './ad/ad2.mp4', './ad/ad3.mp4'];
+const BGM_FILE     = './BGM/BGM.mp3';
+const AD_FILES     = ['./AD/ad1.mp4', './AD/ad2.mp4', './AD/ad3.mp4'];
 const AD_REWARD    = 100;
 const AD_SKIP_SEC  = 5;
 const AD_FULL_SEC  = 30;
