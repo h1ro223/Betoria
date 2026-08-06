@@ -1,2 +1,2 @@
 オンライン用
-https://blackjack-online-hm83.onrender.com/
+# https://blackjack-online-hm83.onrender.com/
