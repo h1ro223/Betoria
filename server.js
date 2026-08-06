@@ -15,7 +15,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '2.1.1';
+const APP_VERSION = '2.3.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -35,7 +35,11 @@ const db = (() => {
       async findUser(name){ return users.get(name) || null; },
       async createUser(row){ users.set(row.username, row); return row; },
       async saveUser(row){ users.set(row.username, row); return row; },
-      async deleteUser(name){ return users.delete(name); }
+      async deleteUser(name){ return users.delete(name); },
+      async listUsers(){
+        return [...users.values()].sort((a, b) =>
+          String(a.username).localeCompare(String(b.username)));
+      }
     };
   }
 
@@ -48,7 +52,7 @@ const db = (() => {
   });
 
   const COLS = 'username, pass_hash, medal, level, exp, rounds, wins, losses, pushes, bj, ' +
-               'champ_plays, champ_wins, champ_losses, champ_draws';
+               'champ_plays, champ_wins, champ_losses, champ_draws, last_login';
 
   return {
     kind: 'postgres',
@@ -69,6 +73,7 @@ const db = (() => {
           champ_wins   INTEGER NOT NULL DEFAULT 0,
           champ_losses INTEGER NOT NULL DEFAULT 0,
           champ_draws  INTEGER NOT NULL DEFAULT 0,
+          last_login   TIMESTAMPTZ,
           created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )`);
       /* 既存テーブルへのマイグレーション(v1.0からの引き継ぎ用) */
@@ -76,6 +81,7 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_wins   INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_losses INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_draws  INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login   TIMESTAMPTZ`);
       console.log('[db] PostgreSQL 接続OK');
     },
     async findUser(name){
@@ -84,26 +90,31 @@ const db = (() => {
     },
     async createUser(row){
       await pool.query(
-        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
-         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws]);
+         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login]);
       return row;
     },
     async saveUser(row){
       await pool.query(
         `UPDATE users SET medal=$2, level=$3, exp=$4, rounds=$5,
          wins=$6, losses=$7, pushes=$8, bj=$9,
-         champ_plays=$10, champ_wins=$11, champ_losses=$12, champ_draws=$13
+         champ_plays=$10, champ_wins=$11, champ_losses=$12, champ_draws=$13,
+         last_login=$14
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
-         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws]);
+         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login]);
       return row;
     },
     async deleteUser(name){
       const r = await pool.query(`DELETE FROM users WHERE username=$1`, [name]);
       return r.rowCount > 0;
+    },
+    async listUsers(){
+      const r = await pool.query(`SELECT ${COLS} FROM users ORDER BY username ASC`);
+      return r.rows;
     }
   };
 })();
@@ -256,6 +267,7 @@ const COUNTDOWN_SEC = 3;
 const CHAMPION_START_MEDAL = 1000;
 const CHAMPION_ROUND_MAX = 200;
 const CHAT_STAMPS = ['👍', '🎉', '😂', '😭', '🔥', '🙏'];
+const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤー数
 
 function buildShoe(){
   const shoe = [];
@@ -308,7 +320,11 @@ function createRoom(opts){
     id: makeRoomId(),
     mode,
     maxPlayers: Math.min(Math.max(Number(opts.maxPlayers) || 4, 2), 4),
-    cpuFill: mode === 'enjoy' && !!opts.cpuFill,          // チャンピオンでは常に無効
+    /* CPU補充はエンジョイかつ3人以上の部屋でのみ有効
+       (2人部屋は人が2人必要なので、CPUの入る余地がない) */
+    cpuFill: mode === 'enjoy'
+             && Number(opts.maxPlayers) >= MIN_HUMANS + 1
+             && !!opts.cpuFill,
     championRounds: mode === 'champion'
       ? Math.min(Math.max(Number(opts.championRounds) || 10, 1), CHAMPION_ROUND_MAX)
       : null,
@@ -373,6 +389,8 @@ function roomState(room, forName){
     championRounds: room.championRounds,
     hostName: room.hostName,
     isHost: forName === room.hostName,
+    minHumans: MIN_HUMANS,
+    humanCount: humanCount(room),
     round: room.round,
     message: room.message,
     activeName: room.activeIndex >= 0 && room.players[room.activeIndex]
@@ -420,6 +438,7 @@ function chatSystem(io, room, body){
    ========================================================= */
 function fillCpuSeats(room){
   if (room.mode !== 'enjoy' || !room.cpuFill) return;
+  if (room.maxPlayers < MIN_HUMANS + 1) return;
   const need = room.maxPlayers - room.players.length;
   for (let i = 0; i < need; i++){
     const name = CPU_NAMES[i % CPU_NAMES.length] + (i >= CPU_NAMES.length ? (Math.floor(i / CPU_NAMES.length) + 1) : '');
@@ -507,7 +526,8 @@ function dealRound(io, room){
     room.dealer.hand.push(room.shoe.pop());
   }
 
-  for (const p of room.players) if (isBlackjack(p.hand)) p.done = true;
+  /* CPUは自動確定。人のプレイヤーは自分でBLACKJACKを宣言する */
+  for (const p of room.players) if (isBlackjack(p.hand) && p.cpu) p.done = true;
 
   if (isBlackjack(room.dealer.hand)){
     room.message = 'ディーラーがブラックジャック!';
@@ -546,7 +566,9 @@ function nextTurn(io, room){
     const p = room.players[room.activeIndex];
     if (p && !p.done){
       p.done = true;
-      room.message = p.name + ' さんは時間切れでスタンド';
+      room.message = isBlackjack(p.hand)
+        ? p.name + ' さんは時間切れ(ブラックジャック成立)'
+        : p.name + ' さんは時間切れでスタンド';
       nextTurn(io, room);
     }
   }, TURN_LIMIT_MS);
@@ -740,7 +762,8 @@ function blankUserRow(username, pass_hash){
   return {
     username, pass_hash, medal: INITIAL_MEDAL, level: 1, exp: 0,
     rounds: 0, wins: 0, losses: 0, pushes: 0, bj: 0,
-    champ_plays: 0, champ_wins: 0, champ_losses: 0, champ_draws: 0
+    champ_plays: 0, champ_wins: 0, champ_losses: 0, champ_draws: 0,
+    last_login: null
   };
 }
 
@@ -752,6 +775,7 @@ app.post('/api/register', async (req, res) => {
     if (await db.findUser(username)) return res.status(409).json({ error: 'そのユーザー名は使われています' });
 
     const row = blankUserRow(username, hashPassword(password));
+    row.last_login = new Date();
     await db.createUser(row);
     res.json({ token: makeToken(username), user: publicUser(row) });
   } catch (e){
@@ -766,6 +790,8 @@ app.post('/api/login', async (req, res) => {
     const u = await db.findUser(String(username || ''));
     if (!u || !verifyPassword(String(password || ''), u.pass_hash))
       return res.status(401).json({ error: 'ユーザー名かパスワードが違います' });
+    u.last_login = new Date();
+    await db.saveUser(u);
     res.json({ token: makeToken(u.username), user: publicUser(u) });
   } catch (e){
     console.error('[login]', e);
@@ -826,6 +852,108 @@ app.post('/api/ad', async (req, res) => {
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: rooms.size, version: APP_VERSION }));
+
+/* =========================================================
+   8.5 開発者モード(管理者API)
+   暗証番号はサーバー側でも必ず検証する。
+   ADMIN_PIN を環境変数で設定すれば変更可能。
+   ========================================================= */
+const ADMIN_PIN = process.env.ADMIN_PIN || '0223';
+
+/* 接続中のソケットからログイン中ユーザー名を集める */
+function onlineUserNames(){
+  const set = new Set();
+  for (const [, sock] of io.of('/').sockets){
+    if (sock.data && sock.data.name) set.add(sock.data.name);
+  }
+  return set;
+}
+
+function checkAdmin(req, res){
+  const pin = String(req.headers['x-admin-pin'] || req.body?.pin || '');
+  const a = Buffer.from(pin);
+  const b = Buffer.from(ADMIN_PIN);
+  const ok = a.length === b.length && crypto.timingSafeEqual(a, b);
+  if (!ok){
+    res.status(401).json({ error: '暗証番号が違います' });
+    return false;
+  }
+  return true;
+}
+
+app.post('/api/admin/auth', (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  res.json({ ok: true });
+});
+
+app.post('/api/admin/users', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  try {
+    const rows = await db.listUsers();
+    const online = onlineUserNames();
+    res.json({
+      users: rows.map(u => ({
+        username: u.username,
+        level: u.level,
+        medal: u.medal,
+        exp: u.exp,
+        rounds: u.rounds,
+        champPlays: u.champ_plays,
+        lastLogin: u.last_login ? new Date(u.last_login).toISOString() : null,
+        online: online.has(u.username)
+      }))
+    });
+  } catch (e){
+    console.error('[admin/users]', e);
+    res.status(500).json({ error: '一覧の取得に失敗しました' });
+  }
+});
+
+app.post('/api/admin/medal', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const username = String(req.body?.username || '');
+  const medal = Math.floor(Number(req.body?.medal));
+  if (!Number.isFinite(medal) || medal < 0 || medal > 99999999)
+    return res.status(400).json({ error: 'メダル数が不正です' });
+  try {
+    const u = await db.findUser(username);
+    if (!u) return res.status(404).json({ error: 'アカウントが見つかりません' });
+    u.medal = medal;
+    await db.saveUser(u);
+    /* オンライン中なら手持ちの表示も更新させる */
+    for (const [, sock] of io.of('/').sockets){
+      if (sock.data && sock.data.name === username){
+        sock.data.medal = medal;
+        sock.emit('account:update', { user: publicUser(u), levelUp: 0 });
+      }
+    }
+    res.json({ ok: true, medal });
+  } catch (e){
+    console.error('[admin/medal]', e);
+    res.status(500).json({ error: '更新に失敗しました' });
+  }
+});
+
+app.post('/api/admin/delete', async (req, res) => {
+  if (!checkAdmin(req, res)) return;
+  const username = String(req.body?.username || '');
+  try {
+    const u = await db.findUser(username);
+    if (!u) return res.status(404).json({ error: 'アカウントが見つかりません' });
+    await db.deleteUser(username);
+    /* 接続中なら切断してルームからも退出させる */
+    for (const [, sock] of io.of('/').sockets){
+      if (sock.data && sock.data.name === username){
+        sock.emit('room:error', 'アカウントが削除されました');
+        sock.disconnect(true);
+      }
+    }
+    res.json({ ok: true });
+  } catch (e){
+    console.error('[admin/delete]', e);
+    res.status(500).json({ error: '削除に失敗しました' });
+  }
+});
 
 /* =========================================================
    9. Socket.io
@@ -891,6 +1019,11 @@ io.on('connection', (socket) => {
   socket.on('room:cpuFill', ({ on } = {}) => {
     const room = findRoomBySid(socket.id);
     if (!room || room.hostName !== name || room.phase !== 'lobby' || room.mode !== 'enjoy') return;
+    if (room.maxPlayers < MIN_HUMANS + 1){
+      room.cpuFill = false;
+      broadcast(io, room);
+      return socket.emit('room:error', '2人部屋ではCPUを補充できません');
+    }
     room.cpuFill = !!on;
     broadcast(io, room);
   });
@@ -899,7 +1032,10 @@ io.on('connection', (socket) => {
     const room = findRoomBySid(socket.id);
     if (!room || room.hostName !== name) return;
     if (room.phase !== 'lobby') return;
-    if (humanCount(room) < 1) return;
+
+    /* CPU補充の有無に関わらず、人のプレイヤーが2人以上いないと開始できない */
+    if (humanCount(room) < MIN_HUMANS)
+      return socket.emit('room:error', '最低' + MIN_HUMANS + '人のプレイヤーの参加が必要です');
 
     removeCpuSeats(room);
     if (room.mode === 'enjoy' && room.cpuFill) fillCpuSeats(room);
@@ -977,6 +1113,17 @@ io.on('connection', (socket) => {
     const p = room.players[room.activeIndex];
     if (!p || p.sid !== socket.id || p.done) return;
     p.done = true;
+    nextTurn(io, room);
+  });
+
+  /* BLACKJACK宣言: 最初の2枚で21のときだけ有効(結果はサレンダー同様サーバーが判定) */
+  socket.on('game:blackjack', () => {
+    const room = findRoomBySid(socket.id);
+    if (!room || room.phase !== 'play') return;
+    const p = room.players[room.activeIndex];
+    if (!p || p.sid !== socket.id || p.done || !isBlackjack(p.hand)) return;
+    p.done = true;
+    room.message = p.name + ' さんがブラックジャックを宣言!';
     nextTurn(io, room);
   });
 

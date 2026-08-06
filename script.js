@@ -39,6 +39,7 @@ const SUITS = [
 ];
 const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const CPU_NAMES = ['CPU ハル', 'CPU ミナ', 'CPU レオ'];
+const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤー数
 
 const EXP_TABLE = { round: 10, win: 25, bj: 40, push: 12, lose: 5 };
 const expToNext = (lv) => 100 + (lv - 1) * 50;
@@ -74,9 +75,9 @@ const store = (() => {
 
 const settings = {
   bgmOn: store.get('bj4_bgmOn') !== '0',
-  bgmVol: Number(store.get('bj4_bgmVol') ?? 100),
+  bgmVol: Number(store.get('bj4_bgmVol') ?? 40),
   seOn: store.get('bj4_seOn') !== '0',
-  seVol: Number(store.get('bj4_seVol') ?? 100),
+  seVol: Number(store.get('bj4_seVol') ?? 60),
   seats: Number(store.get('bj4_seats') ?? 4)
 };
 
@@ -350,6 +351,11 @@ const el = {
   chatFloat: $('chatFloat'),
 
   screenTitle: $('screenTitle'),
+  screenSingleSetup: $('screenSingleSetup'),
+  singleBackBtn: $('singleBackBtn'),
+  singleSeatSeg: $('singleSeatSeg'),
+  setupPreview: $('setupPreview'),
+  singleStartBtn: $('singleStartBtn'),
   screenLobby: $('screenLobby'),
   screenRoom: $('screenRoom'),
   screenCountdown: $('screenCountdown'),
@@ -413,6 +419,7 @@ const el = {
   hitBtn: $('hitBtn'),
   standBtn: $('standBtn'),
   surrenderBtn: $('surrenderBtn'),
+  blackjackBtn: $('blackjackBtn'),
   nextPanel: $('nextPanel'),
   nextBtn: $('nextBtn'),
   waitPanel: $('waitPanel'),
@@ -477,8 +484,17 @@ const el = {
   seSwitch: $('seSwitch'),
   seVol: $('seVol'),
   seVolText: $('seVolText'),
-  seatSeg: $('seatSeg'),
-  resetBtn: $('resetBtn'),
+  devModeBtn: $('devModeBtn'),
+  devPinOverlay: $('devPinOverlay'),
+  devPinCloseBtn: $('devPinCloseBtn'),
+  devPinInput: $('devPinInput'),
+  devPinError: $('devPinError'),
+  devPinSubmitBtn: $('devPinSubmitBtn'),
+  devOverlay: $('devOverlay'),
+  devCloseBtn: $('devCloseBtn'),
+  devReloadBtn: $('devReloadBtn'),
+  devSummary: $('devSummary'),
+  devList: $('devList'),
 
   bgmStatus: $('bgmStatus'),
 
@@ -689,6 +705,8 @@ function renderSeats(){
     box.className = 'seat' + (seat.isYou ? ' is-human' : '');
     if (seat.active) box.classList.add('is-active');
     if (seat.eliminated) box.classList.add('is-out');
+    /* 結果に応じて背景色を変える(win=緑 / bj=金 / lose・surrender=グレー / push=青) */
+    if (seat.result) box.dataset.result = seat.result.kind;
     box.innerHTML = seatMarkup(seat);
 
     const cardsBox = box.querySelector('.cards');
@@ -760,6 +778,7 @@ function showScreen(name){
   screen = name;
   el.body.dataset.screen = name;
   el.screenTitle.hidden = name !== 'title';
+  el.screenSingleSetup.hidden = name !== 'singleSetup';
   el.screenLobby.hidden = name !== 'lobby';
   el.screenRoom.hidden  = name !== 'room';
   el.screenCountdown.hidden = name !== 'countdown';
@@ -1060,6 +1079,29 @@ function makeSingleSeats(count){
   view.seats = seats;
 }
 
+/* シングルプレイの準備画面(人数選択) */
+function openSingleSetup(){
+  view.mode = 'single';
+  renderSingleSetup();
+  showScreen('singleSetup');
+}
+
+function renderSingleSetup(){
+  el.singleSeatSeg.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', Number(b.dataset.seats) === settings.seats));
+
+  const you = account.user ? account.user.username : 'あなた';
+  const items = ['<div class="preview-seat is-you">' +
+      '<span class="preview-avatar">' + esc(you.charAt(0).toUpperCase()) + '</span>' +
+      '<span class="preview-name">' + esc(you) + '</span></div>'];
+  for (let i = 1; i < settings.seats; i++){
+    items.push('<div class="preview-seat">' +
+      '<span class="preview-avatar">🤖</span>' +
+      '<span class="preview-name">' + esc(CPU_NAMES[i - 1]) + '</span></div>');
+  }
+  el.setupPreview.innerHTML = items.join('');
+}
+
 function startSingle(){
   view.mode = 'single';
   buildShoe();
@@ -1136,7 +1178,7 @@ async function singleDeal(){
     await sleep(DEAL_MS);
   }
 
-  view.seats.forEach(s => { if (isBlackjack(s.hand)) s.done = true; });
+  view.seats.forEach(s => { if (isBlackjack(s.hand) && !s.isYou) s.done = true; });
 
   if (isBlackjack(view.dealer.hand)){
     setMessage('ディーラーがブラックジャック!', 'alert');
@@ -1184,11 +1226,20 @@ async function singlePlaySeats(){
 function updateActionButtons(){
   const seat = view.seats[single.activeIndex];
   const off = single.busy || !seat || seat.done;
+  const isBj = !!seat && isBlackjack(seat.hand) && !seat.done;
+
+  /* ブラックジャックの時は宣言ボタンだけを見せる */
+  el.hitBtn.hidden = isBj;
+  el.standBtn.hidden = isBj;
   el.hitBtn.disabled = off;
   el.standBtn.disabled = off;
-  const canSurrender = !!seat && seat.hand.length === 2 && !seat.done;
+
+  const canSurrender = !!seat && seat.hand.length === 2 && !seat.done && !isBj;
   el.surrenderBtn.hidden = !canSurrender;
   el.surrenderBtn.disabled = off;
+
+  el.blackjackBtn.hidden = !isBj;
+  el.blackjackBtn.disabled = off;
 }
 
 async function singleHit(){
@@ -1230,9 +1281,7 @@ function singleStand(){
   if (!seat || !seat.isYou || seat.done) return;
   audio.play('button');
   showFx('stand');
-  el.hitBtn.disabled = true;
-  el.standBtn.disabled = true;
-  el.surrenderBtn.disabled = true;
+  disableActionButtons();
   if (single.resolveTurn) single.resolveTurn();
 }
 
@@ -1242,11 +1291,26 @@ function singleSurrender(){
   if (!seat || !seat.isYou || seat.done || seat.hand.length !== 2) return;
   audio.play('button');
   showFx('surrender');
+  disableActionButtons();
+  seat.surrendered = true;
+  if (single.resolveTurn) single.resolveTurn();
+}
+
+function singleBlackjack(){
+  if (view.phase !== 'play' || single.busy) return;
+  const seat = view.seats[single.activeIndex];
+  if (!seat || !seat.isYou || seat.done || !isBlackjack(seat.hand)) return;
+  audio.play('bj');
+  showFx('blackjack');
+  disableActionButtons();
+  if (single.resolveTurn) single.resolveTurn();
+}
+
+function disableActionButtons(){
   el.hitBtn.disabled = true;
   el.standBtn.disabled = true;
   el.surrenderBtn.disabled = true;
-  seat.surrendered = true;
-  if (single.resolveTurn) single.resolveTurn();
+  el.blackjackBtn.disabled = true;
 }
 
 async function singleCpuTurn(seat){
@@ -1562,16 +1626,30 @@ function renderRoomScreen(state){
   }
   el.memberList.innerHTML = rows.join('');
 
+  const cpuAllowed = state.mode === 'enjoy' && state.maxPlayers >= (state.minHumans || 2) + 1;
   el.roomCpuRow.hidden = state.mode !== 'enjoy';
   if (state.mode === 'enjoy'){
-    el.roomCpuCheck.setAttribute('aria-checked', String(!!state.cpuFill));
-    el.roomCpuCheck.disabled = !state.isHost;
+    el.roomCpuCheck.setAttribute('aria-checked', String(!!state.cpuFill && cpuAllowed));
+    el.roomCpuCheck.disabled = !state.isHost || !cpuAllowed;
+    el.roomCpuRow.classList.toggle('is-disabled', !cpuAllowed);
   }
 
+  const minH = state.minHumans || 2;
+  const humans = state.humanCount != null ? state.humanCount : state.players.filter(p => !p.cpu).length;
+  const enough = humans >= minH;
+
   el.startGameBtn.hidden = !state.isHost;
-  el.roomHint.textContent = state.isHost
-    ? '全員が揃ったら「ゲーム開始」を押してください。'
-    : 'ホストが開始するのを待っています…';
+  el.startGameBtn.disabled = !enough;
+
+  if (!enough){
+    el.roomHint.textContent = '最低' + minH + '人のプレイヤーの参加が必要です(現在 ' + humans + '人)';
+    el.roomHint.classList.add('is-warn');
+  } else {
+    el.roomHint.classList.remove('is-warn');
+    el.roomHint.textContent = state.isHost
+      ? '全員が揃ったら「ゲーム開始」を押してください。'
+      : 'ホストが開始するのを待っています…';
+  }
 }
 
 function updateOnlinePanels(state){
@@ -1605,10 +1683,16 @@ function updateOnlinePanels(state){
 
   if (state.phase === 'play'){
     if (state.activeName === me.name && !me.done){
+      const hand = me.hand || [];
+      const isBj = isBlackjack(hand);
+      el.hitBtn.hidden = isBj;
+      el.standBtn.hidden = isBj;
       el.hitBtn.disabled = false;
       el.standBtn.disabled = false;
-      el.surrenderBtn.hidden = (me.hand || []).length !== 2;
+      el.surrenderBtn.hidden = isBj || hand.length !== 2;
       el.surrenderBtn.disabled = false;
+      el.blackjackBtn.hidden = !isBj;
+      el.blackjackBtn.disabled = false;
       showPanel('action');
     } else {
       el.waitText.textContent = (state.activeName || '他のプレイヤー') + ' さんのターンです…';
@@ -2030,7 +2114,7 @@ function closeOverlay(node){ node.hidden = true; }
 function renderBgmStatus(){
   if (!el.bgmStatus) return;
   el.bgmStatus.hidden = !bgm.failed;
-  if (bgm.failed) el.bgmStatus.textContent = 'BGM.mp3 が見つからないため、BGMは再生されません。';
+  if (bgm.failed) el.bgmStatus.textContent = BGM_FILE.replace('./', '') + ' が見つからないため、BGMは再生されません。';
 }
 
 function renderSettings(){
@@ -2044,10 +2128,162 @@ function renderSettings(){
   el.seVol.value = settings.seVol;
   el.seVolText.textContent = settings.seVol + '%';
 
-  el.seatSeg.querySelectorAll('.seg-btn').forEach(b =>
-    b.classList.toggle('is-on', Number(b.dataset.seats) === settings.seats));
-
   renderBgmStatus();
+}
+
+/* =========================================================
+   15.5 開発者モード
+   ========================================================= */
+const dev = { pin: '', users: [] };
+
+function openDevPin(){
+  el.devPinInput.value = '';
+  el.devPinError.hidden = true;
+  openOverlay(el.devPinOverlay);
+  setTimeout(() => el.devPinInput.focus(), 60);
+}
+
+function devError(msg){
+  el.devPinError.textContent = msg;
+  el.devPinError.hidden = false;
+  audio.play('error');
+}
+
+async function submitDevPin(){
+  const pin = el.devPinInput.value.trim();
+  if (!pin) return devError('暗証番号を入力してください');
+
+  el.devPinSubmitBtn.disabled = true;
+  try {
+    await api('/api/admin/auth', { method: 'POST', body: JSON.stringify({ pin }) });
+    dev.pin = pin;
+    closeOverlay(el.devPinOverlay);
+    closeOverlay(el.settingsOverlay);
+    audio.play('join');
+    openDevPanel();
+  } catch (e){
+    devError(e.message);
+  } finally {
+    el.devPinSubmitBtn.disabled = false;
+  }
+}
+
+function openDevPanel(){
+  openOverlay(el.devOverlay);
+  loadDevUsers();
+}
+
+async function loadDevUsers(){
+  el.devSummary.textContent = '読み込み中…';
+  el.devList.innerHTML = '';
+  try {
+    const d = await api('/api/admin/users', { method: 'POST', body: JSON.stringify({ pin: dev.pin }) });
+    dev.users = d.users || [];
+    renderDevUsers();
+  } catch (e){
+    el.devSummary.textContent = e.message;
+  }
+}
+
+/* 最終ログインを「X分前」などに整形 */
+function formatLastSeen(user){
+  if (user.online) return '現在ログイン中';
+  if (!user.lastLogin) return 'ログイン履歴なし';
+  const diff = Date.now() - new Date(user.lastLogin).getTime();
+  if (diff < 0) return 'たった今';
+  const min = Math.floor(diff / 60000);
+  if (min < 1) return 'たった今';
+  if (min < 60) return min + '分前';
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return hour + '時間前';
+  const day = Math.floor(hour / 24);
+  if (day >= 7) return '7日以上前';
+  return day + '日前';
+}
+
+function renderDevUsers(){
+  const list = dev.users;
+  const onlineN = list.filter(u => u.online).length;
+  el.devSummary.textContent = '登録アカウント ' + list.length + '件(ログイン中 ' + onlineN + '件)';
+
+  if (list.length === 0){
+    el.devList.innerHTML = '<p class="empty-note">アカウントがありません。</p>';
+    return;
+  }
+
+  el.devList.innerHTML = list.map(u => '' +
+    '<div class="dev-row" data-user="' + esc(u.username) + '">' +
+      '<div class="dev-main">' +
+        '<span class="dev-name-row">' +
+          '<span class="dev-name">' + esc(u.username) + '</span>' +
+          '<span class="dev-lv">Lv.' + u.level + '</span>' +
+          (u.online ? '<span class="dev-online">ログイン中</span>' : '') +
+        '</span>' +
+        '<span class="dev-medal">' +
+          '<span class="dev-medal-cap">メダル</span>' +
+          '<span class="dev-medal-val">' + u.medal + '</span>' +
+        '</span>' +
+        '<span class="dev-seen">最終ログイン: ' + esc(formatLastSeen(u)) + '</span>' +
+      '</div>' +
+      '<div class="dev-actions">' +
+        '<button type="button" class="dev-btn" data-act="edit">編集</button>' +
+        '<button type="button" class="dev-btn is-danger" data-act="delete">削除</button>' +
+      '</div>' +
+    '</div>').join('');
+}
+
+function openDevEdit(row, username){
+  if (row.querySelector('.dev-edit')) return;
+  const user = dev.users.find(u => u.username === username);
+  const box = document.createElement('div');
+  box.className = 'dev-edit';
+  box.innerHTML =
+    '<input type="number" class="text-input" min="0" max="99999999" value="' + (user ? user.medal : 0) + '">' +
+    '<button type="button" class="dev-btn" data-act="save">保存</button>' +
+    '<button type="button" class="dev-btn" data-act="cancel">取消</button>';
+  row.appendChild(box);
+  box.querySelector('input').focus();
+}
+
+async function saveDevMedal(row, username){
+  const input = row.querySelector('.dev-edit input');
+  if (!input) return;
+  const medal = Math.floor(Number(input.value));
+  if (!Number.isFinite(medal) || medal < 0) return toast('メダル数が不正です');
+  try {
+    await api('/api/admin/medal', {
+      method: 'POST',
+      body: JSON.stringify({ pin: dev.pin, username, medal })
+    });
+    toast(username + ' のメダルを ' + medal + ' にしました');
+    audio.play('chip');
+    /* 自分自身を編集した場合は手元の表示も更新 */
+    if (account.user && account.user.username === username){
+      account.user.medal = medal;
+      renderAccountUi();
+    }
+    await loadDevUsers();
+  } catch (e){ toast(e.message); }
+}
+
+async function deleteDevUser(username){
+  if (!confirm('「' + username + '」を削除します。\n所持メダル・戦績・レベルはすべて失われ、元に戻せません。\n\n本当に削除しますか?')) return;
+  try {
+    await api('/api/admin/delete', {
+      method: 'POST',
+      body: JSON.stringify({ pin: dev.pin, username })
+    });
+    toast(username + ' を削除しました');
+    /* 自分を削除した場合はログアウト状態にする */
+    if (account.user && account.user.username === username){
+      if (online.socket){ online.socket.disconnect(); online.socket = null; }
+      clearAccount();
+      closeOverlay(el.devOverlay);
+      if (screen !== 'title') showScreen('title');
+      return;
+    }
+    await loadDevUsers();
+  } catch (e){ toast(e.message); }
 }
 
 /* =========================================================
@@ -2058,7 +2294,7 @@ function renderSettings(){
   window.addEventListener(ev, () => audio.unlock(), { once: true }));
 
 /* --- タイトル --- */
-el.toSingleBtn.addEventListener('click', () => { audio.play('button'); startSingle(); });
+el.toSingleBtn.addEventListener('click', () => { audio.play('button'); openSingleSetup(); });
 el.toOnlineBtn.addEventListener('click', () => { audio.play('button'); enterOnline(); });
 el.toRulesBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.rulesOverlay); });
 el.toSettingsBtn.addEventListener('click', () => { audio.play('button'); renderSettings(); openOverlay(el.settingsOverlay); });
@@ -2089,6 +2325,18 @@ el.leaveBtn.addEventListener('click', () => {
 el.gameRulesBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.rulesOverlay); });
 
 el.changelogBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.changelogOverlay); });
+
+/* --- シングル準備画面 --- */
+el.singleBackBtn.addEventListener('click', () => { audio.play('button'); showScreen('title'); });
+el.singleSeatSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  settings.seats = Number(b.dataset.seats);
+  saveSettings();
+  renderSingleSetup();
+  audio.play('chip');
+});
+el.singleStartBtn.addEventListener('click', () => { audio.play('button'); startSingle(); });
 el.changelogCloseBtn.addEventListener('click', () => closeOverlay(el.changelogOverlay));
 
 /* --- ロビー --- */
@@ -2102,8 +2350,21 @@ el.createSeg.addEventListener('click', (e) => {
   if (!b) return;
   online.createMax = Number(b.dataset.max);
   el.createSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
+  updateCreateCpuRow();
   audio.play('chip');
 });
+
+/* 2人部屋では人が2人必要なのでCPUの入る余地がない */
+function updateCreateCpuRow(){
+  const allowed = online.createMode === 'enjoy' && online.createMax >= MIN_HUMANS + 1;
+  el.createCpuRow.hidden = online.createMode !== 'enjoy';
+  el.createCpuRow.classList.toggle('is-disabled', !allowed);
+  el.createCpuCheck.disabled = !allowed;
+  if (!allowed){
+    online.createCpuFill = false;
+    el.createCpuCheck.setAttribute('aria-checked', 'false');
+  }
+}
 
 el.createModeSeg.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn');
@@ -2112,7 +2373,7 @@ el.createModeSeg.addEventListener('click', (e) => {
   el.createModeSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
   const isChamp = online.createMode === 'champion';
   el.createChampRow.hidden = !isChamp;
-  el.createCpuRow.hidden = isChamp;
+  updateCreateCpuRow();
   el.createModeDesc.textContent = isChamp
     ? '全員に大会専用メダル1000枚を配布して競う特別モード。最終順位に応じてEXPが変わります。'
     : '気軽に遊べる通常モード。メダルはアカウントに反映されます。';
@@ -2120,6 +2381,7 @@ el.createModeSeg.addEventListener('click', (e) => {
 });
 
 el.createCpuCheck.addEventListener('click', () => {
+  if (el.createCpuCheck.disabled) return;
   online.createCpuFill = !online.createCpuFill;
   el.createCpuCheck.setAttribute('aria-checked', String(online.createCpuFill));
   audio.play('button');
@@ -2211,7 +2473,7 @@ el.hitBtn.addEventListener('click', () => {
   if (view.mode === 'online'){
     audio.play('button');
     showFx('hit');
-    el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
+    disableActionButtons();
     if (online.socket) online.socket.emit('game:hit');
   } else singleHit();
 });
@@ -2220,9 +2482,21 @@ el.standBtn.addEventListener('click', () => {
   if (view.mode === 'online'){
     audio.play('button');
     showFx('stand');
-    el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
+    disableActionButtons();
     if (online.socket) online.socket.emit('game:stand');
   } else singleStand();
+});
+
+el.blackjackBtn.addEventListener('click', () => {
+  if (el.blackjackBtn.disabled) return;
+  if (view.mode === 'online'){
+    audio.play('bj');
+    showFx('blackjack');
+    disableActionButtons();
+    if (online.socket) online.socket.emit('game:blackjack');
+  } else {
+    singleBlackjack();
+  }
 });
 
 el.surrenderBtn.addEventListener('click', () => {
@@ -2236,7 +2510,7 @@ el.surrenderConfirmBtn.addEventListener('click', () => {
   audio.play('button');
   if (view.mode === 'online'){
     showFx('surrender');
-    el.hitBtn.disabled = true; el.standBtn.disabled = true; el.surrenderBtn.disabled = true;
+    disableActionButtons();
     if (online.socket) online.socket.emit('game:surrender');
   } else {
     singleSurrender();
@@ -2339,29 +2613,31 @@ el.seVol.addEventListener('input', () => {
 });
 el.seVol.addEventListener('change', () => audio.play('chip'));
 
-el.seatSeg.addEventListener('click', (e) => {
-  const b = e.target.closest('.seg-btn');
-  if (!b) return;
-  settings.seats = Number(b.dataset.seats);
-  saveSettings(); renderSettings();
-  audio.play('chip');
-  if (screen === 'game' && view.mode === 'single' && view.phase === 'bet'){
-    makeSingleSeats(settings.seats);
-    bet = clamp(bet, 0, myMedal());
-    renderTable(); renderBet();
-  } else if (screen === 'game'){
-    toast('次のラウンドから ' + settings.seats + '人になります');
-  }
-});
+/* --- 開発者モード --- */
+el.devModeBtn.addEventListener('click', () => { audio.play('button'); openDevPin(); });
+el.devPinCloseBtn.addEventListener('click', () => closeOverlay(el.devPinOverlay));
+el.devPinSubmitBtn.addEventListener('click', submitDevPin);
+el.devPinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitDevPin(); });
+el.devCloseBtn.addEventListener('click', () => closeOverlay(el.devOverlay));
+el.devReloadBtn.addEventListener('click', () => { audio.play('button'); loadDevUsers(); });
 
-el.resetBtn.addEventListener('click', () => {
-  if (account.user) return toast('ログイン中はサーバーのメダルが使われます');
-  guestMedal = INITIAL_MEDAL;
-  store.set('bj4_guestMedal', String(guestMedal));
-  renderMedal();
-  if (screen === 'game' && view.mode === 'single'){ shoe = []; buildShoe(); singleBetPhase(); }
-  closeOverlay(el.settingsOverlay);
-  toast('メダルを初期化しました');
+el.devList.addEventListener('click', (e) => {
+  const btn = e.target.closest('.dev-btn');
+  if (!btn) return;
+  const row = btn.closest('.dev-row');
+  if (!row) return;
+  const username = row.dataset.user;
+  const act = btn.dataset.act;
+  audio.play('button');
+  if (act === 'edit') openDevEdit(row, username);
+  else if (act === 'save') saveDevMedal(row, username);
+  else if (act === 'cancel'){ const b = row.querySelector('.dev-edit'); if (b) b.remove(); }
+  else if (act === 'delete') deleteDevUser(username);
+});
+el.devList.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const row = e.target.closest('.dev-row');
+  if (row && e.target.closest('.dev-edit')) saveDevMedal(row, row.dataset.user);
 });
 
 /* --- チャット --- */
@@ -2381,12 +2657,12 @@ el.chatStamps.addEventListener('click', (e) => {
 });
 
 /* --- 全体 --- */
-[el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay].forEach(node =>
+[el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay].forEach(node =>
   node.addEventListener('click', (e) => { if (e.target === node) closeOverlay(node); }));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
-    [el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay].forEach(n => { if (!n.hidden) closeOverlay(n); });
+    [el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay].forEach(n => { if (!n.hidden) closeOverlay(n); });
     return;
   }
   if (!el.adOverlay.hidden) return;
@@ -2424,6 +2700,7 @@ async function init(){
   setAuthMode('login');
   renderSettings();
   renderAccountUi();
+  updateCreateCpuRow();
   showScreen('title');
   await restoreSession();
 }

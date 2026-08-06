@@ -2195,3 +2195,203 @@ body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
   .seat{ gap: 6px; padding: 8px 8px 9px; }
   .result-badge{ padding: 1px 12px; }
 }
+
+/* =========================================================
+   31. v2.3 席の状態別カラーリング
+   ========================================================= */
+.seat[data-result]{ transition: background .35s var(--ease), border-color .35s var(--ease), box-shadow .35s var(--ease); }
+
+/* 勝ち: 緑系 */
+.seat[data-result="win"]{
+  --seat-accent: rgba(63,191,143,.55);
+  background:
+    linear-gradient(165deg, rgba(63,191,143,.22), rgba(20,67,47,.28) 62%),
+    rgba(0,0,0,.26);
+  box-shadow: 0 0 0 1px rgba(63,191,143,.28), 0 0 24px rgba(63,191,143,.14);
+}
+
+/* ブラックジャック: 金の豪華系 */
+.seat[data-result="bj"]{
+  --seat-accent: rgba(255,201,74,.75);
+  background:
+    linear-gradient(165deg, rgba(255,201,74,.3), rgba(138,112,26,.24) 58%),
+    rgba(0,0,0,.26);
+  box-shadow:
+    0 0 0 1px rgba(255,201,74,.45),
+    0 0 34px rgba(255,201,74,.28),
+    inset 0 0 26px rgba(255,201,74,.1);
+  animation: bjGlow 1.8s ease-in-out infinite alternate;
+}
+@keyframes bjGlow{
+  from{ box-shadow: 0 0 0 1px rgba(255,201,74,.4), 0 0 22px rgba(255,201,74,.2), inset 0 0 20px rgba(255,201,74,.08); }
+  to{   box-shadow: 0 0 0 1px rgba(255,201,74,.6), 0 0 40px rgba(255,201,74,.36), inset 0 0 30px rgba(255,201,74,.14); }
+}
+
+/* 負け・バースト・サレンダー: グレーアウト */
+.seat[data-result="lose"],
+.seat[data-result="surrender"]{
+  --seat-accent: rgba(255,255,255,.12);
+  background: linear-gradient(165deg, rgba(255,255,255,.05), rgba(0,0,0,.34) 60%);
+  filter: grayscale(.55) brightness(.82);
+}
+
+/* 引き分け: 青系 */
+.seat[data-result="push"]{
+  --seat-accent: rgba(120,190,255,.5);
+  background:
+    linear-gradient(165deg, rgba(120,190,255,.18), rgba(18,44,68,.26) 62%),
+    rgba(0,0,0,.26);
+  box-shadow: 0 0 0 1px rgba(120,190,255,.24);
+}
+
+/* 自分の席は少し強めに出す */
+.human-wrap .seat[data-result="win"]{ box-shadow: 0 0 0 1px rgba(63,191,143,.4), 0 0 34px rgba(63,191,143,.2); }
+.human-wrap .seat[data-result="push"]{ box-shadow: 0 0 0 1px rgba(120,190,255,.36), 0 0 26px rgba(120,190,255,.14); }
+
+/* BLACKJACKボタン */
+.btn-blackjack{
+  background: linear-gradient(180deg, #E0B72F, #8A701A);
+  border-color: #FFD75E;
+  color: #12100A;
+  box-shadow: 0 0 22px rgba(255,201,74,.35);
+  animation: bjBtnPulse 1.4s ease-in-out infinite alternate;
+}
+.btn-blackjack:hover{ background: linear-gradient(180deg, #F0C63C, #9A7E1E); }
+.btn-blackjack .btn-sub{ color: rgba(18,16,10,.72); opacity: 1; }
+@keyframes bjBtnPulse{
+  from{ box-shadow: 0 0 14px rgba(255,201,74,.28); }
+  to{   box-shadow: 0 0 30px rgba(255,201,74,.55); }
+}
+
+/* =========================================================
+   32. v2.3 シングル準備画面
+   ========================================================= */
+.setup-wrap{
+  display: flex;
+  justify-content: center;
+  padding-top: clamp(8px, 3vh, 30px);
+}
+.setup-wrap .card-block{ width: min(460px, 100%); gap: 13px; }
+
+.setup-preview{
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px 8px;
+  border: 1px dashed rgba(201,162,39,.28);
+  border-radius: 10px;
+  background: rgba(0,0,0,.22);
+  min-height: 74px;
+  align-items: center;
+}
+.preview-seat{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  min-width: 54px;
+}
+.preview-avatar{
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  border: 1px solid var(--hairline);
+  background: linear-gradient(160deg, #2A3742, #171F26);
+}
+.preview-seat.is-you .preview-avatar{
+  background: linear-gradient(160deg, #D8B02C, #8A701A);
+  border-color: var(--brass);
+  color: #12100A;
+}
+.preview-name{ font-size: 10.5px; color: var(--smoke); white-space: nowrap; }
+.preview-seat.is-you .preview-name{ color: var(--brass); font-weight: 700; }
+
+/* =========================================================
+   33. v2.3 開発者モード
+   ========================================================= */
+.sheet-wide{ width: min(720px, 100%); }
+.dev-head-right{ display: flex; align-items: center; gap: 8px; }
+
+.pin-input{
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 34px;
+  letter-spacing: .5em;
+  padding-left: .5em;
+  margin-top: 4px;
+}
+
+.dev-list{ display: flex; flex-direction: column; gap: 9px; padding-top: 4px; }
+
+.dev-row{
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--hairline);
+  border-radius: 11px;
+  background: rgba(0,0,0,.28);
+}
+.dev-main{ display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dev-name-row{ display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.dev-name{
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dev-lv{ font-family: var(--font-display); font-size: 16px; color: var(--brass); }
+.dev-online{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(63,191,143,.55);
+  color: #5BE0AC;
+  background: rgba(63,191,143,.12);
+}
+.dev-seen{ font-size: 11.5px; color: var(--smoke); }
+.dev-medal{ display: flex; align-items: baseline; gap: 6px; }
+.dev-medal-cap{ font-size: 10px; font-weight: 700; letter-spacing: .1em; color: var(--smoke); }
+.dev-medal-val{ font-family: var(--font-display); font-size: 21px; color: var(--led); }
+
+.dev-actions{ display: flex; align-items: center; gap: 7px; }
+.dev-btn{
+  padding: 8px 13px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(0,0,0,.32);
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: background .16s, border-color .16s;
+}
+.dev-btn:hover{ background: rgba(201,162,39,.16); border-color: var(--brass); }
+.dev-btn.is-danger{ color: #FF8A82; border-color: rgba(196,52,46,.45); }
+.dev-btn.is-danger:hover{ background: rgba(196,52,46,.18); border-color: var(--crimson); }
+
+.dev-edit{ display: flex; gap: 7px; grid-column: 1 / -1; }
+.dev-edit .text-input{ flex: 1 1 auto; padding: 8px 11px; font-size: 15px; }
+.dev-edit .dev-btn{ flex: 0 0 auto; }
+
+@media (max-width: 560px){
+  .dev-row{ grid-template-columns: 1fr; }
+  .dev-actions{ justify-content: flex-end; }
+  .pin-input{ font-size: 28px; }
+}
+
+/* CPU補充が使えない状況(2人部屋など)のグレーアウト */
+.checkbox-row.is-disabled{ opacity: .45; }
+.checkbox-row.is-disabled .checkbox{ cursor: not-allowed; }
+
+/* 人数不足の案内 */
+.room-hint.is-warn{
+  color: #FFB6B2;
+  font-weight: 700;
+}
