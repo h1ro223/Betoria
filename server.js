@@ -15,7 +15,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.4.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -182,11 +182,15 @@ const MAX_LEVEL = 99;
    ・生き残った場合(2〜4位含む)は経過ラウンド分の100%+順位ボーナス */
 const CHAMPION_MULT = 1.25;
 const CHAMPION_RANK_BONUS = { 1: 80, 2: 40, 3: 20, 4: 8 };
+/* サレンダーしたラウンドはEXPの対象にしない(全員サレンダーでの荒稼ぎ対策)。
+   順位ボーナスも「実際に勝負したラウンド数 ÷ 規定ラウンド数」で按分する。 */
 
-function championFactor(playerCount){ return 1 + (Math.max(playerCount, 2) - 1) * 0.2; }
-function championRoundExp(playerCount){ return EXP_ROUND * CHAMPION_MULT * championFactor(playerCount); }
+/* エンジョイモードの1ラウンドあたり平均EXP(参加10 + 結果平均およそ20)を基準にする */
+const EXP_ENJOY_AVG = 30;
+function championFactor(playerCount){ return 1 + (Math.max(playerCount, 2) - 2) * 0.1; }
+function championRoundExp(playerCount){ return EXP_ENJOY_AVG * CHAMPION_MULT * championFactor(playerCount); }
 
-function expToNext(level){ return 100 + (level - 1) * 50; }
+function expToNext(level){ return 120 + (level - 1) * 60; }
 
 function addExp(user, gain){
   user.exp += Math.max(0, Math.round(gain));
@@ -265,7 +269,8 @@ const TURN_LIMIT_MS = 30000;
 const CPU_TURN_MS   = 900;
 const COUNTDOWN_SEC = 3;
 const CHAMPION_START_MEDAL = 1000;
-const CHAMPION_ROUND_MAX = 200;
+const CHAMPION_ROUND_MIN = 10;
+const CHAMPION_ROUND_MAX = 100;
 const CHAT_STAMPS = ['👍', '🎉', '😂', '😭', '🔥', '🙏'];
 const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤー数
 
@@ -326,7 +331,8 @@ function createRoom(opts){
              && Number(opts.maxPlayers) >= MIN_HUMANS + 1
              && !!opts.cpuFill,
     championRounds: mode === 'champion'
-      ? Math.min(Math.max(Number(opts.championRounds) || 10, 1), CHAMPION_ROUND_MAX)
+      ? Math.min(Math.max(Number(opts.championRounds) || CHAMPION_ROUND_MIN,
+                          CHAMPION_ROUND_MIN), CHAMPION_ROUND_MAX)
       : null,
     hostName: null,
     players: [],            // {name, sid, cpu, level, medal, bet, hand, done, surrendered, ready, connected, eliminated}
@@ -373,6 +379,12 @@ function findRoomBySid(sid){
 }
 
 function humanCount(room){ return room.players.filter(p => !p.cpu).length; }
+
+/* ホスト以外の参加者が全員「準備完了」を押しているか */
+function guestsReady(room){
+  const guests = room.players.filter(p => !p.cpu && p.name !== room.hostName);
+  return guests.length > 0 && guests.every(p => p.lobbyReady);
+}
 function activePlayers(room){ return room.players.filter(p => !p.eliminated); }
 
 /* 手札は自分以外にも見せる(ブラックジャックは公開情報) */
@@ -391,6 +403,7 @@ function roomState(room, forName){
     isHost: forName === room.hostName,
     minHumans: MIN_HUMANS,
     humanCount: humanCount(room),
+    allGuestsReady: guestsReady(room),
     round: room.round,
     message: room.message,
     activeName: room.activeIndex >= 0 && room.players[room.activeIndex]
@@ -406,6 +419,7 @@ function roomState(room, forName){
       hand: p.hand,
       done: p.done,
       ready: p.ready,
+      lobbyReady: !!p.lobbyReady,
       result: p.result,
       connected: p.connected,
       eliminated: !!p.eliminated,
@@ -497,6 +511,7 @@ function beginCountdown(io, room){
           p.medal = CHAMPION_START_MEDAL;
           p.eliminated = false;
           p.eliminatedAtRound = null;
+          p.scoredRounds = 0;   // サレンダー以外で勝負したラウンド数
         }
         room.round = 0;
         room.standings = null;
@@ -649,6 +664,11 @@ async function finishRound(io, room){
       } catch (e){ console.error('[result]', e.message); }
     }
 
+    /* サレンダーはEXP計算の対象外。実際に勝負したラウンドだけ数える */
+    if (room.mode === 'champion' && !p.surrendered && p.bet > 0){
+      p.scoredRounds = (p.scoredRounds || 0) + 1;
+    }
+
     if (room.mode === 'champion' && p.medal <= 0 && !p.eliminated){
       p.medal = 0;
       p.eliminated = true;
@@ -701,15 +721,20 @@ async function maybeEndChampionship(io, room){
 
   const results = [];
   for (const p of ranked){
-    const roundsElapsed = p.eliminated ? (p.eliminatedAtRound || room.round) : room.round;
+    /* サレンダーしたラウンドは数えないので、降りてばかりだとEXPは伸びない */
+    const scored = Math.min(p.scoredRounds || 0, room.championRounds);
+    /* 順位ボーナスは大会をどれだけ戦い抜いたかで按分する */
+    const progress = room.championRounds > 0
+      ? Math.min(1, scored / room.championRounds) : 0;
 
     let expGain, rankKind;
     if (p.eliminated){
-      expGain = Math.round(roundsElapsed * perRound * 0.5);
+      expGain = Math.round(scored * perRound * 0.5);
       rankKind = 'lose';
     } else {
-      const bonus = Math.round((CHAMPION_RANK_BONUS[Math.min(p.rank, 4)] || 0) * championFactor(total));
-      expGain = Math.round(roundsElapsed * perRound * 1.0) + bonus;
+      const bonus = Math.round(
+        (CHAMPION_RANK_BONUS[Math.min(p.rank, 4)] || 0) * championFactor(total) * progress);
+      expGain = Math.round(scored * perRound) + bonus;
       rankKind = p.rank === 1 ? (isDraw.get(p.name) ? 'draw' : 'win') : 'lose';
     }
 
@@ -728,7 +753,8 @@ async function maybeEndChampionship(io, room){
 
     results.push({
       name: p.name, cpu: !!p.cpu, rank: p.rank, medal: p.medal,
-      eliminated: !!p.eliminated, expGain, rankKind
+      eliminated: !!p.eliminated, expGain, rankKind,
+      scoredRounds: scored, totalRounds: room.championRounds
     });
 
     if (p.sid && userAfter) io.to(p.sid).emit('account:update', { user: userAfter, levelUp });
@@ -756,6 +782,15 @@ async function currentUser(req){
   const name = readToken(token);
   if (!name) return null;
   return await db.findUser(name);
+}
+
+/* 最終ログイン時刻を更新する(短時間の連打では書き込まない) */
+const TOUCH_INTERVAL_MS = 60 * 1000;
+async function touchLogin(u){
+  const prev = u.last_login ? new Date(u.last_login).getTime() : 0;
+  if (Date.now() - prev < TOUCH_INTERVAL_MS) return;
+  u.last_login = new Date();
+  await db.saveUser(u);
 }
 
 function blankUserRow(username, pass_hash){
@@ -802,6 +837,8 @@ app.post('/api/login', async (req, res) => {
 app.get('/api/me', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return authFail(res, '認証が必要です');
+  /* トークンでの自動ログインでも「最終ログイン」を更新する */
+  try { await touchLogin(u); } catch {}
   res.json({ user: publicUser(u) });
 });
 
@@ -969,6 +1006,7 @@ io.use(async (socket, next) => {
   socket.data.name = u.username;
   socket.data.level = u.level;
   socket.data.medal = u.medal;
+  try { await touchLogin(u); } catch {}
   next();
 });
 
@@ -1016,6 +1054,18 @@ io.on('connection', (socket) => {
 
   socket.on('room:leave', () => leaveRoom(socket));
 
+  /* 待機ルームでの「準備完了」トグル(ホストは対象外) */
+  socket.on('room:ready', ({ on } = {}) => {
+    const room = findRoomBySid(socket.id);
+    if (!room || room.phase !== 'lobby') return;
+    if (room.hostName === name) return;
+    const p = room.players.find(x => x.sid === socket.id);
+    if (!p) return;
+    p.lobbyReady = !!on;
+    chatSystem(io, room, p.name + (p.lobbyReady ? ' さんが準備完了しました' : ' さんが準備を解除しました'));
+    broadcast(io, room);
+  });
+
   socket.on('room:cpuFill', ({ on } = {}) => {
     const room = findRoomBySid(socket.id);
     if (!room || room.hostName !== name || room.phase !== 'lobby' || room.mode !== 'enjoy') return;
@@ -1028,7 +1078,7 @@ io.on('connection', (socket) => {
     broadcast(io, room);
   });
 
-  socket.on('room:start', () => {
+  socket.on('room:start', ({ confirmed } = {}) => {
     const room = findRoomBySid(socket.id);
     if (!room || room.hostName !== name) return;
     if (room.phase !== 'lobby') return;
@@ -1036,6 +1086,17 @@ io.on('connection', (socket) => {
     /* CPU補充の有無に関わらず、人のプレイヤーが2人以上いないと開始できない */
     if (humanCount(room) < MIN_HUMANS)
       return socket.emit('room:error', '最低' + MIN_HUMANS + '人のプレイヤーの参加が必要です');
+
+    /* ホスト以外の全員が準備完了になるまで開始できない */
+    if (!guestsReady(room))
+      return socket.emit('room:error', '全員の準備完了を待っています');
+
+    /* 定員に満たない場合はクライアント側の確認を経てから開始する */
+    if (humanCount(room) < room.maxPlayers && !confirmed)
+      return socket.emit('room:confirmStart', {
+        humans: humanCount(room),
+        max: room.maxPlayers
+      });
 
     removeCpuSeats(room);
     if (room.mode === 'enjoy' && room.cpuFill) fillCpuSeats(room);
@@ -1148,7 +1209,10 @@ io.on('connection', (socket) => {
     } else if (room.phase === 'champion_end'){
       room.phase = 'lobby';
       room.standings = null;
-      room.players.forEach(p => { p.eliminated = false; p.medal = 0; p.ready = false; });
+      room.players.forEach(p => {
+        p.eliminated = false; p.medal = 0; p.ready = false;
+        p.lobbyReady = false; p.scoredRounds = 0;
+      });
       broadcast(io, room);
       broadcastLobby(io);
     }
@@ -1199,7 +1263,14 @@ io.on('connection', (socket) => {
     broadcast(io, room);
   });
 
-  socket.on('disconnect', () => leaveRoom(socket));
+  socket.on('disconnect', async () => {
+    leaveRoom(socket);
+    /* 切断した瞬間を最終ログインとして残す(次に見たとき「◯分前」が正しくなる) */
+    try {
+      const u = await db.findUser(name);
+      if (u){ u.last_login = new Date(); await db.saveUser(u); }
+    } catch {}
+  });
 });
 
 /* 接続時のスナップショットではなくDBの最新値をsocketに載せ直す */
@@ -1220,6 +1291,7 @@ function makePlayer(socket){
     level: socket.data.level,
     medal: socket.data.medal,
     bet: 0, hand: [], done: false, surrendered: false, ready: false,
+    lobbyReady: false,
     result: null, connected: true, eliminated: false, eliminatedAtRound: null
   };
 }
@@ -1230,19 +1302,28 @@ function leaveRoom(socket){
   const idx = room.players.findIndex(p => p.sid === socket.id);
   if (idx < 0) return;
   const left = room.players[idx];
+  const wasHost = room.hostName === left.name;
   room.players.splice(idx, 1);
   socket.leave(room.id);
 
   const remainingHumans = room.players.filter(p => !p.cpu);
   if (remainingHumans.length === 0){ destroyRoom(room); return broadcastLobby(io); }
 
-  if (!left.cpu) chatSystem(io, room, left.name + ' さんが退出しました');
-
-  if (room.hostName === left.name){
-    room.hostName = remainingHumans[0].name;
-    room.message = 'ホストが退出したため ' + room.hostName + ' さんがホストになりました';
-    chatSystem(io, room, room.hostName + ' さんが新しいホストになりました');
+  /* ホストが抜けたらルームごと解散し、残りの全員を退出させる */
+  if (wasHost){
+    for (const p of room.players){
+      if (!p.sid) continue;
+      io.to(p.sid).emit('room:closed', {
+        reason: 'ホストが退出したため、このルームは解散されました'
+      });
+      const s = io.sockets.sockets.get(p.sid);
+      if (s) s.leave(room.id);
+    }
+    destroyRoom(room);
+    return broadcastLobby(io);
   }
+
+  chatSystem(io, room, left.name + ' さんが退出しました');
 
   if (room.phase === 'play'){
     if (idx < room.activeIndex) room.activeIndex--;

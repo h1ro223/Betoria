@@ -40,6 +40,10 @@ const SUITS = [
 const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 const CPU_NAMES = ['CPU ハル', 'CPU ミナ', 'CPU レオ'];
 const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤー数
+const COUNTDOWN_SEC = 3;
+const TURN_LIMIT_SEC = 30;   // オンラインの手番制限(サーバーと合わせる)
+const CHAMP_ROUND_MIN = 10;
+const CHAMP_ROUND_MAX = 100;
 
 const EXP_TABLE = { round: 10, win: 25, bj: 40, push: 12, lose: 5 };
 const expToNext = (lv) => 100 + (lv - 1) * 50;
@@ -396,6 +400,15 @@ const el = {
   memberList: $('memberList'),
   roomHint: $('roomHint'),
   startGameBtn: $('startGameBtn'),
+  readyBtn: $('readyBtn'),
+
+  turnTimer: $('turnTimer'),
+  turnRing: $('turnRing'),
+  turnNum: $('turnNum'),
+
+  a2hsBanner: $('a2hsBanner'),
+  a2hsText: $('a2hsText'),
+  a2hsCloseBtn: $('a2hsCloseBtn'),
 
   countdownCap: $('countdownCap'),
   countdownNum: $('countdownNum'),
@@ -1102,13 +1115,36 @@ function renderSingleSetup(){
   el.setupPreview.innerHTML = items.join('');
 }
 
-function startSingle(){
+async function startSingle(){
   view.mode = 'single';
   buildShoe();
   shownCount.clear();
   makeSingleSeats(settings.seats);
+
+  /* オンラインと同じく、開始前に3・2・1のカウントダウンを見せる */
+  await runCountdown();
+
   showScreen('game');
   singleBetPhase();
+}
+
+/* 3→2→1→GO のカウントダウン画面(シングル用) */
+function runCountdown(){
+  return new Promise((resolve) => {
+    showScreen('countdown');
+    let n = COUNTDOWN_SEC;
+    showCountdown(n);
+    const id = setInterval(() => {
+      n--;
+      if (n <= 0){
+        clearInterval(id);
+        showCountdown(0);
+        setTimeout(resolve, 620);
+        return;
+      }
+      showCountdown(n);
+    }, 1000);
+  });
 }
 
 function singleBetPhase(){
@@ -1509,6 +1545,29 @@ function connectSocket(){
   sock.on('room:state', onRoomState);
   sock.on('room:countdown', ({ n }) => showCountdown(n));
   sock.on('chat:new', onChatMessage);
+
+  /* ホストが退出してルームが解散された */
+  sock.on('room:closed', ({ reason } = {}) => {
+    stopTurnTimer();
+    online.roomId = null;
+    online.state = null;
+    online.lastResultRound = -1;
+    chat.log = [];
+    chat.unread = 0;
+    el.chatBadge.hidden = true;
+    closeChat();
+    audio.play('error');
+    showScreen('lobby');
+    sock.emit('room:list');
+    toast(reason || 'ルームは解散されました');
+  });
+
+  /* 定員に満たない状態での開始確認 */
+  sock.on('room:confirmStart', ({ humans, max } = {}) => {
+    const ok = confirm(
+      '参加人数が足りていません(' + humans + '/' + max + '人)。\nこのまま開始してもよろしいですか?');
+    if (ok) sock.emit('room:start', { confirmed: true });
+  });
   sock.on('account:update', ({ user, levelUp }) => {
     setAccount(user);
     if (levelUp > 0) showLevelUp(user.level);
@@ -1554,12 +1613,19 @@ function onRoomState(state){
 
   if (state.phase === 'lobby'){
     online.lastResultRound = -1;
+    stopTurnTimer();
     showScreen('room');
     renderRoomScreen(state);
     return;
   }
 
+  if (state.phase === 'countdown'){
+    stopTurnTimer();
+    return;   // カウントダウンは room:countdown 側で描画する
+  }
+
   if (state.phase === 'champion_end'){
+    stopTurnTimer();
     showScreen('championEnd');
     renderStandings(state);
     return;
@@ -1579,6 +1645,7 @@ function onRoomState(state){
   renderTable();
   renderMedal();
   updateRoundChip();
+  syncTurnTimer(state);
   setMessage(state.message || '');
   updateOnlinePanels(state);
 }
@@ -1594,7 +1661,11 @@ function renderStandings(state){
         '<span class="standing-rank' + (p.rank === 1 && !p.eliminated ? ' is-first' : '') + '">' + rankLabel + '</span>' +
         '<div class="standing-info">' +
           '<span class="standing-name">' + esc(p.name) + (p.cpu ? ' (CPU)' : '') + (isYou ? '(あなた)' : '') + '</span>' +
-          '<span class="standing-meta">' + kindLabel + ' ・ 大会メダル ' + p.medal + '</span>' +
+          '<span class="standing-meta">' + kindLabel + ' ・ 大会メダル ' + p.medal +
+            (p.scoredRounds != null
+              ? '<span class="standing-sub">勝負したラウンド ' + p.scoredRounds + ' / ' + p.totalRounds + '</span>'
+              : '') +
+          '</span>' +
         '</div>' +
         '<span class="standing-exp">' + (p.cpu ? '-' : '+' + p.expGain + ' EXP') + '</span>' +
       '</div>';
@@ -1613,13 +1684,21 @@ function renderRoomScreen(state){
     el.roomModeBadge.classList.remove('is-champ');
   }
 
-  const rows = state.players.map(p => '' +
-    '<div class="member-row' + (p.isYou ? ' is-you' : '') + '">' +
-      '<span class="member-avatar">' + esc(p.name.charAt(0).toUpperCase()) + '</span>' +
-      '<span class="member-name">' + esc(p.name) + (p.isYou ? '(あなた)' : '') + '</span>' +
-      '<span class="member-lv">Lv.' + p.level + '</span>' +
-      (p.name === state.hostName ? '<span class="member-tag">ホスト</span>' : '') +
-    '</div>');
+  const rows = state.players.map(p => {
+    const isHost = p.name === state.hostName;
+    const badge = isHost
+      ? '<span class="member-tag">ホスト</span>'
+      : (p.lobbyReady
+          ? '<span class="member-ready">準備完了</span>'
+          : '<span class="member-wait">準備中</span>');
+    return '' +
+      '<div class="member-row' + (p.isYou ? ' is-you' : '') + '">' +
+        '<span class="member-avatar">' + esc(p.name.charAt(0).toUpperCase()) + '</span>' +
+        '<span class="member-name">' + esc(p.name) + (p.isYou ? '(あなた)' : '') + '</span>' +
+        '<span class="member-lv">Lv.' + p.level + '</span>' +
+        badge +
+      '</div>';
+  });
 
   for (let i = state.players.length; i < state.maxPlayers; i++){
     rows.push('<div class="member-slot">空席を待っています…</div>');
@@ -1637,17 +1716,34 @@ function renderRoomScreen(state){
   const minH = state.minHumans || 2;
   const humans = state.humanCount != null ? state.humanCount : state.players.filter(p => !p.cpu).length;
   const enough = humans >= minH;
+  const allReady = !!state.allGuestsReady;
+  const me = state.players.find(p => p.isYou);
 
+  /* ホスト: 開始ボタン / ゲスト: 準備完了ボタン */
   el.startGameBtn.hidden = !state.isHost;
-  el.startGameBtn.disabled = !enough;
+  el.startGameBtn.disabled = !(enough && allReady);
+  el.readyBtn.hidden = state.isHost;
+  if (!state.isHost && me){
+    el.readyBtn.classList.toggle('is-on', !!me.lobbyReady);
+    el.readyBtn.querySelector('.btn-main').textContent = me.lobbyReady ? '準備完了' : '準備完了';
+    el.readyBtn.querySelector('.btn-sub').textContent = me.lobbyReady
+      ? 'もう一度押すと解除できます'
+      : '押すとホストが開始できます';
+  }
 
+  el.roomHint.classList.remove('is-warn');
   if (!enough){
     el.roomHint.textContent = '最低' + minH + '人のプレイヤーの参加が必要です(現在 ' + humans + '人)';
     el.roomHint.classList.add('is-warn');
-  } else {
-    el.roomHint.classList.remove('is-warn');
+  } else if (!allReady){
+    const waiting = state.players.filter(p => !p.cpu && p.name !== state.hostName && !p.lobbyReady).length;
     el.roomHint.textContent = state.isHost
-      ? '全員が揃ったら「ゲーム開始」を押してください。'
+      ? '参加者の準備完了を待っています(あと ' + waiting + '人)'
+      : '「準備完了」を押すとホストが開始できます';
+    if (state.isHost) el.roomHint.classList.add('is-warn');
+  } else {
+    el.roomHint.textContent = state.isHost
+      ? '全員の準備が整いました。「ゲーム開始」を押してください。'
       : 'ホストが開始するのを待っています…';
   }
 }
@@ -1969,7 +2065,62 @@ window.addEventListener('resize', () => {
   applyFabPos(next.right, next.bottom);
 });
 
+/* =========================================================
+   12.4 手番タイマー(オンライン)
+   ========================================================= */
+const turnTimer = { id: null, endAt: 0, key: '' };
+const TURN_RING_LEN = 2 * Math.PI * 19;   // CSSの r=19 と合わせる
+
+function startTurnTimer(key){
+  if (turnTimer.key === key && turnTimer.id) return;   // 同じ手番なら継続
+  stopTurnTimer();
+  turnTimer.key = key;
+  turnTimer.endAt = Date.now() + TURN_LIMIT_SEC * 1000;
+  el.turnTimer.hidden = false;
+  tickTurnTimer();
+  turnTimer.id = setInterval(tickTurnTimer, 200);
+}
+
+function stopTurnTimer(){
+  clearInterval(turnTimer.id);
+  turnTimer.id = null;
+  turnTimer.key = '';
+  el.turnTimer.hidden = true;
+  el.turnTimer.classList.remove('is-warn', 'is-danger', 'is-mine');
+}
+
+function tickTurnTimer(){
+  const left = Math.max(0, turnTimer.endAt - Date.now());
+  const sec = Math.ceil(left / 1000);
+  const ratio = clamp(left / (TURN_LIMIT_SEC * 1000), 0, 1);
+
+  el.turnNum.textContent = sec;
+  el.turnRing.style.strokeDasharray = TURN_RING_LEN;
+  el.turnRing.style.strokeDashoffset = (TURN_RING_LEN * (1 - ratio)).toFixed(1);
+
+  el.turnTimer.classList.toggle('is-warn', sec <= 10 && sec > 5);
+  el.turnTimer.classList.toggle('is-danger', sec <= 5);
+
+  if (left <= 0){ clearInterval(turnTimer.id); turnTimer.id = null; }
+}
+
+/* サーバー状態からタイマーの表示を決める */
+function syncTurnTimer(state){
+  if (!state || state.phase !== 'play' || !state.activeName){
+    stopTurnTimer();
+    return;
+  }
+  const me = state.players.find(p => p.isYou);
+  const active = state.players.find(p => p.name === state.activeName);
+  /* CPUの手番にはタイマーが無いので出さない */
+  if (!active || active.cpu){ stopTurnTimer(); return; }
+
+  startTurnTimer(state.round + ':' + state.activeName);
+  el.turnTimer.classList.toggle('is-mine', !!me && state.activeName === me.name);
+}
+
 function leaveOnlineRoom(){
+  stopTurnTimer();
   if (online.socket) online.socket.emit('room:leave');
   online.roomId = null;
   online.state = null;
@@ -2287,6 +2438,42 @@ async function deleteDevUser(username){
 }
 
 /* =========================================================
+   15.6 ホーム画面への追加案内(スマホブラウザのみ)
+   ========================================================= */
+function isStandalone(){
+  return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+}
+
+function setupA2HS(){
+  /* すでにホーム画面から起動している場合は出さない */
+  if (isStandalone()) return;
+  /* 一度閉じたら二度と出さない */
+  if (store.get('bj4_a2hsClosed') === '1') return;
+
+  const ua = navigator.userAgent;
+  const isIOS = /iPhone|iPad|iPod/.test(ua)
+             || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isAndroid = /Android/.test(ua);
+  if (!isIOS && !isAndroid) return;
+
+  el.a2hsText.innerHTML = isIOS
+    ? '下の<b>共有マーク</b>から<b>「ホーム画面に追加」</b>すると、全画面で快適にプレイできます。'
+    : 'メニューから<b>「ホーム画面に追加」</b>すると、全画面で快適にプレイできます。';
+
+  /* 起動直後は邪魔なので少し待ってから出す */
+  setTimeout(() => {
+    if (isStandalone()) return;
+    el.a2hsBanner.hidden = false;
+  }, 2500);
+}
+
+function closeA2HS(){
+  el.a2hsBanner.hidden = true;
+  store.set('bj4_a2hsClosed', '1');
+}
+
+/* =========================================================
    16. イベント登録
    ========================================================= */
 /* 初回操作で音声を解禁 */
@@ -2394,7 +2581,7 @@ el.champRoundSeg.addEventListener('click', (e) => {
   if (b.dataset.rounds === 'custom'){
     el.champRoundCustom.hidden = false;
     el.champRoundCustom.focus();
-    online.createRounds = clamp(Number(el.champRoundCustom.value) || 10, 1, 200);
+    online.createRounds = clamp(Number(el.champRoundCustom.value) || CHAMP_ROUND_MIN, CHAMP_ROUND_MIN, CHAMP_ROUND_MAX);
   } else {
     el.champRoundCustom.hidden = true;
     online.createRounds = Number(b.dataset.rounds);
@@ -2402,7 +2589,7 @@ el.champRoundSeg.addEventListener('click', (e) => {
   audio.play('chip');
 });
 el.champRoundCustom.addEventListener('input', () => {
-  online.createRounds = clamp(Number(el.champRoundCustom.value) || 1, 1, 200);
+  online.createRounds = clamp(Number(el.champRoundCustom.value) || CHAMP_ROUND_MIN, CHAMP_ROUND_MIN, CHAMP_ROUND_MAX);
 });
 
 el.createRoomBtn.addEventListener('click', () => {
@@ -2437,6 +2624,13 @@ el.startGameBtn.addEventListener('click', () => {
   audio.play('button');
   online.socket.emit('room:start');
 });
+el.readyBtn.addEventListener('click', () => {
+  if (!online.socket || !online.state) return;
+  const me = online.state.players.find(p => p.isYou);
+  audio.play('button');
+  online.socket.emit('room:ready', { on: !(me && me.lobbyReady) });
+});
+
 el.roomCpuCheck.addEventListener('click', () => {
   if (el.roomCpuCheck.disabled || !online.socket) return;
   const next = el.roomCpuCheck.getAttribute('aria-checked') !== 'true';
@@ -2680,6 +2874,13 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+el.a2hsCloseBtn.addEventListener('click', () => { audio.play('button'); closeA2HS(); });
+
+/* ホーム画面に追加された状態で開き直したらバナーを消す */
+window.matchMedia('(display-mode: standalone)').addEventListener?.('change', (e) => {
+  if (e.matches) el.a2hsBanner.hidden = true;
+});
+
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   audio.resume();
@@ -2701,6 +2902,7 @@ async function init(){
   renderSettings();
   renderAccountUi();
   updateCreateCpuRow();
+  setupA2HS();
   showScreen('title');
   await restoreSession();
 }

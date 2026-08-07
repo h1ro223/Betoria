@@ -2395,3 +2395,159 @@ body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
   color: #FFB6B2;
   font-weight: 700;
 }
+
+/* =========================================================
+   34. v2.4 手番タイマー
+   ========================================================= */
+.turn-timer{
+  position: relative;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+}
+.turn-timer[hidden]{ display: none; }
+
+.turn-ring{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+.turn-ring circle{
+  fill: none;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.turn-ring-bg{ stroke: rgba(255,255,255,.14); }
+.turn-ring-fg{
+  stroke: var(--jade);
+  stroke-dasharray: 119.4;      /* 2πr (r=19) */
+  stroke-dashoffset: 0;
+  transition: stroke-dashoffset .25s linear, stroke .3s;
+}
+.turn-timer.is-warn .turn-ring-fg{ stroke: var(--led); }
+.turn-timer.is-danger .turn-ring-fg{ stroke: var(--crimson); }
+
+.turn-num{
+  font-size: 17px;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+}
+.turn-timer.is-warn .turn-num{ color: var(--led); }
+.turn-timer.is-danger .turn-num{
+  color: #FF6B62;
+  text-shadow: 0 0 12px rgba(255,60,50,.6);
+  animation: turnBlink .6s ease-in-out infinite alternate;
+}
+@keyframes turnBlink{ from{ opacity: 1; } to{ opacity: .45; } }
+
+/* 自分の番のときだけ強調する */
+.turn-timer.is-mine{
+  box-shadow: 0 0 0 1px rgba(63,191,143,.35), 0 0 18px rgba(63,191,143,.22);
+  border-radius: 50%;
+}
+
+@media (max-width: 420px){
+  .turn-timer{ width: 38px; height: 38px; margin-left: 6px; }
+  .turn-num{ font-size: 14px; }
+}
+
+/* =========================================================
+   35. v2.4 準備完了ボタン
+   ========================================================= */
+.btn-ready{
+  background: linear-gradient(180deg, #2E7F5F, #14432F);
+  border-color: rgba(63,191,143,.5);
+}
+.btn-ready:hover{ background: linear-gradient(180deg, #38966F, #1A543B); border-color: var(--jade); }
+.btn-ready.is-on{
+  background: linear-gradient(180deg, #1B5747, #0B2A22);
+  border-color: var(--jade);
+  box-shadow: inset 0 0 22px rgba(63,191,143,.22);
+}
+.btn-ready.is-on .btn-main::before{ content: "✓ "; color: var(--jade); }
+
+/* 待機ルームの準備完了バッジ */
+.member-ready{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(63,191,143,.55);
+  color: #5BE0AC;
+  background: rgba(63,191,143,.12);
+  white-space: nowrap;
+}
+.member-wait{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 2px 9px;
+  border-radius: 999px;
+  border: 1px dashed rgba(255,255,255,.2);
+  color: var(--smoke);
+  white-space: nowrap;
+}
+
+/* =========================================================
+   36. v2.4 ホーム画面への追加案内
+   ========================================================= */
+#a2hsBanner{
+  position: fixed;
+  left: 10px;
+  right: 10px;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  z-index: 78;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px solid var(--brass);
+  border-radius: 14px;
+  background: rgba(8,26,21,.97);
+  box-shadow: 0 10px 34px rgba(0,0,0,.6);
+  backdrop-filter: blur(8px);
+  animation: a2hsIn .3s var(--ease);
+}
+#a2hsBanner[hidden]{ display: none; }
+
+@keyframes a2hsIn{
+  from{ opacity: 0; transform: translateY(18px); }
+  to{   opacity: 1; transform: translateY(0); }
+}
+
+.a2hs-icon{ font-size: 22px; line-height: 1; flex: 0 0 auto; }
+.a2hs-text{ flex: 1 1 auto; font-size: 12.5px; line-height: 1.6; }
+.a2hs-text b{ color: var(--brass); }
+.a2hs-close{
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: none;
+  color: var(--smoke);
+  font-size: 15px;
+  border-radius: 6px;
+}
+.a2hs-close:hover{ color: var(--ivory); background: rgba(255,255,255,.08); }
+
+@media (min-width: 700px){
+  #a2hsBanner{ left: auto; right: 16px; width: min(400px, calc(100vw - 32px)); }
+}
+
+/* =========================================================
+   37. v2.4 結果画面の内訳表示
+   ========================================================= */
+.standing-sub{
+  display: block;
+  font-size: 10.5px;
+  color: var(--smoke);
+  margin-top: 2px;
+}

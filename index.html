@@ -8,6 +8,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link rel="icon" type="image/png" href="./icon/icon.png">
+<link rel="apple-touch-icon" href="./icon/icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BLACKJACK 4">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="./style.css">
 </head>
 <body data-screen="title">
@@ -49,7 +55,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v2.1.1 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v2.4 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -150,7 +156,7 @@
             <button type="button" class="seg-btn" data-rounds="50">50</button>
             <button type="button" class="seg-btn" data-rounds="custom">自由入力</button>
           </div>
-          <input type="number" id="champRoundCustom" class="text-input" min="1" max="200" placeholder="1〜200" hidden>
+          <input type="number" id="champRoundCustom" class="text-input" min="10" max="100" placeholder="10〜100" hidden>
           <p class="block-note">全員に大会専用メダル1000枚が配布されます(アカウントのメダルは減りません)。0枚になると脱落・観戦になります。</p>
         </div>
 
@@ -199,6 +205,10 @@
 
     <p class="room-hint" id="roomHint">ホストが開始するのを待っています…</p>
     <button type="button" class="btn btn-primary btn-wide" id="startGameBtn" hidden>ゲーム開始</button>
+    <button type="button" class="btn btn-ready btn-wide" id="readyBtn" hidden>
+      <span class="btn-main">準備完了</span>
+      <span class="btn-sub">押すとホストが開始できます</span>
+    </button>
   </section>
 
   <!-- ---------- カウントダウン ---------- -->
@@ -229,6 +239,13 @@
         <span class="round-now led" id="roundNow">1</span>
         <span class="round-sep">/</span>
         <span class="round-max" id="roundMax">30</span>
+      </div>
+      <div class="turn-timer" id="turnTimer" hidden>
+        <svg class="turn-ring" viewBox="0 0 44 44" aria-hidden="true">
+          <circle class="turn-ring-bg" cx="22" cy="22" r="19"></circle>
+          <circle class="turn-ring-fg" id="turnRing" cx="22" cy="22" r="19"></circle>
+        </svg>
+        <span class="turn-num led" id="turnNum">30</span>
       </div>
       <div class="game-bar-spacer"></div>
       <div class="tool-row">
@@ -487,10 +504,12 @@
         <h3>チャンピオンモード</h3>
         <ul class="rule-list">
           <li>プレイヤー全員に<b>大会専用メダル1000枚</b>が配られます(アカウントのメダルとは別で、CPUは参加しません)。</li>
-          <li><b>10・30・50ラウンド、または自由入力</b>から回数を選び、指定ラウンドが終わるか、自分以外が全員脱落するまで対戦します。</li>
+          <li><b>10・30・50ラウンド、または自由入力(10〜100)</b>から回数を選び、指定ラウンドが終わるか、自分以外が全員脱落するまで対戦します。</li>
           <li>CPUは参加しないため、<b>人のプレイヤーが2人以上</b>必要です。</li>
           <li>メダルが<b>0になると脱落</b>し、以降は観戦のみになります(途中退出も可能ですが、その回のEXPは受け取れません)。</li>
-          <li>結果に応じてEXPを獲得 … 生存して終了なら経過ラウンド分の<b>100%</b>+順位ボーナス、脱落した場合は脱落までの<b>50%</b>(いずれもエンジョイモードの<b>1.25倍</b>を基準に、参加人数が多いほど増加)。</li>
+          <li>EXPは<b>実際に勝負したラウンド数</b>で決まります。<b>SURRENDERしたラウンドは対象外</b>です。</li>
+          <li>生存して終了なら勝負したラウンド分の<b>100%</b>+順位ボーナス、脱落した場合は<b>50%</b>(いずれもエンジョイモードの<b>1.25倍</b>を基準に、参加人数が多いほど増加)。</li>
+          <li>順位ボーナスは「勝負したラウンド数 ÷ 規定ラウンド数」で按分されるため、降り続けても稼げません。</li>
         </ul>
       </div>
     </div>
@@ -580,11 +599,24 @@
     </div>
     <div class="sheet-body">
       <div class="sheet-section">
-        <h3>v2.1.1</h3>
+        <h3>v2.4</h3>
         <ul class="rule-list">
-          <li>スマホで💬チャットボタンとベットのチップが重なる問題を修正。チャットボタンは<b>ドラッグで自由に移動</b>できるようになりました(位置は保存されます)。</li>
-          <li><b>4人プレイ時に自分の表示エリアが見切れる</b>問題を修正。ゲーム中央エリアを縦スクロールできるようにしました。</li>
-          <li>各プレイヤーの表示エリアを全体的にコンパクト化しました。</li>
+          <li>待機ルームに<b>「準備完了」ボタン</b>を追加。参加者全員が押すとホストが開始できます。</li>
+          <li>ホストが退出した場合、<b>ルームは解散</b>され参加者全員がロビーに戻るようになりました。</li>
+          <li>定員に満たない状態で開始するとき、<b>確認ポップアップ</b>を表示するようにしました。</li>
+          <li>オンラインの<b>手番の残り時間</b>を、画面左上のリングで確認できるようにしました。</li>
+          <li>シングルプレイでも開始前に<b>3・2・1のカウントダウン</b>が入るようになりました。</li>
+          <li>ホーム画面に追加すると快適に遊べる旨の<b>案内</b>をスマホブラウザで表示します。</li>
+          <li>サイトアイコン(favicon・ホーム画面用)を設定しました。</li>
+          <li>チャンピオンモードのEXPを見直し。<b>SURRENDERしたラウンドは対象外</b>とし、順位ボーナスも戦ったラウンド数で按分するようにしました(全員サレンダーでの荒稼ぎ対策)。</li>
+          <li>チャンピオンモードの自由入力を<b>10〜100ラウンド</b>に変更し、レベルアップに必要なEXPを引き上げました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>v2.4で修正した不具合</h3>
+        <ul class="rule-list">
+          <li>一度ログインした後、<b>最終ログインの記録が更新されない</b>問題を修正しました。</li>
+          <li>更新履歴のバージョンが正しい順番で並んでいなかった問題を修正しました。</li>
         </ul>
       </div>
       <div class="sheet-section">
@@ -606,6 +638,14 @@
           <li>各プレイヤーの表示エリアを全体的にコンパクトにし、4人でも1画面に収まるようになりました。</li>
           <li><b>チャットボタンをドラッグで自由に移動</b>できるようになりました(位置は次回以降も保存されます)。</li>
           <li>チャットボタンの初期位置を操作パネルの真上に変更し、チップやボタンと重ならないようにしました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>v2.1.1</h3>
+        <ul class="rule-list">
+          <li>スマホで💬チャットボタンとベットのチップが重なる問題を修正。チャットボタンは<b>ドラッグで自由に移動</b>できるようになりました(位置は保存されます)。</li>
+          <li><b>4人プレイ時に自分の表示エリアが見切れる</b>問題を修正。ゲーム中央エリアを縦スクロールできるようにしました。</li>
+          <li>各プレイヤーの表示エリアを全体的にコンパクト化しました。</li>
         </ul>
       </div>
       <div class="sheet-section">
@@ -692,6 +732,15 @@
   </div>
 </div>
 
+<!-- ============ ホーム画面への追加案内 ============ -->
+<div id="a2hsBanner" hidden>
+  <span class="a2hs-icon">📲</span>
+  <span class="a2hs-text" id="a2hsText">
+    下の<b>共有マーク</b>から<b>「ホーム画面に追加」</b>すると、全画面で快適にプレイできます。
+  </span>
+  <button type="button" class="a2hs-close" id="a2hsCloseBtn" aria-label="閉じる">✕</button>
+</div>
+
 <!-- ============ トースト ============ -->
 <div id="toast" hidden><span id="toastText"></span></div>
 
@@ -705,7 +754,7 @@
 
 <!-- ============ クレジット ============ -->
 <div id="credit">
-  made by <a href="https://github.com/h1ro223" target="_blank" rel="noopener noreferrer">hiro / ヒロ</a>
+  made by <a href="https://github.com/h1ro223" target="_blank" rel="noopener noreferrer">hiro/ヒロ</a>
 </div>
 
 <script src="./script.js"></script>
