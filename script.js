@@ -24,10 +24,34 @@ const CPU_STAND       = 17;
 
 const BGM_FILE     = './BGM/BGM.mp3';
 const AD_FILES     = ['./AD/ad1.mp4', './AD/ad2.mp4', './AD/ad3.mp4'];
-const AD_REWARD    = 100;
+const AD_REWARD    = 300;
 const AD_SKIP_SEC  = 5;
 const AD_FULL_SEC  = 30;
 const AD_SKIP_RATE = 0.95;
+/* 広告のクールタイムと、受け取り可能な所持メダルの上限(v3.0・サーバーと合わせる) */
+const AD_COOLDOWN_MS = 15000;
+const AD_MEDAL_LIMIT = 500;
+
+/* アカウントアイコンの色(server.js の ICON_COLORS と必ず同じ並びにすること) */
+const ICON_COLORS = [
+  { key: 'brass',     name: 'ブラス' },
+  { key: 'emerald',   name: 'エメラルド' },
+  { key: 'ruby',      name: 'ルビー' },
+  { key: 'sapphire',  name: 'サファイア' },
+  { key: 'amethyst',  name: 'アメジスト' },
+  { key: 'tangerine', name: 'タンジェリン' },
+  { key: 'mint',      name: 'ミント' },
+  { key: 'rose',      name: 'ローズ' },
+  { key: 'sky',       name: 'スカイ' },
+  { key: 'slate',     name: 'スレート' }
+];
+const DEFAULT_ICON_COLOR = 'brass';
+const iconColorOf = (c) => (ICON_COLORS.some(x => x.key === c) ? c : DEFAULT_ICON_COLOR);
+
+/* 全額ベットボーナス(チャンピオンモード・サーバーと合わせる) */
+const ALLIN_BONUS_RATE = 1.5;
+/* 連勝表示を出し始める連勝数 */
+const STREAK_MIN_SHOW = 2;
 
 const DEAL_MS     = 240;
 const CPU_THINK_MS = 620;
@@ -340,6 +364,10 @@ const el = {
   roundNow: $('roundNow'),
   roundMax: $('roundMax'),
 
+  adBtnGain: $('adBtnGain'),
+  streakChip: $('streakChip'),
+  streakNum: $('streakNum'),
+
   fxLayer: $('fxLayer'),
   fxText: $('fxText'),
   fxBurst: $('fxBurst'),
@@ -431,6 +459,7 @@ const el = {
   actionPanel: $('actionPanel'),
   hitBtn: $('hitBtn'),
   standBtn: $('standBtn'),
+  doubleBtn: $('doubleBtn'),
   surrenderBtn: $('surrenderBtn'),
   blackjackBtn: $('blackjackBtn'),
   nextPanel: $('nextPanel'),
@@ -462,6 +491,9 @@ const el = {
   authSubmitBtn: $('authSubmitBtn'),
   profileView: $('profileView'),
   profileAvatar: $('profileAvatar'),
+  profileAvatarChar: $('profileAvatarChar'),
+  iconPicker: $('iconPicker'),
+  iconSwatches: $('iconSwatches'),
   profileName: $('profileName'),
   profileLevel: $('profileLevel'),
   expText: $('expText'),
@@ -527,7 +559,8 @@ const view = {
   dealer: { hand: [], hole: true },
   seats: [],             // {name, level, medal, bet, hand, result, isYou, active, ready, cpu, eliminated}
   message: '',
-  tone: ''
+  tone: '',
+  streak: 0              // 自分の連勝数(v3.0)
 };
 
 const account = { token: store.get('bj4_token') || '', user: null };
@@ -682,7 +715,13 @@ function seatMarkup(seat){
   if (seat.eliminated){
     tag = '<span class="result-badge" data-r="lose">脱落・観戦中</span>';
   } else if (seat.result){
-    tag = '<span class="result-badge" data-r="' + seat.result.kind + '">' + seat.result.label + '</span>';
+    const notes = [];
+    if (seat.result.doubled) notes.push('DOUBLE');
+    if (seat.result.allInBonus) notes.push('全額ベット ×' + ALLIN_BONUS_RATE);
+    const sub = notes.length ? '<span class="result-sub">' + esc(notes.join(' / ')) + '</span>' : '';
+    tag = '<span class="result-badge" data-r="' + seat.result.kind + '">' + seat.result.label + sub + '</span>';
+  } else if (seat.doubled && view.phase === 'play'){
+    tag = '<span class="result-badge" data-r="push">DOUBLE</span>';
   } else if (view.mode === 'online' && view.phase === 'bet' && seat.ready){
     tag = '<span class="result-badge" data-r="push">READY</span>';
   }
@@ -751,6 +790,7 @@ function renderMedal(){
   if (el.medalLabel){
     el.medalLabel.textContent = (view.mode === 'online' && view.onlineMode === 'champion') ? '大会メダル' : '所持メダル';
   }
+  updateAdBtn();
 }
 
 function betCap(){
@@ -804,8 +844,37 @@ function showScreen(name){
   el.brandBtn.disabled = name === 'title';
 
   updateRoundChip();
+  renderStreak();
+  updateAdBtn();
   updateChatVisibility();
   window.scrollTo(0, 0);
+}
+
+/* 連勝表示(v3.0)。2連勝から出し、5連勝以上は強調する */
+function renderStreak(){
+  const n = view.streak || 0;
+  if (screen !== 'game' || n < STREAK_MIN_SHOW){
+    el.streakChip.hidden = true;
+    el.streakChip.classList.remove('is-hot');
+    return;
+  }
+  const changed = el.streakChip.hidden || el.streakNum.textContent !== String(n);
+  el.streakNum.textContent = n;
+  el.streakChip.hidden = false;
+  el.streakChip.classList.toggle('is-hot', n >= 5);
+  if (changed){
+    /* アニメーションを再生し直す */
+    el.streakChip.style.animation = 'none';
+    void el.streakChip.offsetWidth;
+    el.streakChip.style.animation = '';
+  }
+}
+
+function setStreak(n){
+  const next = Math.max(0, Number(n) || 0);
+  if (view.streak === next){ renderStreak(); return; }
+  view.streak = next;
+  renderStreak();
 }
 
 function updateRoundChip(){
@@ -860,11 +929,13 @@ function renderAccountUi(){
   if (u){
     el.accountBtn.classList.add('is-in');
     el.accountAvatar.textContent = u.username.charAt(0).toUpperCase();
+    el.accountAvatar.dataset.iconColor = iconColorOf(u.iconColor);
     el.accountLv.textContent = 'Lv.' + u.level;
     el.accountLv.hidden = false;
   } else {
     el.accountBtn.classList.remove('is-in');
     el.accountAvatar.textContent = '?';
+    delete el.accountAvatar.dataset.iconColor;
     el.accountLv.hidden = true;
   }
   el.medalReadout.hidden = !(screen === 'game' || u);
@@ -880,9 +951,12 @@ function renderProfile(){
   el.deleteBox.hidden = true;
   el.deletePass.value = '';
   el.deleteError.hidden = true;
+  el.iconPicker.hidden = true;
   if (!u) return;
 
-  el.profileAvatar.textContent = u.username.charAt(0).toUpperCase();
+  el.profileAvatarChar.textContent = u.username.charAt(0).toUpperCase();
+  el.profileAvatar.dataset.iconColor = iconColorOf(u.iconColor);
+  renderIconSwatches();
   el.profileName.textContent = u.username;
   el.profileLevel.textContent = 'Lv.' + u.level;
   el.profileMedal.textContent = u.medal;
@@ -909,6 +983,42 @@ function renderProfile(){
 }
 
 /* =========================================================
+   10.4 アカウントアイコンの色(v3.0)
+   ========================================================= */
+function renderIconSwatches(){
+  const now = iconColorOf(account.user && account.user.iconColor);
+  el.iconSwatches.innerHTML = ICON_COLORS.map(c =>
+    '<button type="button" class="icon-swatch' + (c.key === now ? ' is-on' : '') + '"' +
+      ' data-icon-color="' + c.key + '" data-color="' + c.key + '"' +
+      ' title="' + esc(c.name) + '" aria-label="' + esc(c.name) + '"></button>').join('');
+}
+
+let iconSaving = false;
+
+async function applyIconColor(color){
+  if (iconSaving) return;
+  const key = iconColorOf(color);
+  if (!account.user) return;
+  if (account.user.iconColor === key){ el.iconPicker.hidden = true; return; }
+
+  iconSaving = true;
+  el.iconSwatches.querySelectorAll('.icon-swatch').forEach(b => { b.disabled = true; });
+  try {
+    const d = await api('/api/icon', { method: 'POST', body: JSON.stringify({ color: key }) });
+    setAccount(d.user);
+    audio.play('chip');
+    el.iconPicker.hidden = true;
+    toast('アイコンの色を変更しました');
+  } catch (e){
+    toast(e.message);
+    audio.play('error');
+  } finally {
+    iconSaving = false;
+    renderIconSwatches();
+  }
+}
+
+/* =========================================================
    10.5 演出(画面中央のカットイン)
    ========================================================= */
 const FX_LABEL = {
@@ -919,6 +1029,7 @@ const FX_LABEL = {
   lose:      'LOSE',
   push:      'PUSH',
   surrender: 'SURRENDER',
+  double:    'DOUBLE DOWN!',
   blackjack: 'BLACKJACK!!'
 };
 
@@ -1117,8 +1228,10 @@ function renderSingleSetup(){
 
 async function startSingle(){
   view.mode = 'single';
+  view.onlineMode = 'enjoy';
   buildShoe();
   shownCount.clear();
+  setStreak(0);
   makeSingleSeats(settings.seats);
 
   /* オンラインと同じく、開始前に3・2・1のカウントダウンを見せる */
@@ -1159,6 +1272,7 @@ function singleBetPhase(){
 
   view.seats.forEach(s => {
     s.hand = []; s.bet = 0; s.result = null; s.done = false; s.playing = false; s.active = false; s.surrendered = false;
+    s.doubled = false;
     if (s.cpu && s.medal < MIN_BET) s.medal = CPU_REFILL;
   });
   view.seats[0].medal = myMedal();
@@ -1270,9 +1384,16 @@ function updateActionButtons(){
   el.hitBtn.disabled = off;
   el.standBtn.disabled = off;
 
-  const canSurrender = !!seat && seat.hand.length === 2 && !seat.done && !isBj;
+  const twoCards = !!seat && seat.hand.length === 2 && !seat.done && !isBj;
+
+  const canSurrender = twoCards;
   el.surrenderBtn.hidden = !canSurrender;
   el.surrenderBtn.disabled = off;
+
+  /* ダブルダウン: 最初の2枚 かつ 同額を追加で払えるときだけ選べる */
+  const canDouble = twoCards && !seat.doubled && seat.medal >= seat.bet;
+  el.doubleBtn.hidden = !twoCards;
+  el.doubleBtn.disabled = off || !canDouble;
 
   el.blackjackBtn.hidden = !isBj;
   el.blackjackBtn.disabled = off;
@@ -1311,6 +1432,48 @@ async function singleHit(){
   updateActionButtons();
 }
 
+/* ダブルダウン: ベットを倍にして1枚だけ引き、そのままSTANDになる(v3.0) */
+async function singleDouble(){
+  if (view.phase !== 'play' || single.busy) return;
+  const seat = view.seats[single.activeIndex];
+  if (!seat || !seat.isYou || seat.done || seat.doubled) return;
+  if (seat.hand.length !== 2 || isBlackjack(seat.hand)) return;
+
+  const extra = seat.bet;
+  /* seat.medal は最初のベットを引いた残り。ここからさらに同額を払えるかを見る */
+  if (extra <= 0 || seat.medal < extra) return toast('メダルが足りないためダブルダウンできません');
+
+  single.busy = true;
+  disableActionButtons();
+  audio.play('chip');
+  showFx('double');
+
+  /* 追加ベット分は席の持ち分から引く(アカウントへの反映は精算時にまとめて行う) */
+  seat.medal -= extra;
+  seat.bet += extra;
+  seat.doubled = true;
+  renderTable();
+  await sleep(REVEAL_MS * 0.6);
+
+  seat.hand.push(drawCard());
+  audio.play('deal');
+  renderTable();
+  await sleep(DEAL_MS);
+
+  const v = handValue(seat.hand);
+  if (v.bust){
+    audio.play('bust');
+    showFx('bust');
+    setMessage('バースト! ' + v.total, 'alert');
+  } else {
+    setMessage('ダブルダウン ' + v.total + ' でスタンド');
+  }
+  await sleep(REVEAL_MS);
+
+  single.busy = false;
+  if (single.resolveTurn) single.resolveTurn();
+}
+
 function singleStand(){
   if (view.phase !== 'play' || single.busy) return;
   const seat = view.seats[single.activeIndex];
@@ -1345,6 +1508,7 @@ function singleBlackjack(){
 function disableActionButtons(){
   el.hitBtn.disabled = true;
   el.standBtn.disabled = true;
+  el.doubleBtn.disabled = true;
   el.surrenderBtn.disabled = true;
   el.blackjackBtn.disabled = true;
 }
@@ -1420,10 +1584,18 @@ async function singleSettle(){
     } else {
       s.result = judge(s.hand, s.bet, view.dealer.hand);
     }
+    s.result.doubled = !!s.doubled;
     s.medal += s.result.payout;
   });
 
   const me = view.seats[0];
+
+  /* 連勝カウント: WIN / BLACKJACK で加算、PUSHは維持、それ以外はリセット */
+  if (me.result){
+    if (me.result.kind === 'bj' || me.result.kind === 'win') setStreak((view.streak || 0) + 1);
+    else if (me.result.kind !== 'push') setStreak(0);
+  }
+
   renderTable();
 
   if (me.result){
@@ -1464,7 +1636,9 @@ async function singleSettle(){
 const online = {
   socket: null, roomId: null, state: null, connecting: false,
   createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10,
-  lastResultRound: -1
+  lastResultRound: -1,
+  /* 演出の重複防止用(v3.0) */
+  dealtRound: -1, dealerRound: -1, cardTotal: 0, dealerHole: true
 };
 
 function loadSocketIo(){
@@ -1548,16 +1722,10 @@ function connectSocket(){
 
   /* ホストが退出してルームが解散された */
   sock.on('room:closed', ({ reason } = {}) => {
-    stopTurnTimer();
-    online.roomId = null;
-    online.state = null;
-    online.lastResultRound = -1;
-    chat.log = [];
-    chat.unread = 0;
-    el.chatBadge.hidden = true;
-    closeChat();
+    resetOnlineRoomView();
     audio.play('error');
     showScreen('lobby');
+    renderMedal();
     sock.emit('room:list');
     toast(reason || 'ルームは解散されました');
   });
@@ -1605,15 +1773,174 @@ function renderRoomList(list){
   }).join('');
 }
 
+/* ---------------------------------------------------------
+   オンラインの演出(v3.0)
+   サーバーは最終状態をまとめて送ってくるので、そのままだと一括描画になる。
+   配札とディーラーのめくりだけ、シングルに近い「間」を作って見せる。
+   演出中に届いた新しい状態は pending に退避し、終わり次第まとめて適用する。
+   --------------------------------------------------------- */
+const ONLINE_DEAL_MS   = 160;   // オンラインの配札間隔(シングルより短め)
+const ONLINE_REVEAL_MS = 300;
+const onlineAnim = { busy: false, pending: null, token: 0 };
+
+function cancelOnlineAnim(){
+  onlineAnim.busy = false;
+  onlineAnim.pending = null;
+  onlineAnim.token++;
+}
+
+/* 演出の途中で画面から離れたら中断する */
+function animAlive(token){
+  return onlineAnim.busy && onlineAnim.token === token
+      && screen === 'game' && view.mode === 'online';
+}
+
+function mapSeats(state){
+  return state.players.map(p => ({
+    name: p.name, level: p.level, medal: p.medal, bet: p.bet,
+    hand: p.hand || [], result: p.result, isYou: p.isYou,
+    active: state.activeName === p.name, ready: p.ready, cpu: !!p.cpu,
+    eliminated: !!p.eliminated, doubled: !!p.doubled,
+    iconColor: iconColorOf(p.iconColor)
+  }));
+}
+
 function onRoomState(state){
   online.state = state;
   online.roomId = state.id;
   view.mode = 'online';
   view.onlineMode = state.mode;
 
+  /* ロビー・カウントダウン・大会結果は演出を打ち切ってすぐ反映する */
+  if (state.phase === 'lobby' || state.phase === 'countdown' || state.phase === 'champion_end'){
+    cancelOnlineAnim();
+    return applyRoomState(state);
+  }
+
+  if (onlineAnim.busy){ onlineAnim.pending = state; return; }
+
+  if (shouldAnimateDeal(state)) return runDealAnimation(state);
+  if (shouldAnimateDealer(state)) return runDealerAnimation(state);
+
+  applyRoomState(state);
+}
+
+/* ベット直後の配札(全員2枚・ディーラー2枚)のときだけ演出する */
+function shouldAnimateDeal(state){
+  if (state.phase !== 'play') return false;
+  if (online.dealtRound === state.round) return false;
+  if (!state.dealer || (state.dealer.hand || []).length !== 2) return false;
+  if (!state.players.length) return false;
+  if (!state.players.every(p => (p.hand || []).length === 2)) return false;
+  /* すでにカードが出ている(＝途中参加や再描画)ときは演出しない */
+  const shownNow = view.seats.reduce((n, s) => n + (s.hand ? s.hand.length : 0), 0);
+  return shownNow === 0;
+}
+
+async function runDealAnimation(state){
+  onlineAnim.busy = true;
+  const token = ++onlineAnim.token;
+  online.dealtRound = state.round;
+
+  if (screen !== 'game') showScreen('game');
+  shownCount.clear();
+
+  view.phase = 'deal';
+  view.dealer = { hand: [], hole: true };
+  view.seats = mapSeats(state).map(s =>
+    Object.assign({}, s, { hand: [], active: false, result: null }));
+
+  renderTable();
+  renderMedal();
+  updateRoundChip();
+  stopTurnTimer();
+  showPanel('none');
+  setMessage('カードを配っています…');
+
+  const hands = state.players.map(p => p.hand || []);
+  const dealerHand = state.dealer.hand || [];
+
+  for (let round = 0; round < 2; round++){
+    for (let i = 0; i < view.seats.length; i++){
+      if (!animAlive(token)) return endOnlineAnim(token);
+      if (hands[i].length <= round) continue;
+      view.seats[i].hand.push(hands[i][round]);
+      audio.play('deal');
+      renderSeats();
+      await sleep(ONLINE_DEAL_MS);
+    }
+    if (!animAlive(token)) return endOnlineAnim(token);
+    if (dealerHand.length > round){
+      view.dealer.hand.push(dealerHand[round]);
+      audio.play('deal');
+      renderDealer();
+      await sleep(ONLINE_DEAL_MS);
+    }
+  }
+
+  endOnlineAnim(token);
+}
+
+/* ディーラーの手番: ホールカードのめくりと引き足しを1枚ずつ見せる */
+function shouldAnimateDealer(state){
+  if (state.phase !== 'dealer') return false;
+  if (online.dealerRound === state.round) return false;
+  if (!state.dealer || state.dealer.hole !== false) return false;
+  return true;
+}
+
+async function runDealerAnimation(state){
+  onlineAnim.busy = true;
+  const token = ++onlineAnim.token;
+  online.dealerRound = state.round;
+
+  const full = state.dealer.hand || [];
+  /* まず今見えている2枚のうち伏せ札だけを開く */
+  const shown = Math.min(2, full.length);
+
+  view.phase = 'dealer';
+  view.seats = mapSeats(state).map(s => Object.assign({}, s, { active: false }));
+  view.dealer = { hand: full.slice(0, shown), hole: false };
+
+  stopTurnTimer();
+  showPanel('none');
+  setMessage('ディーラーのターン');
+  audio.play('flip');
+  renderTable();
+  await sleep(ONLINE_REVEAL_MS);
+
+  for (let i = shown; i < full.length; i++){
+    if (!animAlive(token)) return endOnlineAnim(token);
+    view.dealer.hand.push(full[i]);
+    audio.play('deal');
+    renderDealer();
+    await sleep(ONLINE_DEAL_MS);
+  }
+
+  if (animAlive(token)){
+    setMessage(state.message || '');
+    await sleep(ONLINE_REVEAL_MS);
+  }
+  endOnlineAnim(token);
+}
+
+/* 演出を終えて、その間に届いていた最新状態を反映する */
+function endOnlineAnim(token){
+  if (onlineAnim.token !== token) return;   // 途中で打ち切られている
+  onlineAnim.busy = false;
+  const next = onlineAnim.pending || online.state;
+  onlineAnim.pending = null;
+  if (next) applyRoomState(next);
+}
+
+function applyRoomState(state){
   if (state.phase === 'lobby'){
     online.lastResultRound = -1;
+    online.dealtRound = -1;
+    online.dealerRound = -1;
+    online.cardTotal = 0;
     stopTurnTimer();
+    setStreak(0);
     showScreen('room');
     renderRoomScreen(state);
     return;
@@ -1621,6 +1948,7 @@ function onRoomState(state){
 
   if (state.phase === 'countdown'){
     stopTurnTimer();
+    setStreak(0);
     return;   // カウントダウンは room:countdown 側で描画する
   }
 
@@ -1635,12 +1963,18 @@ function onRoomState(state){
 
   view.phase = state.phase;
   view.dealer = { hand: state.dealer.hand, hole: state.dealer.hole };
-  view.seats = state.players.map(p => ({
-    name: p.name, level: p.level, medal: p.medal, bet: p.bet,
-    hand: p.hand || [], result: p.result, isYou: p.isYou,
-    active: state.activeName === p.name, ready: p.ready, cpu: !!p.cpu,
-    eliminated: !!p.eliminated
-  }));
+  view.seats = mapSeats(state);
+
+  /* 手札が増えていたらカードの音を添える(一括描画でも手応えを出す) */
+  const total = state.players.reduce((n, p) => n + ((p.hand || []).length), 0)
+              + ((state.dealer.hand || []).length);
+  if (online.cardTotal > 0 && total > online.cardTotal) audio.play('deal');
+  if (online.dealerHole === true && state.dealer.hole === false) audio.play('flip');
+  online.cardTotal = state.phase === 'bet' ? 0 : total;
+  online.dealerHole = state.dealer.hole;
+
+  const me = state.players.find(p => p.isYou);
+  setStreak(me ? me.streak : 0);
 
   renderTable();
   renderMedal();
@@ -1693,7 +2027,8 @@ function renderRoomScreen(state){
           : '<span class="member-wait">準備中</span>');
     return '' +
       '<div class="member-row' + (p.isYou ? ' is-you' : '') + '">' +
-        '<span class="member-avatar">' + esc(p.name.charAt(0).toUpperCase()) + '</span>' +
+        '<span class="member-avatar" data-icon-color="' + iconColorOf(p.iconColor) + '">' +
+          esc(p.name.charAt(0).toUpperCase()) + '</span>' +
         '<span class="member-name">' + esc(p.name) + (p.isYou ? '(あなた)' : '') + '</span>' +
         '<span class="member-lv">Lv.' + p.level + '</span>' +
         badge +
@@ -1781,12 +2116,18 @@ function updateOnlinePanels(state){
     if (state.activeName === me.name && !me.done){
       const hand = me.hand || [];
       const isBj = isBlackjack(hand);
+      const twoCards = !isBj && hand.length === 2;
       el.hitBtn.hidden = isBj;
       el.standBtn.hidden = isBj;
       el.hitBtn.disabled = false;
       el.standBtn.disabled = false;
-      el.surrenderBtn.hidden = isBj || hand.length !== 2;
+      el.surrenderBtn.hidden = !twoCards;
       el.surrenderBtn.disabled = false;
+
+      /* ダブルダウン: 最初の2枚 かつ 同額を追加で払えるときだけ押せる */
+      el.doubleBtn.hidden = !twoCards;
+      el.doubleBtn.disabled = !(twoCards && !me.doubled && me.bet > 0 && me.medal >= me.bet);
+
       el.blackjackBtn.hidden = !isBj;
       el.blackjackBtn.disabled = false;
       showPanel('action');
@@ -2119,17 +2460,35 @@ function syncTurnTimer(state){
   el.turnTimer.classList.toggle('is-mine', !!me && state.activeName === me.name);
 }
 
-function leaveOnlineRoom(){
+/* ルームから離れたときの共通後始末(v3.0)
+   チャンピオンモードの「大会メダル」表示が残らないよう、必ず所持メダルに戻す */
+function resetOnlineRoomView(){
   stopTurnTimer();
-  if (online.socket) online.socket.emit('room:leave');
+  cancelOnlineAnim();
   online.roomId = null;
   online.state = null;
   online.lastResultRound = -1;
+  online.dealtRound = -1;
+  online.dealerRound = -1;
+  online.cardTotal = 0;
+  online.dealerHole = true;
+  view.onlineMode = 'enjoy';
+  view.seats = [];
+  view.dealer = { hand: [], hole: true };
+  setStreak(0);
+  shownCount.clear();
   chat.log = [];
   chat.unread = 0;
   el.chatBadge.hidden = true;
   closeChat();
+  renderMedal();
+}
+
+function leaveOnlineRoom(){
+  if (online.socket) online.socket.emit('room:leave');
+  resetOnlineRoomView();
   showScreen('lobby');
+  renderMedal();
   if (online.socket) online.socket.emit('room:list');
 }
 
@@ -2162,8 +2521,54 @@ function confirmBet(){
    ========================================================= */
 const ad = { open: false, forced: false, need: AD_SKIP_SEC, elapsed: 0, timerId: null, ready: false };
 
+/* 広告のクールタイム(v3.0)。所持メダルが上限以上のときも受け取れない */
+const adGate = { nextAt: 0, tickId: null };
+
+function adBlockReason(){
+  if (myMedal() >= AD_MEDAL_LIMIT) return 'limit';
+  if (Date.now() < adGate.nextAt) return 'cool';
+  return '';
+}
+
+function updateAdBtn(){
+  const reason = adBlockReason();
+  el.adBtn.disabled = !!reason;
+  el.adBtn.classList.toggle('is-off', !!reason);
+
+  if (reason === 'limit'){
+    el.adBtn.dataset.short = '上限';
+    el.adBtn.title = 'メダルを' + AD_MEDAL_LIMIT + '枚以上持っているため受け取れません';
+    if (el.adBtnGain) el.adBtnGain.textContent = AD_MEDAL_LIMIT + '枚未満で受取可';
+  } else if (reason === 'cool'){
+    const sec = Math.max(1, Math.ceil((adGate.nextAt - Date.now()) / 1000));
+    el.adBtn.dataset.short = sec + 's';
+    el.adBtn.title = 'あと' + sec + '秒で受け取れます';
+    if (el.adBtnGain) el.adBtnGain.textContent = 'あと ' + sec + ' 秒';
+  } else {
+    el.adBtn.dataset.short = '+' + AD_REWARD;
+    el.adBtn.title = '広告を見てメダルを受け取る';
+    if (el.adBtnGain) el.adBtnGain.textContent = 'メダル +' + AD_REWARD;
+  }
+}
+
+function startAdTicker(){
+  if (adGate.tickId) return;
+  adGate.tickId = setInterval(() => {
+    if (!el.adBtn.hidden) updateAdBtn();
+  }, 500);
+}
+
 function openAd(){
   if (ad.open) return;
+  const reason = adBlockReason();
+  if (reason === 'limit'){
+    audio.play('error');
+    return toast('メダルを' + AD_MEDAL_LIMIT + '枚以上持っているため受け取れません');
+  }
+  if (reason === 'cool'){
+    audio.play('error');
+    return toast('あと' + Math.ceil((adGate.nextAt - Date.now()) / 1000) + '秒お待ちください');
+  }
   ad.open = true;
   ad.elapsed = 0;
   ad.ready = false;
@@ -2222,15 +2627,27 @@ async function closeAd(){
   el.adOverlay.hidden = true;
   bgm.duck(false);
 
+  let gained = AD_REWARD;
   if (account.user){
     try {
       const d = await api('/api/ad', { method: 'POST' });
       setAccount(d.user);
-    } catch (e){ toast(e.message); return; }
+      if (d.reward) gained = d.reward;
+      adGate.nextAt = Date.now() + (d.cooldownMs || AD_COOLDOWN_MS);
+    } catch (e){
+      /* サーバー側でも上限・クールタイムを見ているので、拒否されたら合わせる */
+      adGate.nextAt = Math.max(adGate.nextAt, Date.now() + 2000);
+      updateAdBtn();
+      audio.play('error');
+      toast(e.message);
+      return;
+    }
   } else {
     guestMedal += AD_REWARD;
     store.set('bj4_guestMedal', String(guestMedal));
+    adGate.nextAt = Date.now() + AD_COOLDOWN_MS;
   }
+  updateAdBtn();
 
   if (view.phase === 'bet'){
     if (view.mode === 'single'){
@@ -2245,8 +2662,9 @@ async function closeAd(){
     renderBet();   // チップボタンの有効/無効を再計算(これが無いと進行不能になる)
   }
   renderMedal();
+  updateAdBtn();
   audio.play('win');
-  toast('+' + AD_REWARD + ' メダルを受け取りました');
+  toast('+' + gained + ' メダルを受け取りました');
 }
 
 function setSoundIcon(){
@@ -2491,10 +2909,11 @@ el.brandBtn.addEventListener('click', () => {
   if (screen === 'room' || (screen === 'game' && view.mode === 'online')){
     if (!confirm('部屋から退出してタイトルに戻りますか?')) return;
     if (online.socket) online.socket.emit('room:leave');
-    online.roomId = null;
+    resetOnlineRoomView();
   }
   audio.play('button');
   showScreen('title');
+  renderMedal();
 });
 
 el.leaveBtn.addEventListener('click', () => {
@@ -2645,7 +3064,9 @@ el.copyIdBtn.addEventListener('click', async () => {
 el.championBackBtn.addEventListener('click', () => {
   audio.play('button');
   if (online.socket) online.socket.emit('game:next');
+  resetOnlineRoomView();
   showScreen('lobby');
+  renderMedal();
   if (online.socket) online.socket.emit('room:list');
 });
 
@@ -2679,6 +3100,18 @@ el.standBtn.addEventListener('click', () => {
     disableActionButtons();
     if (online.socket) online.socket.emit('game:stand');
   } else singleStand();
+});
+
+el.doubleBtn.addEventListener('click', () => {
+  if (el.doubleBtn.disabled) return;
+  if (view.mode === 'online'){
+    audio.play('chip');
+    showFx('double');
+    disableActionButtons();
+    if (online.socket) online.socket.emit('game:double');
+  } else {
+    singleDouble();
+  }
 });
 
 el.blackjackBtn.addEventListener('click', () => {
@@ -2744,6 +3177,20 @@ el.accountBtn.addEventListener('click', () => {
   openOverlay(el.accountOverlay);
 });
 el.accountCloseBtn.addEventListener('click', () => closeOverlay(el.accountOverlay));
+
+/* --- アイコンの色変更(v3.0) --- */
+el.profileAvatar.addEventListener('click', () => {
+  if (!account.user) return;
+  audio.play('button');
+  el.iconPicker.hidden = !el.iconPicker.hidden;
+  if (!el.iconPicker.hidden) renderIconSwatches();
+});
+el.iconSwatches.addEventListener('click', (e) => {
+  const b = e.target.closest('.icon-swatch');
+  if (!b || b.disabled) return;
+  applyIconColor(b.dataset.color);
+});
+
 el.authTabs.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn');
   if (b) { audio.play('chip'); setAuthMode(b.dataset.tab); }
@@ -2867,6 +3314,7 @@ document.addEventListener('keydown', (e) => {
   if (view.phase === 'play' && !el.actionPanel.hidden){
     if (key === 'h') el.hitBtn.click();
     if (key === 's') el.standBtn.click();
+    if (key === 'd' && !el.doubleBtn.hidden && !el.doubleBtn.disabled) el.doubleBtn.click();
   } else if (view.phase === 'bet' && key === 'enter' && !el.betPanel.hidden){
     el.dealBtn.click();
   } else if (key === 'enter' && !el.nextPanel.hidden){
@@ -2901,10 +3349,14 @@ async function init(){
   setAuthMode('login');
   renderSettings();
   renderAccountUi();
+  renderIconSwatches();
   updateCreateCpuRow();
+  updateAdBtn();
+  startAdTicker();
   setupA2HS();
   showScreen('title');
   await restoreSession();
+  updateAdBtn();
 }
 
 init();

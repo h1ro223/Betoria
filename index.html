@@ -35,7 +35,7 @@
       <span class="ad-btn-icon">🎁</span>
       <span class="ad-btn-body">
         <span class="ad-btn-title">広告を見る</span>
-        <span class="ad-btn-gain">メダル +100</span>
+        <span class="ad-btn-gain" id="adBtnGain">メダル +300</span>
       </span>
     </button>
 
@@ -55,7 +55,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v2.4 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v3.0 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -240,6 +240,11 @@
         <span class="round-sep">/</span>
         <span class="round-max" id="roundMax">30</span>
       </div>
+      <div class="streak-chip" id="streakChip" hidden>
+        <span class="streak-icon">🔥</span>
+        <span class="streak-num led" id="streakNum">2</span>
+        <span class="streak-cap">連勝中!</span>
+      </div>
       <div class="turn-timer" id="turnTimer" hidden>
         <svg class="turn-ring" viewBox="0 0 44 44" aria-hidden="true">
           <circle class="turn-ring-bg" cx="22" cy="22" r="19"></circle>
@@ -306,6 +311,10 @@
     <button type="button" class="btn btn-stand" id="standBtn">
       <span class="btn-main">STAND</span>
       <span class="btn-sub">この手札で勝負</span>
+    </button>
+    <button type="button" class="btn btn-double" id="doubleBtn" hidden>
+      <span class="btn-main">DOUBLE</span>
+      <span class="btn-sub">倍賭けで1枚だけ</span>
     </button>
     <button type="button" class="btn btn-surrender" id="surrenderBtn" hidden>
       <span class="btn-main">SURRENDER</span>
@@ -390,11 +399,19 @@
       <!-- ログイン済み -->
       <div id="profileView" hidden>
         <div class="profile-head">
-          <span class="profile-avatar" id="profileAvatar">H</span>
+          <button type="button" class="profile-avatar" id="profileAvatar" title="アイコンの色を変更">
+            <span class="profile-avatar-char" id="profileAvatarChar">H</span>
+            <span class="profile-avatar-pen">🎨</span>
+          </button>
           <div class="profile-id">
             <span class="profile-name" id="profileName">-</span>
             <span class="profile-level led" id="profileLevel">Lv.1</span>
           </div>
+        </div>
+
+        <div class="icon-picker" id="iconPicker" hidden>
+          <p class="icon-picker-cap">アイコンの色を選んでください</p>
+          <div class="icon-swatches" id="iconSwatches"></div>
         </div>
 
         <div class="exp-block">
@@ -479,6 +496,14 @@
           <li><b>引き分け</b>(プッシュ)… ベットが返却</li>
           <li><b>負け・バースト</b> … ベット没収</li>
           <li><b>SURRENDER</b> … 最初の2枚の時だけ選択可。勝負を降りて、ベットの半分だけ没収されます。</li>
+          <li><b>DOUBLE</b>(ダブルダウン)… 最初の2枚の時だけ選択可。ベットを<b>倍</b>にして<b>1枚だけ</b>引き、そのままSTANDになります。メダルが足りないときは選べません。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>連勝</h3>
+        <ul class="rule-list">
+          <li>WIN・BLACKJACKが続くと、画面上部に<b>「🔥 X連勝中!」</b>が表示されます(2連勝から)。</li>
+          <li>引き分け(PUSH)では連勝は途切れません。負け・バースト・SURRENDERでリセットされます。</li>
         </ul>
       </div>
       <div class="sheet-section">
@@ -510,6 +535,7 @@
           <li>EXPは<b>実際に勝負したラウンド数</b>で決まります。<b>SURRENDERしたラウンドは対象外</b>です。</li>
           <li>生存して終了なら勝負したラウンド分の<b>100%</b>+順位ボーナス、脱落した場合は<b>50%</b>(いずれもエンジョイモードの<b>1.25倍</b>を基準に、参加人数が多いほど増加)。</li>
           <li>順位ボーナスは「勝負したラウンド数 ÷ 規定ラウンド数」で按分されるため、降り続けても稼げません。</li>
+          <li><b>全額ベットボーナス</b> … 持っている大会メダルを<b>全額ベット</b>して勝つと、獲得メダルがさらに<b>1.5倍</b>になります(例: 300枚でBLACKJACK → 300×2.5=750 → ×1.5=<b>1125</b>枚 / WIN → 300×2=600 → ×1.5=<b>900</b>枚)。ダブルダウンで手持ちを使い切った場合も対象です。</li>
         </ul>
       </div>
     </div>
@@ -598,6 +624,25 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v3.0</h3>
+        <ul class="rule-list">
+          <li><b>ダブルダウン(DOUBLE)</b>を追加。最初の2枚のとき、ベットを倍にして1枚だけ引けます。</li>
+          <li>WIN・BLACKJACKが続くと<b>「🔥 X連勝中!」</b>を画面上部に表示するようになりました。</li>
+          <li>マイページの<b>アイコンをタップすると色を変更</b>できるようになりました(全10色)。ルーム内の表示にも反映されます。</li>
+          <li>チャンピオンモードに<b>全額ベットボーナス</b>を追加。全額ベットで勝つと獲得メダルが<b>1.5倍</b>になります。</li>
+          <li>オンライン対戦の<b>配札・めくりの演出</b>を強化し、シングルプレイに近い「間」を感じられるようにしました。</li>
+          <li>広告視聴で受け取れるメダルを<b>100枚 → 300枚</b>に増やしました。ただし<b>15秒のクールタイム</b>があり、所持メダルが<b>500枚以上のときは受け取れません</b>。</li>
+          <li>スマホでチャットを開いたとき、キーボードと重ならないよう<b>画面の上側に表示</b>するようにしました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>v3.0で修正した不具合</h3>
+        <ul class="rule-list">
+          <li>チャットのやり取りが長くなると<b>スタンプ欄が押しづらくなる</b>問題を修正しました。</li>
+          <li>チャンピオンモードから退出した後も、右上の表示が<b>大会メダルのまま</b>だった問題を修正しました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v2.4</h3>
         <ul class="rule-list">

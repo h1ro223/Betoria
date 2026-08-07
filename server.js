@@ -15,12 +15,19 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '2.4.0';
+const APP_VERSION = '3.0.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
    ========================================================= */
 const INITIAL_MEDAL = 1000;
+
+/* アカウントアイコンの色(v3.0)。クライアントの ICON_COLORS と必ず揃えること */
+const ICON_COLORS = [
+  'brass', 'emerald', 'ruby', 'sapphire', 'amethyst',
+  'tangerine', 'mint', 'rose', 'sky', 'slate'
+];
+const DEFAULT_ICON_COLOR = 'brass';
 
 const db = (() => {
   const url = process.env.DATABASE_URL;
@@ -52,7 +59,7 @@ const db = (() => {
   });
 
   const COLS = 'username, pass_hash, medal, level, exp, rounds, wins, losses, pushes, bj, ' +
-               'champ_plays, champ_wins, champ_losses, champ_draws, last_login';
+               'champ_plays, champ_wins, champ_losses, champ_draws, last_login, icon_color';
 
   return {
     kind: 'postgres',
@@ -74,6 +81,7 @@ const db = (() => {
           champ_losses INTEGER NOT NULL DEFAULT 0,
           champ_draws  INTEGER NOT NULL DEFAULT 0,
           last_login   TIMESTAMPTZ,
+          icon_color   TEXT NOT NULL DEFAULT '${DEFAULT_ICON_COLOR}',
           created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )`);
       /* 既存テーブルへのマイグレーション(v1.0からの引き継ぎ用) */
@@ -82,6 +90,7 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_losses INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_draws  INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login   TIMESTAMPTZ`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS icon_color   TEXT NOT NULL DEFAULT '${DEFAULT_ICON_COLOR}'`);
       console.log('[db] PostgreSQL 接続OK');
     },
     async findUser(name){
@@ -90,10 +99,11 @@ const db = (() => {
     },
     async createUser(row){
       await pool.query(
-        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
-         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login]);
+         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
+         row.icon_color || DEFAULT_ICON_COLOR]);
       return row;
     },
     async saveUser(row){
@@ -101,11 +111,12 @@ const db = (() => {
         `UPDATE users SET medal=$2, level=$3, exp=$4, rounds=$5,
          wins=$6, losses=$7, pushes=$8, bj=$9,
          champ_plays=$10, champ_wins=$11, champ_losses=$12, champ_draws=$13,
-         last_login=$14
+         last_login=$14, icon_color=$15
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
-         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login]);
+         row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
+         row.icon_color || DEFAULT_ICON_COLOR]);
       return row;
     },
     async deleteUser(name){
@@ -246,7 +257,8 @@ function publicUser(u){
     champPlays: u.champ_plays,
     champWins: u.champ_wins,
     champLosses: u.champ_losses,
-    champDraws: u.champ_draws
+    champDraws: u.champ_draws,
+    iconColor: ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR
   };
 }
 
@@ -273,6 +285,8 @@ const CHAMPION_ROUND_MIN = 10;
 const CHAMPION_ROUND_MAX = 100;
 const CHAT_STAMPS = ['👍', '🎉', '😂', '😭', '🔥', '🙏'];
 const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤー数
+/* チャンピオンモードの全額ベットボーナス(WIN/BLACKJACKの獲得メダルを1.5倍)(v3.0) */
+const ALLIN_BONUS_RATE = 1.5;
 
 function buildShoe(){
   const shoe = [];
@@ -423,6 +437,10 @@ function roomState(room, forName){
       result: p.result,
       connected: p.connected,
       eliminated: !!p.eliminated,
+      iconColor: p.iconColor || DEFAULT_ICON_COLOR,
+      doubled: !!p.doubled,
+      allIn: !!p.allIn,
+      streak: p.streak || 0,
       isYou: p.name === forName
     }))
   };
@@ -458,7 +476,9 @@ function fillCpuSeats(room){
     const name = CPU_NAMES[i % CPU_NAMES.length] + (i >= CPU_NAMES.length ? (Math.floor(i / CPU_NAMES.length) + 1) : '');
     room.players.push({
       name, sid: null, cpu: true, level: 0, medal: CPU_MEDAL,
+      iconColor: 'slate',
       bet: 0, hand: [], done: false, surrendered: false, ready: false,
+      doubled: false, allIn: false, streak: 0,
       result: null, connected: true, eliminated: false
     });
   }
@@ -477,6 +497,7 @@ function resetRound(room){
   for (const p of room.players){
     p.bet = 0; p.hand = []; p.done = false; p.surrendered = false;
     p.result = null; p.ready = false;
+    p.doubled = false; p.allIn = false;
   }
   if (room.shoe.length < DECK_COUNT * 52 * 0.25) room.shoe = buildShoe();
   autoBetCpu(room);
@@ -499,6 +520,8 @@ function autoBetCpu(room){
 function beginCountdown(io, room){
   room.phase = 'countdown';
   room.message = 'まもなく開始します';
+  /* 連勝はゲーム単位で数える(v3.0) */
+  for (const p of room.players) p.streak = 0;
   let n = COUNTDOWN_SEC;
   broadcastCountdown(io, room, n);
   room.countdownTimer = setInterval(() => {
@@ -646,8 +669,21 @@ async function finishRound(io, room){
       else if (v.total < dv.total){ kind = 'lose'; label = 'LOSE'; }
       else { payout = p.bet; kind = 'push'; label = 'PUSH'; }
 
-      p.result = { kind, label, payout, net: payout - p.bet };
+      /* 全額ベットボーナス(チャンピオンモード限定)
+         WIN・BLACKJACKで獲得したメダルをさらに1.5倍にする。
+         ダブルダウンで手持ちを使い切った場合も対象。 */
+      let allInBonus = false;
+      if (room.mode === 'champion' && p.allIn && (kind === 'bj' || kind === 'win')){
+        payout = Math.floor(payout * ALLIN_BONUS_RATE);
+        allInBonus = true;
+      }
+
+      p.result = { kind, label, payout, net: payout - p.bet, doubled: !!p.doubled, allInBonus };
     }
+
+    /* 連勝カウント: WIN / BLACKJACK で加算、PUSH・SURRENDERは維持、負けでリセット */
+    if (p.result.kind === 'bj' || p.result.kind === 'win') p.streak = (p.streak || 0) + 1;
+    else if (p.result.kind !== 'push') p.streak = 0;
 
     p.medal += p.result.payout;
 
@@ -798,7 +834,7 @@ function blankUserRow(username, pass_hash){
     username, pass_hash, medal: INITIAL_MEDAL, level: 1, exp: 0,
     rounds: 0, wins: 0, losses: 0, pushes: 0, bj: 0,
     champ_plays: 0, champ_wins: 0, champ_losses: 0, champ_draws: 0,
-    last_login: null
+    last_login: null, icon_color: DEFAULT_ICON_COLOR
   };
 }
 
@@ -866,7 +902,7 @@ app.post('/api/result', async (req, res) => {
   const payout = Math.floor(Number(req.body?.payout) || 0);
   const kind = String(req.body?.kind || '');
   if (!['win','lose','push','bj','surrender'].includes(kind)) return res.status(400).json({ error: '不正な結果です' });
-  if (bet < MIN_BET || bet > u.medal + bet) return res.status(400).json({ error: '不正なベット額です' });
+  if (bet < MIN_BET || bet > u.medal) return res.status(400).json({ error: '不正なベット額です' });
   if (payout < 0 || payout > bet * 3) return res.status(400).json({ error: '不正な配当です' });
 
   u.medal = u.medal - bet + payout;
@@ -875,16 +911,50 @@ app.post('/api/result', async (req, res) => {
   res.json({ user: publicUser(u), levelUp: up });
 });
 
-/* 広告視聴報酬 */
+/* 広告視聴報酬(v3.0: 300枚 / クールタイム15秒 / 所持500枚以上は受け取り不可) */
+const AD_REWARD = 300;
+const AD_COOLDOWN_MS = 15000;
+const AD_MEDAL_LIMIT = 500;
 const adCooldown = new Map();
+
 app.post('/api/ad', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return authFail(res, '認証が必要です');
+
+  if (u.medal >= AD_MEDAL_LIMIT)
+    return res.status(403).json({ error: 'メダルを' + AD_MEDAL_LIMIT + '枚以上持っているため受け取れません' });
+
   const last = adCooldown.get(u.username) || 0;
-  if (Date.now() - last < 4000) return res.status(429).json({ error: '少し時間をおいてください' });
+  const wait = AD_COOLDOWN_MS - (Date.now() - last);
+  if (wait > 0)
+    return res.status(429).json({ error: 'あと' + Math.ceil(wait / 1000) + '秒お待ちください', waitMs: wait });
+
   adCooldown.set(u.username, Date.now());
-  u.medal += 100;
+  u.medal += AD_REWARD;
   await db.saveUser(u);
+  res.json({ user: publicUser(u), reward: AD_REWARD, cooldownMs: AD_COOLDOWN_MS });
+});
+
+/* アカウントアイコンの色を変更(v3.0) */
+app.post('/api/icon', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  const color = String(req.body?.color || '');
+  if (!ICON_COLORS.includes(color)) return res.status(400).json({ error: '選択できない色です' });
+
+  u.icon_color = color;
+  await db.saveUser(u);
+
+  /* 接続中なら、参加中のルームの表示にも即反映させる */
+  for (const [, sock] of io.of('/').sockets){
+    if (!sock.data || sock.data.name !== u.username) continue;
+    sock.data.iconColor = color;
+    const room = findRoomBySid(sock.id);
+    if (!room) continue;
+    const p = room.players.find(x => x.sid === sock.id);
+    if (p){ p.iconColor = color; broadcast(io, room); }
+  }
+
   res.json({ user: publicUser(u) });
 });
 
@@ -1006,6 +1076,7 @@ io.use(async (socket, next) => {
   socket.data.name = u.username;
   socket.data.level = u.level;
   socket.data.medal = u.medal;
+  socket.data.iconColor = ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR;
   try { await touchLogin(u); } catch {}
   next();
 });
@@ -1115,6 +1186,8 @@ io.on('connection', (socket) => {
 
     if (room.mode === 'champion'){
       if (bet > p.medal) return socket.emit('room:error', '大会用メダルが足りません');
+      /* 全額ベット判定(チャンピオンモードのボーナス対象) */
+      p.allIn = bet === p.medal;
       p.bet = bet; p.ready = true; p.medal -= bet;
       room.message = room.players.filter(x => x.ready).length + '/' + room.players.length + ' 人がベット済み';
       return broadcast(io, room);
@@ -1134,10 +1207,12 @@ io.on('connection', (socket) => {
     }
     if (p.ready) return;
 
+    const wasAllIn = bet === u.medal;
     u.medal -= bet;
     try { await db.saveUser(u); }
     catch (e){ console.error('[bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
 
+    p.allIn = wasAllIn;
     p.bet = bet; p.ready = true; p.medal = u.medal; p.level = u.level;
     socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
 
@@ -1174,6 +1249,54 @@ io.on('connection', (socket) => {
     const p = room.players[room.activeIndex];
     if (!p || p.sid !== socket.id || p.done) return;
     p.done = true;
+    nextTurn(io, room);
+  });
+
+  /* ダブルダウン: 最初の2枚のときだけ有効。
+     ベットを倍にして1枚だけ引き、そのままSTAND扱いにする(v3.0) */
+  socket.on('game:double', async () => {
+    const room = findRoomBySid(socket.id);
+    if (!room || room.phase !== 'play') return;
+    const p = room.players[room.activeIndex];
+    if (!p || p.sid !== socket.id || p.done) return;
+    if (p.hand.length !== 2 || p.doubled || p.surrendered) return;
+    if (isBlackjack(p.hand)) return socket.emit('room:error', 'ブラックジャックはダブルダウンできません');
+
+    const extra = p.bet;
+    if (extra <= 0) return;
+
+    if (room.mode === 'champion'){
+      if (p.medal < extra) return socket.emit('room:error', '大会用メダルが足りません');
+      p.medal -= extra;
+    } else {
+      let u;
+      try { u = await db.findUser(p.name); }
+      catch (e){ console.error('[double]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
+      if (!u) return socket.emit('room:error', 'アカウントが見つかりません');
+      if (u.medal < extra){
+        p.medal = u.medal;
+        broadcast(io, room);
+        socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+        return socket.emit('room:error', 'メダルが足りません');
+      }
+      /* 待っている間に手番が移っていないか再確認する */
+      if (room.phase !== 'play' || room.players[room.activeIndex] !== p || p.done) return;
+      u.medal -= extra;
+      try { await db.saveUser(u); }
+      catch (e){ console.error('[double]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
+      p.medal = u.medal;
+      socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+    }
+
+    p.bet += extra;
+    p.doubled = true;
+    /* 追加ベットで手持ちを使い切ったら、これも全額ベット扱いにする */
+    p.allIn = p.medal <= 0;
+
+    p.hand.push(room.shoe.pop());
+    p.done = true;
+    const v = handValue(p.hand);
+    room.message = p.name + ' さんがダブルダウン' + (v.bust ? ' → バースト' : ' (' + v.total + ')');
     nextTurn(io, room);
   });
 
@@ -1254,11 +1377,13 @@ io.on('connection', (socket) => {
     if (!u) return;
     socket.data.medal = u.medal;
     socket.data.level = u.level;
+    socket.data.iconColor = ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR;
     socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
 
     const room = findRoomBySid(socket.id);
     if (!room) return;
     const p = room.players.find(x => x.sid === socket.id);
+    if (p) p.iconColor = socket.data.iconColor;
     if (p && !p.ready && room.mode === 'enjoy'){ p.medal = u.medal; p.level = u.level; }
     broadcast(io, room);
   });
@@ -1280,6 +1405,7 @@ async function refreshSocketUser(socket){
     if (!u) return;
     socket.data.medal = u.medal;
     socket.data.level = u.level;
+    socket.data.iconColor = ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR;
   } catch (e){ console.error('[refresh]', e.message); }
 }
 
@@ -1290,7 +1416,9 @@ function makePlayer(socket){
     cpu: false,
     level: socket.data.level,
     medal: socket.data.medal,
+    iconColor: socket.data.iconColor || DEFAULT_ICON_COLOR,
     bet: 0, hand: [], done: false, surrendered: false, ready: false,
+    doubled: false, allIn: false, streak: 0,
     lobbyReady: false,
     result: null, connected: true, eliminated: false, eliminatedAtRound: null
   };

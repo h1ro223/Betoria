@@ -178,6 +178,23 @@ button:disabled{ cursor: not-allowed; }
 }
 .ad-btn:hover{ filter: brightness(1.1); box-shadow: 0 3px 0 rgba(0,0,0,.35), 0 0 30px rgba(201,162,39,.42); }
 .ad-btn:active{ transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
+/* クールタイム中・所持メダル上限のときはグレーアウト(v3.0) */
+.ad-btn.is-off,
+.ad-btn:disabled{
+  background: linear-gradient(180deg, #5A5A5A, #343434);
+  color: rgba(255,255,255,.62);
+  box-shadow: 0 3px 0 rgba(0,0,0,.35);
+  cursor: default;
+  filter: none;
+}
+.ad-btn.is-off:hover,
+.ad-btn:disabled:hover{ filter: none; box-shadow: 0 3px 0 rgba(0,0,0,.35); }
+.ad-btn.is-off:active,
+.ad-btn:disabled:active{ transform: none; box-shadow: 0 3px 0 rgba(0,0,0,.35); }
+.ad-btn.is-off .ad-btn-gain,
+.ad-btn:disabled .ad-btn-gain{ color: rgba(255,255,255,.55); }
+.ad-btn.is-off .ad-btn-icon,
+.ad-btn:disabled .ad-btn-icon{ opacity: .55; }
 .ad-btn-icon{ font-size: 21px; line-height: 1; }
 .ad-btn-body{ display: flex; flex-direction: column; gap: 2px; line-height: 1.15; }
 .ad-btn-title{ font-size: 14px; font-weight: 900; letter-spacing: .03em; }
@@ -801,11 +818,13 @@ body[data-phase="bet"] .cards{ min-height: 0; }
   .ad-btn{ padding: 9px 13px; }
   .ad-btn-icon{ font-size: 22px; }
   .ad-btn::after{
-    content: "+100";
+    content: "+300";
     font-family: var(--font-display);
     font-size: 18px;
     line-height: 1;
   }
+  /* クールタイム中・上限到達時は短い表記に差し替える(v3.0) */
+  .ad-btn.is-off::after{ content: attr(data-short); font-size: 14px; }
   .medal-label{ font-size: 9px; }
   .medal-value{ font-size: 24px; }
   .medal-readout{ padding: 4px 9px; }
@@ -1975,6 +1994,7 @@ input, textarea{
 }
 
 .chat-head{
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1988,14 +2008,18 @@ input, textarea{
   color: var(--brass);
 }
 
+/* ログだけが伸縮するようにする。
+   スタンプ欄・入力欄には flex:0 0 auto を付けてあるので、
+   会話が長くなってもログ側だけが縮み、下の操作列は潰れない(v3.0で修正) */
 .chat-log{
   flex: 1 1 auto;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 9px;
-  min-height: 120px;
+  min-height: 100px;
 }
 .chat-empty{
   margin: auto;
@@ -2044,11 +2068,15 @@ input, textarea{
 }
 
 .chat-stamps{
+  flex: 0 0 auto;
   display: flex;
+  align-items: center;
   gap: 6px;
   padding: 9px 12px;
   border-top: 1px solid rgba(201,162,39,.16);
   overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 .stamp-btn{
   flex: 0 0 auto;
@@ -2065,6 +2093,7 @@ input, textarea{
 .stamp-btn:active{ transform: scale(.9); }
 
 .chat-input-row{
+  flex: 0 0 auto;
   display: flex;
   gap: 8px;
   padding: 10px 12px 12px;
@@ -2110,12 +2139,14 @@ input, textarea{
    28. スマホ最適化(v2.1)
    ========================================================= */
 @media (max-width: 700px){
+  /* スマホはソフトキーボードが下半分を覆うので、チャットは画面の上側に出す(v3.0) */
   #chatPanel{
     left: 10px;
     right: 10px;
-    bottom: 10px;
+    top: calc(env(safe-area-inset-top, 0px) + 74px);
+    bottom: auto;
     width: auto;
-    max-height: 58dvh;
+    max-height: 56dvh;
   }
   #chatFab{ top: 42%; width: 50px; height: 50px; }
   #chatFloat{ top: calc(42% - 70px); }
@@ -2153,12 +2184,28 @@ input, textarea{
   .bet-actions .btn-ghost{ padding-left: 8px; padding-right: 8px; }
   .chip-row{ gap: 8px; }
   .chip{ max-width: 64px; }
+  /* DOUBLE追加でボタンが4つ並ぶため、狭い端末では文字を詰める(v3.0) */
+  #actionPanel{ gap: 6px; }
+  #actionPanel .btn{ padding-left: 3px; padding-right: 3px; min-width: 0; }
+  #actionPanel .btn-main{ font-size: 12.5px; letter-spacing: 0; }
+  #actionPanel .btn-sub{ font-size: 8.5px; letter-spacing: 0; }
+}
+
+@media (max-width: 360px){
+  #actionPanel .btn-main{ font-size: 11.5px; }
+  #actionPanel .btn-sub{ font-size: 8px; }
 }
 
 
-/* 待機ルームでは操作パネルが無いのでチャットを下げる */
-body[data-screen="room"] #chatFab,
-body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
+/* 待機ルームでは操作パネルが無いのでチャットを下げる
+   (スマホはキーボード対策で上寄せにしているため、PC幅のときだけ適用する) */
+@media (min-width: 701px){
+  body[data-screen="room"] #chatFab,
+  body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
+}
+@media (max-width: 700px){
+  body[data-screen="room"] #chatFab{ bottom: auto; }
+}
 
 
 /* モーション抑制時は、演出を「静止したカットイン」として見せる
@@ -2550,4 +2597,185 @@ body[data-screen="room"] #chatPanel{ bottom: clamp(14px, 3vh, 26px); }
   font-size: 10.5px;
   color: var(--smoke);
   margin-top: 2px;
+}
+
+/* =========================================================
+   38. v3.0 アイコンカラー
+   ========================================================= */
+/* 各アバターに data-icon-color を付けると配色が切り替わる。
+   色の一覧は script.js の ICON_COLORS / server.js の ICON_COLORS と揃えること */
+[data-icon-color]{
+  background: linear-gradient(160deg, var(--ic-1), var(--ic-2)) !important;
+  color: var(--ic-fg) !important;
+}
+[data-icon-color="brass"]    { --ic-1:#E0B72F; --ic-2:#8A701A; --ic-fg:#12100A; }
+[data-icon-color="emerald"]  { --ic-1:#42C795; --ic-2:#14432F; --ic-fg:#04160F; }
+[data-icon-color="ruby"]     { --ic-1:#E85F5F; --ic-2:#7A1F1F; --ic-fg:#FFF1F1; }
+[data-icon-color="sapphire"] { --ic-1:#5093E8; --ic-2:#1B3E70; --ic-fg:#F0F6FF; }
+[data-icon-color="amethyst"] { --ic-1:#AE80E8; --ic-2:#4A2A78; --ic-fg:#F8F2FF; }
+[data-icon-color="tangerine"]{ --ic-1:#F5983F; --ic-2:#8A4A12; --ic-fg:#221202; }
+[data-icon-color="mint"]     { --ic-1:#76E8CB; --ic-2:#1E7A64; --ic-fg:#04211A; }
+[data-icon-color="rose"]     { --ic-1:#F57FAC; --ic-2:#8A2A55; --ic-fg:#2A0512; }
+[data-icon-color="sky"]      { --ic-1:#63D2EE; --ic-2:#1B6480; --ic-fg:#031C24; }
+[data-icon-color="slate"]    { --ic-1:#93A0AE; --ic-2:#3A444F; --ic-fg:#0A0E13; }
+
+/* ---------- マイページ: アイコンの色変更 ---------- */
+.profile-avatar{
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+  padding: 0;
+  transition: transform .14s var(--ease), box-shadow .18s;
+}
+.profile-avatar:hover{ transform: scale(1.06); box-shadow: 0 0 0 3px rgba(201,162,39,.28); }
+.profile-avatar:active{ transform: scale(.96); }
+.profile-avatar-char{
+  font-family: var(--font-display);
+  font-size: 29px;
+  line-height: 1;
+  color: inherit;
+}
+.profile-avatar-pen{
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  background: #0B2A22;
+  border: 1px solid var(--hairline);
+  color: var(--ivory);
+}
+
+.icon-picker{
+  margin: -6px 0 14px;
+  padding: 12px 13px;
+  border: 1px solid rgba(201,162,39,.28);
+  border-radius: 12px;
+  background: rgba(201,162,39,.07);
+  animation: iconPickerIn .2s var(--ease);
+}
+.icon-picker[hidden]{ display: none; }
+@keyframes iconPickerIn{
+  from{ opacity: 0; transform: translateY(-6px); }
+  to{   opacity: 1; transform: translateY(0); }
+}
+.icon-picker-cap{
+  margin: 0 0 10px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--brass);
+}
+.icon-swatches{
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 9px;
+}
+.icon-swatch{
+  position: relative;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.18);
+  transition: transform .14s var(--ease), border-color .16s;
+}
+.icon-swatch:hover{ transform: scale(1.09); border-color: rgba(255,255,255,.5); }
+.icon-swatch:active{ transform: scale(.94); }
+.icon-swatch.is-on{ border-color: var(--ivory); box-shadow: 0 0 0 3px rgba(201,162,39,.4); }
+.icon-swatch.is-on::after{
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17px;
+  font-weight: 900;
+  color: var(--ic-fg);
+}
+.icon-swatch:disabled{ opacity: .5; cursor: default; transform: none; }
+
+@media (max-width: 420px){
+  .icon-swatches{ gap: 7px; }
+}
+
+/* =========================================================
+   39. v3.0 ダブルダウン / 連勝表示
+   ========================================================= */
+.btn-double{
+  background: linear-gradient(180deg, #6A4BB0, #34215E);
+  border-color: rgba(150,116,224,.5);
+}
+.btn-double:hover{
+  background: linear-gradient(180deg, #7B58C8, #402A72);
+  border-color: #A98BE8;
+}
+.btn-double[hidden]{ display: none; }
+
+.streak-chip{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(240,145,60,.55);
+  background: linear-gradient(180deg, rgba(240,145,60,.24), rgba(138,74,18,.18));
+  white-space: nowrap;
+  animation: streakPop .34s var(--ease);
+}
+.streak-chip[hidden]{ display: none; }
+@keyframes streakPop{
+  0%{   opacity: 0; transform: scale(.7); }
+  60%{  opacity: 1; transform: scale(1.14); }
+  100%{ opacity: 1; transform: scale(1); }
+}
+.streak-icon{ font-size: 14px; line-height: 1; }
+.streak-num{
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1;
+  color: #FFC98A;
+  letter-spacing: .04em;
+}
+.streak-cap{
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #FFD9AE;
+}
+/* 5連勝以上はより目立たせる */
+.streak-chip.is-hot{
+  border-color: rgba(255,90,60,.75);
+  background: linear-gradient(180deg, rgba(255,96,52,.32), rgba(150,40,12,.24));
+  animation: streakPop .34s var(--ease), streakGlow 1.3s ease-in-out infinite;
+}
+@keyframes streakGlow{
+  0%, 100%{ box-shadow: 0 0 0 0 rgba(255,120,60,.0); }
+  50%{      box-shadow: 0 0 14px 2px rgba(255,120,60,.5); }
+}
+
+/* 結果バッジ: ダブルダウン・全額ベットの内訳 */
+.result-sub{
+  display: block;
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: #FFD9AE;
+}
+
+@media (max-width: 420px){
+  .streak-chip{ padding: 4px 9px; gap: 4px; }
+  .streak-num{ font-size: 17px; }
+  .streak-cap{ font-size: 9px; }
+  .streak-icon{ font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .streak-chip, .streak-chip.is-hot{ animation: none !important; }
+  .icon-picker{ animation: none !important; }
 }
