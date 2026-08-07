@@ -3132,3 +3132,22 @@ body.is-spectating #dealerArea{ opacity: .96; }
   .friend-btn .friend-btn-icon{ height: 26px; font-size: 17px; }
   .friend-online{ font-size: 11px; }
 }
+
+/* ---------- 縦に並ぶ操作要素同士の間隔(v3.1) ----------
+   .sheet-body と #createChampRow は gap 付きの flex ではないため、
+   ボタンや入力欄が続くとそのまま隣接して詰まって見える。
+   他の箇所(.screen / .card-block の gap)と同じ 11px に揃える。 */
+.sheet-body .btn-wide + .btn-wide,
+.sheet-body .invite-url-box + .btn-wide,
+.sheet-body .invite-url-box + .btn,
+.sheet-body .text-input + .btn-wide,
+.sheet-body .friend-list + .btn-wide,
+.sheet-body .btn-wide + .pass-box,
+.sheet-body .btn-wide + .delete-box,
+.seg + .text-input,
+.seg + .seg{
+  margin-top: 11px;
+}
+
+/* パスワード変更・削除の入力ボックスも同じ間隔で開く */
+.pass-box{ margin-top: 11px; }
