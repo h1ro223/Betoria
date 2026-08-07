@@ -36,16 +36,30 @@ const db = (() => {
   if (!url){
     console.log('[db] DATABASE_URL 未設定のためメモリ保存で起動します');
     const users = new Map();
+    const friends = new Map();   // 'a|b'(a<b) -> {user_a, user_b, status, requester}
+    const fkey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
     return {
       kind: 'memory',
       async init(){},
       async findUser(name){ return users.get(name) || null; },
       async createUser(row){ users.set(row.username, row); return row; },
       async saveUser(row){ users.set(row.username, row); return row; },
-      async deleteUser(name){ return users.delete(name); },
+      async deleteUser(name){
+        for (const [k, r] of [...friends]){
+          if (r.user_a === name || r.user_b === name) friends.delete(k);
+        }
+        return users.delete(name);
+      },
       async listUsers(){
         return [...users.values()].sort((a, b) =>
           String(a.username).localeCompare(String(b.username)));
+      },
+      /* ---- フレンド(v3.0) ---- */
+      async findLink(a, b){ return friends.get(fkey(a, b)) || null; },
+      async saveLink(row){ friends.set(fkey(row.user_a, row.user_b), row); return row; },
+      async deleteLink(a, b){ return friends.delete(fkey(a, b)); },
+      async listLinks(name){
+        return [...friends.values()].filter(r => r.user_a === name || r.user_b === name);
       }
     };
   }
@@ -91,6 +105,18 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS champ_draws  INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login   TIMESTAMPTZ`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS icon_color   TEXT NOT NULL DEFAULT '${DEFAULT_ICON_COLOR}'`);
+      /* フレンド関係(v3.0)。user_a < user_b になるよう常に並べて1行で持つ */
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS friends(
+          user_a     TEXT NOT NULL,
+          user_b     TEXT NOT NULL,
+          status     TEXT NOT NULL DEFAULT 'pending',
+          requester  TEXT NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY(user_a, user_b)
+        )`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS friends_a_idx ON friends(user_a)`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS friends_b_idx ON friends(user_b)`);
       console.log('[db] PostgreSQL 接続OK');
     },
     async findUser(name){
@@ -120,11 +146,36 @@ const db = (() => {
       return row;
     },
     async deleteUser(name){
+      await pool.query(`DELETE FROM friends WHERE user_a=$1 OR user_b=$1`, [name]);
       const r = await pool.query(`DELETE FROM users WHERE username=$1`, [name]);
       return r.rowCount > 0;
     },
     async listUsers(){
       const r = await pool.query(`SELECT ${COLS} FROM users ORDER BY username ASC`);
+      return r.rows;
+    },
+    /* ---- フレンド(v3.0) ---- */
+    async findLink(a, b){
+      const [x, y] = a < b ? [a, b] : [b, a];
+      const r = await pool.query(
+        `SELECT user_a, user_b, status, requester FROM friends WHERE user_a=$1 AND user_b=$2`, [x, y]);
+      return r.rows[0] || null;
+    },
+    async saveLink(row){
+      await pool.query(
+        `INSERT INTO friends(user_a, user_b, status, requester) VALUES($1,$2,$3,$4)
+         ON CONFLICT (user_a, user_b) DO UPDATE SET status=EXCLUDED.status, requester=EXCLUDED.requester`,
+        [row.user_a, row.user_b, row.status, row.requester]);
+      return row;
+    },
+    async deleteLink(a, b){
+      const [x, y] = a < b ? [a, b] : [b, a];
+      const r = await pool.query(`DELETE FROM friends WHERE user_a=$1 AND user_b=$2`, [x, y]);
+      return r.rowCount > 0;
+    },
+    async listLinks(name){
+      const r = await pool.query(
+        `SELECT user_a, user_b, status, requester FROM friends WHERE user_a=$1 OR user_b=$1`, [name]);
       return r.rows;
     }
   };
@@ -350,6 +401,7 @@ function createRoom(opts){
       : null,
     hostName: null,
     players: [],            // {name, sid, cpu, level, medal, bet, hand, done, surrendered, ready, connected, eliminated}
+    spectators: [],         // {name, sid, level, iconColor} 途中観戦(v3.0)
     phase: 'lobby',         // lobby | countdown | bet | play | dealer | result | champion_end
     dealer: { hand: [], hole: true },
     shoe: buildShoe(),
@@ -372,15 +424,21 @@ function destroyRoom(room){
   rooms.delete(room.id);
 }
 
+/* 部屋一覧(v3.0)
+   ゲーム中の部屋も消さずに残し、「試合中」として観戦できるようにする */
 function roomList(){
   const out = [];
   for (const r of rooms.values()){
-    if (r.phase !== 'lobby') continue;
+    if (r.phase === 'champion_end') continue;
     const humanN = r.players.filter(p => !p.cpu).length;
-    if (humanN === 0 || humanN >= r.maxPlayers) continue;
+    if (humanN === 0) continue;
+    const playing = r.phase !== 'lobby';
     out.push({
       id: r.id, count: humanN, max: r.maxPlayers, host: r.hostName,
-      mode: r.mode, championRounds: r.championRounds, cpuFill: r.cpuFill
+      mode: r.mode, championRounds: r.championRounds, cpuFill: r.cpuFill,
+      playing,
+      full: humanN >= r.maxPlayers,
+      spectators: r.spectators.length
     });
   }
   return out.sort((a, b) => a.id.localeCompare(b.id));
@@ -390,6 +448,18 @@ function findRoomBySid(sid){
   for (const r of rooms.values())
     if (r.players.some(p => p.sid === sid)) return r;
   return null;
+}
+
+/* 観戦者として入っている部屋 */
+function findRoomBySpectator(sid){
+  for (const r of rooms.values())
+    if (r.spectators.some(s => s.sid === sid)) return r;
+  return null;
+}
+
+/* プレイヤー・観戦者のどちらでも参加している部屋 */
+function findAnyRoom(sid){
+  return findRoomBySid(sid) || findRoomBySpectator(sid);
 }
 
 function humanCount(room){ return room.players.filter(p => !p.cpu).length; }
@@ -402,7 +472,7 @@ function guestsReady(room){
 function activePlayers(room){ return room.players.filter(p => !p.eliminated); }
 
 /* 手札は自分以外にも見せる(ブラックジャックは公開情報) */
-function roomState(room, forName){
+function roomState(room, forName, asSpectator){
   const dealerHand = room.dealer.hand.map((c, i) =>
     (room.dealer.hole && i === 1) ? null : c);
 
@@ -414,7 +484,9 @@ function roomState(room, forName){
     cpuFill: room.cpuFill,
     championRounds: room.championRounds,
     hostName: room.hostName,
-    isHost: forName === room.hostName,
+    isHost: !asSpectator && forName === room.hostName,
+    isSpectator: !!asSpectator,
+    spectatorCount: room.spectators.length,
     minHumans: MIN_HUMANS,
     humanCount: humanCount(room),
     allGuestsReady: guestsReady(room),
@@ -450,6 +522,11 @@ function broadcast(io, room){
   for (const p of room.players){
     if (!p.sid) continue;
     io.to(p.sid).emit('room:state', roomState(room, p.name));
+  }
+  /* 観戦者にも同じ盤面を送る(操作はできない)(v3.0) */
+  for (const s of room.spectators){
+    if (!s.sid) continue;
+    io.to(s.sid).emit('room:state', roomState(room, s.name, true));
   }
 }
 
@@ -552,6 +629,10 @@ function broadcastCountdown(io, room, n){
   for (const p of room.players){
     if (!p.sid) continue;
     io.to(p.sid).emit('room:countdown', { n });
+  }
+  for (const s of room.spectators){
+    if (!s.sid) continue;
+    io.to(s.sid).emit('room:countdown', { n });
   }
 }
 
@@ -958,6 +1039,148 @@ app.post('/api/icon', async (req, res) => {
   res.json({ user: publicUser(u) });
 });
 
+/* =========================================================
+   8.4 フレンド機能(v3.0)
+   関係は friends テーブルに1行で持ち、user_a < user_b に正規化する。
+   status: 'pending'(申請中) | 'accepted'(成立)
+   ========================================================= */
+function linkKey(a, b){ return a < b ? { user_a: a, user_b: b } : { user_a: b, user_b: a }; }
+function otherSide(link, me){ return link.user_a === me ? link.user_b : link.user_a; }
+
+/* 相手がログイン中(Socket接続中)かどうか */
+function isOnline(username){
+  for (const [, sock] of io.of('/').sockets){
+    if (sock.data && sock.data.name === username) return true;
+  }
+  return false;
+}
+
+function socketsOf(username){
+  const out = [];
+  for (const [, sock] of io.of('/').sockets){
+    if (sock.data && sock.data.name === username) out.push(sock);
+  }
+  return out;
+}
+
+/* フレンド関係に変化があったことを本人たちに伝える */
+function notifyFriends(names){
+  for (const n of names){
+    for (const s of socketsOf(n)) s.emit('friend:update');
+  }
+}
+
+async function friendPayload(me){
+  const links = await db.listLinks(me);
+  const friends = [], incoming = [], outgoing = [];
+
+  for (const l of links){
+    const other = otherSide(l, me);
+    const u = await db.findUser(other);
+    if (!u) continue;
+    const info = {
+      username: u.username,
+      level: u.level,
+      iconColor: ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR,
+      lastLogin: u.last_login ? new Date(u.last_login).toISOString() : null,
+      online: isOnline(u.username)
+    };
+    if (l.status === 'accepted') friends.push(info);
+    else if (l.requester === me) outgoing.push(info);
+    else incoming.push(info);
+  }
+
+  const byName = (a, b) => String(a.username).localeCompare(String(b.username));
+  /* ログイン中の人を上に出す */
+  friends.sort((a, b) => (b.online - a.online) || byName(a, b));
+  incoming.sort(byName);
+  outgoing.sort(byName);
+  return { friends, incoming, outgoing };
+}
+
+app.get('/api/friends', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  try {
+    res.json(await friendPayload(u.username));
+  } catch (e){
+    console.error('[friends]', e);
+    res.status(500).json({ error: 'フレンド情報の取得に失敗しました' });
+  }
+});
+
+app.post('/api/friends/request', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  const target = String(req.body?.username || '');
+  if (target === u.username) return res.status(400).json({ error: '自分には申請できません' });
+
+  const t = await db.findUser(target);
+  if (!t) return res.status(404).json({ error: 'そのユーザーは見つかりません' });
+
+  const existing = await db.findLink(u.username, target);
+  if (existing){
+    if (existing.status === 'accepted') return res.status(409).json({ error: 'すでにフレンドです' });
+    if (existing.requester === u.username) return res.status(409).json({ error: 'すでに申請済みです' });
+    /* 相手からの申請が来ていたら、その場で成立させる */
+    existing.status = 'accepted';
+    await db.saveLink(existing);
+    notifyFriends([u.username, target]);
+    for (const s of socketsOf(target)) s.emit('friend:accepted', { username: u.username });
+    return res.json({ ok: true, accepted: true });
+  }
+
+  const link = Object.assign(linkKey(u.username, target), {
+    status: 'pending', requester: u.username
+  });
+  await db.saveLink(link);
+  notifyFriends([u.username, target]);
+  for (const s of socketsOf(target)) s.emit('friend:request', { username: u.username });
+  res.json({ ok: true, accepted: false });
+});
+
+app.post('/api/friends/accept', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  const target = String(req.body?.username || '');
+
+  const link = await db.findLink(u.username, target);
+  if (!link || link.status !== 'pending') return res.status(404).json({ error: 'その申請は見つかりません' });
+  if (link.requester === u.username) return res.status(400).json({ error: '自分が送った申請です' });
+
+  link.status = 'accepted';
+  await db.saveLink(link);
+  notifyFriends([u.username, target]);
+  for (const s of socketsOf(target)) s.emit('friend:accepted', { username: u.username });
+  res.json({ ok: true });
+});
+
+app.post('/api/friends/reject', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  const target = String(req.body?.username || '');
+
+  const link = await db.findLink(u.username, target);
+  if (!link || link.status !== 'pending') return res.status(404).json({ error: 'その申請は見つかりません' });
+
+  await db.deleteLink(u.username, target);
+  notifyFriends([u.username, target]);
+  res.json({ ok: true });
+});
+
+app.delete('/api/friends', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  const target = String(req.body?.username || '');
+
+  const link = await db.findLink(u.username, target);
+  if (!link) return res.status(404).json({ error: 'フレンドではありません' });
+
+  await db.deleteLink(u.username, target);
+  notifyFriends([u.username, target]);
+  res.json({ ok: true });
+});
+
 app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: rooms.size, version: APP_VERSION }));
 
 /* =========================================================
@@ -1089,9 +1312,9 @@ io.on('connection', (socket) => {
   socket.on('room:list', () => socket.emit('room:list', roomList()));
 
   socket.on('room:create', async ({ maxPlayers, mode, cpuFill, championRounds } = {}) => {
-    if (findRoomBySid(socket.id)) return;
+    if (findAnyRoom(socket.id)) return;
     await refreshSocketUser(socket);
-    if (findRoomBySid(socket.id)) return;
+    if (findAnyRoom(socket.id)) return;
 
     const room = createRoom({ maxPlayers, mode, cpuFill, championRounds });
     room.hostName = name;
@@ -1102,18 +1325,29 @@ io.on('connection', (socket) => {
     broadcastLobby(io);
   });
 
-  socket.on('room:join', async ({ id } = {}) => {
+  socket.on('room:join', async ({ id, via } = {}) => {
+    /* via: 'invite'(フレンド招待) | 'url'(招待URL) | undefined(通常) */
+    const fullMsg = via === 'invite'
+      ? '現在、この部屋は満員のため参加出来ませんでした'
+      : via === 'url'
+        ? 'この部屋は満員のため参加出来ませんでした'
+        : 'その部屋は満員です';
+    const fail = (msg) => {
+      if (via) socket.emit('room:joinFailed', { reason: msg, via });
+      else socket.emit('room:error', msg);
+    };
+
     const room = rooms.get(String(id || '').toUpperCase());
-    if (!room) return socket.emit('room:error', 'その部屋は存在しません');
-    if (room.phase !== 'lobby') return socket.emit('room:error', 'その部屋はゲーム中です');
-    if (humanCount(room) >= room.maxPlayers) return socket.emit('room:error', 'その部屋は満員です');
-    if (room.players.some(p => p.name === name)) return socket.emit('room:error', '既に参加しています');
-    if (findRoomBySid(socket.id)) return;
+    if (!room) return fail('その部屋は存在しません');
+    if (room.phase !== 'lobby') return fail('その部屋はすでにゲーム中です');
+    if (humanCount(room) >= room.maxPlayers) return fail(fullMsg);
+    if (room.players.some(p => p.name === name)) return fail('既に参加しています');
+    if (findAnyRoom(socket.id)) return;
 
     await refreshSocketUser(socket);
-    if (findRoomBySid(socket.id)) return;
-    if (room.phase !== 'lobby' || humanCount(room) >= room.maxPlayers)
-      return socket.emit('room:error', 'その部屋には参加できませんでした');
+    if (findAnyRoom(socket.id)) return;
+    if (room.phase !== 'lobby') return fail('その部屋はすでにゲーム中です');
+    if (humanCount(room) >= room.maxPlayers) return fail(fullMsg);
 
     room.players.push(makePlayer(socket));
     socket.join(room.id);
@@ -1122,6 +1356,34 @@ io.on('connection', (socket) => {
     broadcast(io, room);
     broadcastLobby(io);
   });
+
+  /* 途中観戦(v3.0)。ゲーム中の部屋にだけ入れる。人数上限なし・操作不可・チャット閲覧不可 */
+  socket.on('room:spectate', async ({ id } = {}) => {
+    const room = rooms.get(String(id || '').toUpperCase());
+    if (!room) return socket.emit('room:error', 'その部屋は存在しません');
+    if (room.phase === 'lobby') return socket.emit('room:error', 'まだ試合が始まっていません');
+    if (room.phase === 'champion_end') return socket.emit('room:error', 'その試合は終了しました');
+    if (room.players.some(p => p.name === name))
+      return socket.emit('room:error', 'その部屋には参加中です');
+    if (findAnyRoom(socket.id)) return;
+
+    await refreshSocketUser(socket);
+    if (findAnyRoom(socket.id)) return;
+    if (room.phase === 'lobby' || room.phase === 'champion_end')
+      return socket.emit('room:error', 'その部屋は観戦できません');
+
+    room.spectators.push({
+      name, sid: socket.id,
+      level: socket.data.level,
+      iconColor: socket.data.iconColor || DEFAULT_ICON_COLOR
+    });
+    socket.join(room.id);
+    socket.emit('room:spectating', { id: room.id });
+    broadcast(io, room);
+    broadcastLobby(io);
+  });
+
+  socket.on('room:stopSpectate', () => leaveSpectate(socket));
 
   socket.on('room:leave', () => leaveRoom(socket));
 
@@ -1336,6 +1598,8 @@ io.on('connection', (socket) => {
         p.eliminated = false; p.medal = 0; p.ready = false;
         p.lobbyReady = false; p.scoredRounds = 0;
       });
+      /* 待機ルームに戻るので観戦者はいったんロビーへ戻す(v3.0) */
+      clearSpectators(io, room, '試合が終了したため、観戦を終了しました');
       broadcast(io, room);
       broadcastLobby(io);
     }
@@ -1343,6 +1607,41 @@ io.on('connection', (socket) => {
 
   /* 大会を退出(観戦中でも可)。以降の経験値は加算されない */
   socket.on('room:leaveChampionship', () => leaveRoom(socket));
+
+  /* ---- フレンド招待(v3.0) ---- */
+  socket.on('room:invite', async ({ username } = {}) => {
+    const room = findRoomBySid(socket.id);
+    if (!room) return;
+    if (room.phase !== 'lobby') return socket.emit('room:error', 'ゲーム中は招待できません');
+    if (humanCount(room) >= room.maxPlayers) return socket.emit('room:error', 'この部屋は満員です');
+
+    const target = String(username || '');
+    if (target === name) return;
+    if (room.players.some(p => p.name === target))
+      return socket.emit('room:error', target + ' さんはすでに参加しています');
+
+    /* フレンドであることをサーバー側でも確認する */
+    let link;
+    try { link = await db.findLink(name, target); }
+    catch (e){ console.error('[invite]', e.message); return; }
+    if (!link || link.status !== 'accepted')
+      return socket.emit('room:error', 'フレンドにのみ招待を送れます');
+
+    const socks = socketsOf(target);
+    if (socks.length === 0) return socket.emit('room:error', target + ' さんはオフラインです');
+
+    for (const s of socks){
+      s.emit('room:invited', {
+        from: name,
+        roomId: room.id,
+        mode: room.mode,
+        championRounds: room.championRounds,
+        count: humanCount(room),
+        max: room.maxPlayers
+      });
+    }
+    socket.emit('room:inviteSent', { username: target });
+  });
 
   /* チャット(待機ルーム・ゲーム中どちらでも使用可) */
   socket.on('chat:send', ({ text, stamp } = {}) => {
@@ -1424,7 +1723,32 @@ function makePlayer(socket){
   };
 }
 
+/* 観戦者を全員ロビーへ戻す(v3.0) */
+function clearSpectators(io, room, reason){
+  for (const s of room.spectators){
+    if (!s.sid) continue;
+    io.to(s.sid).emit('room:closed', { reason });
+    const sock = io.sockets.sockets.get(s.sid);
+    if (sock) sock.leave(room.id);
+  }
+  room.spectators = [];
+}
+
+/* 観戦をやめる。プレイヤーの退出とは別扱い */
+function leaveSpectate(socket, silent){
+  const room = findRoomBySpectator(socket.id);
+  if (!room) return false;
+  room.spectators = room.spectators.filter(s => s.sid !== socket.id);
+  socket.leave(room.id);
+  if (!silent) broadcast(io, room);
+  broadcastLobby(io);
+  return true;
+}
+
 function leaveRoom(socket){
+  /* 観戦者だった場合はこちらで処理する */
+  if (leaveSpectate(socket)) return;
+
   const room = findRoomBySid(socket.id);
   if (!room) return;
   const idx = room.players.findIndex(p => p.sid === socket.id);
@@ -1435,7 +1759,11 @@ function leaveRoom(socket){
   socket.leave(room.id);
 
   const remainingHumans = room.players.filter(p => !p.cpu);
-  if (remainingHumans.length === 0){ destroyRoom(room); return broadcastLobby(io); }
+  if (remainingHumans.length === 0){
+    clearSpectators(io, room, '対戦していたプレイヤーがいなくなったため、観戦を終了しました');
+    destroyRoom(room);
+    return broadcastLobby(io);
+  }
 
   /* ホストが抜けたらルームごと解散し、残りの全員を退出させる */
   if (wasHost){
@@ -1447,6 +1775,7 @@ function leaveRoom(socket){
       const s = io.sockets.sockets.get(p.sid);
       if (s) s.leave(room.id);
     }
+    clearSpectators(io, room, 'ホストが退出したため、このルームは解散されました');
     destroyRoom(room);
     return broadcastLobby(io);
   }

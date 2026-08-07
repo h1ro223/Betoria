@@ -39,6 +39,11 @@
       </span>
     </button>
 
+    <button type="button" class="friend-btn" id="friendBtn" title="フレンド" hidden>
+      <span class="friend-btn-icon">❤</span>
+      <span class="friend-badge" id="friendBadge" hidden>0</span>
+    </button>
+
     <button type="button" class="account-btn" id="accountBtn" title="アカウント">
       <span class="account-avatar" id="accountAvatar">?</span>
       <span class="account-lv" id="accountLv" hidden>Lv.1</span>
@@ -203,6 +208,10 @@
 
     <div class="member-list" id="memberList"></div>
 
+    <button type="button" class="btn btn-ghost btn-wide" id="inviteBtn">
+      <span class="invite-btn-icon">✉</span> 招待する
+    </button>
+
     <p class="room-hint" id="roomHint">ホストが開始するのを待っています…</p>
     <button type="button" class="btn btn-primary btn-wide" id="startGameBtn" hidden>ゲーム開始</button>
     <button type="button" class="btn btn-ready btn-wide" id="readyBtn" hidden>
@@ -253,6 +262,10 @@
         <span class="turn-num led" id="turnNum">30</span>
       </div>
       <div class="game-bar-spacer"></div>
+      <div class="spectate-chip" id="spectateChip" hidden>
+        <span class="spectate-eye">👁</span>
+        <span class="spectate-num led" id="spectateNum">0</span>
+      </div>
       <div class="tool-row">
         <button type="button" class="tool-btn" id="gameRulesBtn" title="ルール" aria-label="ルール">📖</button>
         <button type="button" class="tool-btn" id="menuBtn" title="設定" aria-label="設定">⚙️</button>
@@ -332,6 +345,11 @@
 
   <div class="panel" id="waitPanel" hidden>
     <p class="wait-text" id="waitText">他のプレイヤーを待っています…</p>
+  </div>
+
+  <div class="panel" id="spectatePanel" hidden>
+    <p class="spectate-text"><span class="spectate-eye">👁</span> 観戦中です。操作はできません。</p>
+    <button type="button" class="btn btn-ghost" id="spectateLeaveBtn">観戦をやめる</button>
   </div>
 
 </footer>
@@ -538,11 +556,27 @@
           <li><b>全額ベットボーナス</b> … 持っている大会メダルを<b>全額ベット</b>して勝つと、獲得メダルがさらに<b>1.5倍</b>になります(例: 300枚でBLACKJACK → 300×2.5=750 → ×1.5=<b>1125</b>枚 / WIN → 300×2=600 → ×1.5=<b>900</b>枚)。ダブルダウンで手持ちを使い切った場合も対象です。</li>
         </ul>
       </div>
+      <div class="sheet-section">
+        <h3>フレンド・招待</h3>
+        <ul class="rule-list">
+          <li>画面右上の<b>❤ボタン</b>からフレンド一覧と、届いているフレンド申請を確認できます。</li>
+          <li>待機ルームで他のプレイヤーの右にある<b>「申請」</b>を押すとフレンド申請を送れます。フレンドになると名前の右に<b>🤝</b>が付きます。</li>
+          <li>待機ルームの<b>「招待する」</b>から、オンライン中のフレンドを招待したり、<b>招待URL</b>を発行して共有できます。</li>
+          <li>招待URLを開くとその部屋に直接参加できます(未ログインの場合は、ログイン・新規登録のあとに参加します)。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>観戦</h3>
+        <ul class="rule-list">
+          <li>部屋一覧で<b>「試合中」</b>になっている部屋は、<b>「観戦」</b>ボタンから途中参加できます。観戦の人数制限はありません。</li>
+          <li>観戦者は盤面を見るだけで、操作やチャットの閲覧はできません。いつでも観戦をやめられます。</li>
+          <li>ゲーム画面の上部に<b>👁</b>と観戦人数が表示されます。</li>
+          <li>満員の部屋は<b>赤字の「満員」</b>と表示され、参加できません(試合が始まれば観戦できます)。</li>
+        </ul>
+      </div>
     </div>
   </div>
 </div>
-
-<!-- ============ 設定 ============ -->
 <div class="overlay" id="settingsOverlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="設定">
     <div class="sheet-head">
@@ -627,6 +661,10 @@
       <div class="sheet-section">
         <h3>v3.0</h3>
         <ul class="rule-list">
+          <li><b>フレンド機能</b>を追加。右上の<b>❤ボタン</b>からフレンド一覧と申請の確認ができ、待機ルームの<b>「申請」</b>から申請を送れます。フレンドには名前の右に<b>🤝</b>が付きます。</li>
+          <li>待機ルームに<b>「招待する」</b>を追加。<b>オンライン中のフレンドへの招待</b>と、<b>招待URLの発行</b>ができます。URLを開くだけで参加でき、未ログインならログイン後に参加します。</li>
+          <li><b>途中観戦</b>を追加。部屋一覧に<b>「試合中」</b>の部屋も表示され、<b>「観戦」</b>ボタンから人数制限なしで観戦できます。ゲーム画面には<b>👁と観戦人数</b>が出ます。</li>
+          <li>部屋一覧で<b>満員</b>の部屋は赤字の<b>「満員」</b>表示になり、参加できないことがひと目で分かるようになりました。</li>
           <li><b>ダブルダウン(DOUBLE)</b>を追加。最初の2枚のとき、ベットを倍にして1枚だけ引けます。</li>
           <li>WIN・BLACKJACKが続くと<b>「🔥 X連勝中!」</b>を画面上部に表示するようになりました。</li>
           <li>マイページの<b>アイコンをタップすると色を変更</b>できるようになりました(全10色)。ルーム内の表示にも反映されます。</li>
@@ -737,6 +775,92 @@
       <div class="delete-actions">
         <button type="button" class="btn btn-ghost" id="surrenderCancelBtn">やめる</button>
         <button type="button" class="btn btn-danger" id="surrenderConfirmBtn">サレンダーする</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ フレンド ============ -->
+<div class="overlay" id="friendOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="フレンド">
+    <div class="sheet-head">
+      <h2>フレンド</h2>
+      <button type="button" class="close-btn" id="friendCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="seg seg-2" id="friendTabs">
+        <button type="button" class="seg-btn is-on" data-tab="list">フレンド一覧</button>
+        <button type="button" class="seg-btn" data-tab="requests">
+          フレンド申請<span class="tab-badge" id="friendTabBadge" hidden>0</span>
+        </button>
+      </div>
+
+      <div id="friendListView">
+        <p class="sheet-note">フレンドはオンライン中の人が上に表示されます。待機ルームから招待を送れます。</p>
+        <div class="friend-list" id="friendList">
+          <p class="empty-note">読み込み中…</p>
+        </div>
+      </div>
+
+      <div id="friendReqView" hidden>
+        <p class="sheet-note">届いているフレンド申請です。承認するとお互いのフレンド一覧に追加されます。</p>
+        <div class="friend-list" id="friendReqList">
+          <p class="empty-note">読み込み中…</p>
+        </div>
+        <div class="sheet-section">
+          <h3>自分が送った申請</h3>
+          <div class="friend-list" id="friendOutList">
+            <p class="empty-note">送信中の申請はありません。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 招待方法の選択 ============ -->
+<div class="overlay" id="inviteOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="招待">
+    <div class="sheet-head">
+      <h2>招待する</h2>
+      <button type="button" class="close-btn" id="inviteCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="seg seg-2" id="inviteTabs">
+        <button type="button" class="seg-btn is-on" data-tab="friend">フレンドを招待</button>
+        <button type="button" class="seg-btn" data-tab="url">URLで招待</button>
+      </div>
+
+      <div id="inviteFriendView">
+        <p class="sheet-note">オンライン中のフレンドに招待を送れます。相手の画面に通知が表示されます。</p>
+        <div class="friend-list" id="inviteFriendList">
+          <p class="empty-note">読み込み中…</p>
+        </div>
+      </div>
+
+      <div id="inviteUrlView" hidden>
+        <p class="sheet-note">このURLを送ると、開くだけでこの部屋に参加できます。未ログインの場合はログイン画面が表示されます。</p>
+        <div class="invite-url-box">
+          <input type="text" id="inviteUrlText" class="text-input" readonly>
+          <button type="button" class="btn btn-primary" id="inviteUrlCopyBtn">コピー</button>
+        </div>
+        <button type="button" class="btn btn-ghost btn-wide" id="inviteShareBtn" hidden>他のアプリで共有</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 招待が届いたときの通知 ============ -->
+<div class="overlay" id="invitedOverlay" hidden>
+  <div class="sheet sheet-narrow" role="dialog" aria-modal="true" aria-label="招待が届きました">
+    <div class="sheet-head">
+      <h2>招待が届きました</h2>
+    </div>
+    <div class="sheet-body">
+      <p class="invited-text" id="invitedText">-</p>
+      <div class="delete-actions">
+        <button type="button" class="btn btn-ghost" id="invitedRejectBtn">拒否する</button>
+        <button type="button" class="btn btn-primary" id="invitedAcceptBtn">参加する</button>
       </div>
     </div>
   </div>

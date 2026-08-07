@@ -2779,3 +2779,267 @@ input, textarea{
   .streak-chip, .streak-chip.is-hot{ animation: none !important; }
   .icon-picker{ animation: none !important; }
 }
+
+/* =========================================================
+   40. v3.0 Phase2 フレンド / 招待 / 観戦
+   ========================================================= */
+
+/* ---------- ヘッダーのフレンドボタン ---------- */
+.friend-btn{
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(0,0,0,.34);
+  transition: background .18s, border-color .18s, transform .12s;
+}
+.friend-btn[hidden]{ display: none; }
+.friend-btn:hover{ background: rgba(224,90,120,.18); border-color: #E05A78; }
+.friend-btn:active{ transform: scale(.94); }
+.friend-btn-icon{ font-size: 18px; line-height: 1; color: #F07A9C; }
+.friend-btn.has-req{ border-color: #E05A78; box-shadow: 0 0 12px rgba(224,90,120,.35); }
+
+.friend-badge{
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--crimson);
+  border: 2px solid #08211B;
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 16px;
+  color: #fff;
+}
+.friend-badge[hidden]{ display: none; }
+
+.tab-badge{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--crimson);
+  font-family: var(--font-display);
+  font-size: 11px;
+  line-height: 1;
+  color: #fff;
+}
+.tab-badge[hidden]{ display: none; }
+
+/* ---------- フレンド一覧 ---------- */
+.friend-list{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.friend-row{
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  background: rgba(0,0,0,.28);
+}
+.friend-avatar{
+  position: relative;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 20px;
+  background: linear-gradient(160deg, #2E7F5F, #14432F);
+  border: 1px solid rgba(255,255,255,.16);
+}
+.friend-dot{
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #4A5560;
+  border: 2px solid #0B221C;
+}
+.friend-row.is-online .friend-dot{ background: var(--jade); box-shadow: 0 0 8px rgba(63,191,143,.8); }
+
+.friend-main{ flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.friend-name{
+  font-size: 15px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-meta{ display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--smoke); }
+.friend-lv{ font-family: var(--font-display); font-size: 15px; color: var(--brass); }
+.friend-seen{ overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.friend-row.is-online .friend-seen{ color: var(--jade); }
+
+.friend-actions{ flex: 0 0 auto; display: flex; gap: 6px; }
+.friend-act{
+  padding: 8px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(0,0,0,.3);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ivory);
+  white-space: nowrap;
+  transition: background .16s, border-color .16s, transform .12s;
+}
+.friend-act:hover{ background: rgba(201,162,39,.16); border-color: var(--brass); }
+.friend-act:active{ transform: scale(.94); }
+.friend-act.is-ok{ border-color: rgba(63,191,143,.6); color: var(--jade); }
+.friend-act.is-ok:hover{ background: rgba(63,191,143,.16); border-color: var(--jade); }
+.friend-act.is-danger{ border-color: rgba(196,52,46,.55); color: #F09A96; }
+.friend-act.is-danger:hover{ background: rgba(196,52,46,.18); border-color: var(--crimson); }
+.friend-act:disabled{ opacity: .45; cursor: default; }
+
+/* 待機ルームのフレンド印と申請ボタン */
+.member-mate{ flex: 0 0 auto; font-size: 15px; line-height: 1; }
+.member-req{
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: rgba(0,0,0,.3);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ivory);
+  white-space: nowrap;
+  transition: background .16s, border-color .16s, transform .12s;
+}
+.member-req:hover{ background: rgba(224,90,120,.18); border-color: #E05A78; }
+.member-req:active{ transform: scale(.94); }
+.member-req:disabled{ opacity: .5; cursor: default; }
+
+/* ---------- 招待 ---------- */
+.invite-btn-icon{ font-size: 15px; margin-right: 4px; }
+.invite-url-box{
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.invite-url-box .text-input{ flex: 1 1 auto; font-size: 13px; }
+.invite-url-box .btn{ flex: 0 0 auto; padding: 10px 16px; }
+
+.invited-text{
+  margin: 0 0 16px;
+  font-size: 15px;
+  line-height: 1.8;
+  text-align: center;
+}
+.invited-text b{ color: var(--brass); }
+.invited-room{
+  display: block;
+  margin-top: 8px;
+  font-family: var(--font-display);
+  font-size: 26px;
+  letter-spacing: .1em;
+  color: var(--brass);
+}
+
+/* ---------- 観戦 ---------- */
+.spectate-chip{
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(120,190,230,.5);
+  background: linear-gradient(180deg, rgba(90,170,220,.22), rgba(20,70,110,.18));
+  white-space: nowrap;
+}
+.spectate-chip[hidden]{ display: none; }
+.spectate-eye{ font-size: 14px; line-height: 1; }
+.spectate-num{
+  font-family: var(--font-display);
+  font-size: 19px;
+  line-height: 1;
+  color: #A9DCF5;
+}
+
+#spectatePanel{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+#spectatePanel[hidden]{ display: none; }
+.spectate-text{
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #A9DCF5;
+  text-align: center;
+}
+#spectatePanel .btn{ min-width: 190px; }
+
+/* 観戦中は盤面を少しだけ落ち着かせる */
+body.is-spectating #seats,
+body.is-spectating #dealerArea{ opacity: .96; }
+
+/* 部屋一覧: 試合中 / 満員 */
+.room-row-state{
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--hairline);
+  color: var(--smoke);
+  white-space: nowrap;
+}
+.room-row-state.is-playing{
+  border-color: rgba(120,190,230,.55);
+  color: #A9DCF5;
+  background: rgba(90,170,220,.14);
+}
+.room-row-state.is-waiting{
+  border-color: rgba(63,191,143,.5);
+  color: var(--jade);
+  background: rgba(63,191,143,.1);
+}
+.room-row-count.is-full{ color: #F0736D; }
+.room-row-spec{ font-size: 11px; color: #A9DCF5; margin-left: 6px; white-space: nowrap; }
+
+.mini-btn.is-spectate{ border-color: rgba(120,190,230,.6); color: #A9DCF5; }
+.mini-btn.is-spectate:hover{ background: rgba(90,170,220,.18); border-color: #78BEE6; }
+.mini-btn.is-full{
+  border-color: rgba(196,52,46,.6);
+  color: #F0736D;
+  background: rgba(196,52,46,.1);
+  cursor: default;
+}
+.mini-btn.is-full:hover{ background: rgba(196,52,46,.1); }
+
+.room-row-actions{ flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
+
+@media (max-width: 520px){
+  .friend-btn{ width: 38px; height: 38px; }
+  .friend-btn-icon{ font-size: 16px; }
+  .friend-act{ padding: 7px 9px; font-size: 11.5px; }
+  .friend-row{ gap: 9px; padding: 9px 10px; }
+  .friend-avatar{ width: 34px; height: 34px; font-size: 18px; }
+  .room-row-state{ font-size: 9.5px; padding: 2px 7px; }
+  .spectate-chip{ padding: 4px 9px; }
+  .spectate-num{ font-size: 16px; }
+}

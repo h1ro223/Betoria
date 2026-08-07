@@ -367,6 +367,38 @@ const el = {
   adBtnGain: $('adBtnGain'),
   streakChip: $('streakChip'),
   streakNum: $('streakNum'),
+  spectateChip: $('spectateChip'),
+  spectateNum: $('spectateNum'),
+  spectatePanel: $('spectatePanel'),
+  spectateLeaveBtn: $('spectateLeaveBtn'),
+
+  friendBtn: $('friendBtn'),
+  friendBadge: $('friendBadge'),
+  friendOverlay: $('friendOverlay'),
+  friendCloseBtn: $('friendCloseBtn'),
+  friendTabs: $('friendTabs'),
+  friendTabBadge: $('friendTabBadge'),
+  friendListView: $('friendListView'),
+  friendList: $('friendList'),
+  friendReqView: $('friendReqView'),
+  friendReqList: $('friendReqList'),
+  friendOutList: $('friendOutList'),
+
+  inviteBtn: $('inviteBtn'),
+  inviteOverlay: $('inviteOverlay'),
+  inviteCloseBtn: $('inviteCloseBtn'),
+  inviteTabs: $('inviteTabs'),
+  inviteFriendView: $('inviteFriendView'),
+  inviteFriendList: $('inviteFriendList'),
+  inviteUrlView: $('inviteUrlView'),
+  inviteUrlText: $('inviteUrlText'),
+  inviteUrlCopyBtn: $('inviteUrlCopyBtn'),
+  inviteShareBtn: $('inviteShareBtn'),
+
+  invitedOverlay: $('invitedOverlay'),
+  invitedText: $('invitedText'),
+  invitedAcceptBtn: $('invitedAcceptBtn'),
+  invitedRejectBtn: $('invitedRejectBtn'),
 
   fxLayer: $('fxLayer'),
   fxText: $('fxText'),
@@ -560,7 +592,9 @@ const view = {
   seats: [],             // {name, level, medal, bet, hand, result, isYou, active, ready, cpu, eliminated}
   message: '',
   tone: '',
-  streak: 0              // 自分の連勝数(v3.0)
+  streak: 0,             // 自分の連勝数(v3.0)
+  spectating: false,     // 観戦中かどうか(v3.0)
+  spectators: 0
 };
 
 const account = { token: store.get('bj4_token') || '', user: null };
@@ -780,7 +814,8 @@ function myMedal(){
 }
 
 function renderMedal(){
-  if (view.mode === 'online' && view.onlineMode === 'champion'){
+  const champ = view.mode === 'online' && view.onlineMode === 'champion' && !view.spectating;
+  if (champ){
     const me = view.seats.find(s => s.isYou);
     el.medalCount.textContent = me ? me.medal : 0;
   } else {
@@ -788,7 +823,7 @@ function renderMedal(){
   }
   ledTick(el.medalCount);
   if (el.medalLabel){
-    el.medalLabel.textContent = (view.mode === 'online' && view.onlineMode === 'champion') ? '大会メダル' : '所持メダル';
+    el.medalLabel.textContent = champ ? '大会メダル' : '所持メダル';
   }
   updateAdBtn();
 }
@@ -821,6 +856,7 @@ function showPanel(name){
   el.actionPanel.hidden = name !== 'action';
   el.nextPanel.hidden   = name !== 'next';
   el.waitPanel.hidden   = name !== 'wait';
+  el.spectatePanel.hidden = name !== 'spectate';
   el.controls.hidden    = (screen !== 'game') || name === 'none';
 }
 
@@ -839,12 +875,14 @@ function showScreen(name){
   el.screenGame.hidden  = name !== 'game';
 
   el.controls.hidden = name !== 'game';
-  el.adBtn.hidden = !(name === 'game' && !(view.mode === 'online' && view.onlineMode === 'champion'));
+  el.adBtn.hidden = !(name === 'game' && !view.spectating
+                      && !(view.mode === 'online' && view.onlineMode === 'champion'));
   el.medalReadout.hidden = !(name === 'game' || account.user);
   el.brandBtn.disabled = name === 'title';
 
   updateRoundChip();
   renderStreak();
+  renderSpectateChip();
   updateAdBtn();
   updateChatVisibility();
   window.scrollTo(0, 0);
@@ -939,6 +977,7 @@ function renderAccountUi(){
     el.accountLv.hidden = true;
   }
   el.medalReadout.hidden = !(screen === 'game' || u);
+  updateFriendBadge();
   renderMedal();
   renderProfile();
 }
@@ -1016,6 +1055,157 @@ async function applyIconColor(color){
     iconSaving = false;
     renderIconSwatches();
   }
+}
+
+/* =========================================================
+   10.45 フレンド機能(v3.0)
+   ========================================================= */
+const friends = {
+  list: [],        // 成立しているフレンド
+  incoming: [],    // 自分宛の申請
+  outgoing: [],    // 自分が送った申請
+  tab: 'list',
+  loading: false,
+  sent: new Set()  // このセッションで申請済みの相手(ボタンの二度押し防止)
+};
+
+function isFriend(name){ return friends.list.some(f => f.username === name); }
+function friendPending(name){
+  return friends.outgoing.some(f => f.username === name)
+      || friends.incoming.some(f => f.username === name)
+      || friends.sent.has(name);
+}
+
+function updateFriendBadge(){
+  const n = friends.incoming.length;
+  el.friendBtn.hidden = !account.user;
+  el.friendBtn.classList.toggle('has-req', n > 0);
+  el.friendBadge.textContent = n > 99 ? '99+' : n;
+  el.friendBadge.hidden = n === 0;
+  el.friendTabBadge.textContent = n > 99 ? '99+' : n;
+  el.friendTabBadge.hidden = n === 0;
+}
+
+async function loadFriends(silent){
+  if (!account.user){
+    friends.list = []; friends.incoming = []; friends.outgoing = [];
+    updateFriendBadge();
+    return;
+  }
+  if (friends.loading) return;
+  friends.loading = true;
+  try {
+    const d = await api('/api/friends');
+    friends.list = d.friends || [];
+    friends.incoming = d.incoming || [];
+    friends.outgoing = d.outgoing || [];
+    /* サーバーの状態が正なので、ローカルの申請済みメモは掃除する */
+    friends.sent.forEach(n => {
+      if (!friends.outgoing.some(f => f.username === n) && !isFriend(n)) friends.sent.delete(n);
+    });
+  } catch (e){
+    if (!silent) toast(e.message);
+  } finally {
+    friends.loading = false;
+    updateFriendBadge();
+    renderFriendViews();
+    if (!el.inviteOverlay.hidden) renderInviteFriends();
+    if (screen === 'room' && online.state) renderRoomScreen(online.state);
+  }
+}
+
+function friendRowMarkup(f, actions){
+  return '' +
+    '<div class="friend-row' + (f.online ? ' is-online' : '') + '" data-user="' + esc(f.username) + '">' +
+      '<span class="friend-avatar" data-icon-color="' + iconColorOf(f.iconColor) + '">' +
+        esc(f.username.charAt(0).toUpperCase()) +
+        '<span class="friend-dot"></span>' +
+      '</span>' +
+      '<span class="friend-main">' +
+        '<span class="friend-name">' + esc(f.username) + '</span>' +
+        '<span class="friend-meta">' +
+          '<span class="friend-lv">Lv.' + f.level + '</span>' +
+          '<span class="friend-seen">' + esc(formatLastSeen(f)) + '</span>' +
+        '</span>' +
+      '</span>' +
+      '<span class="friend-actions">' + actions + '</span>' +
+    '</div>';
+}
+
+function renderFriendViews(){
+  /* フレンド一覧 */
+  el.friendList.innerHTML = friends.list.length
+    ? friends.list.map(f => friendRowMarkup(f,
+        '<button type="button" class="friend-act is-danger" data-act="remove">解除</button>')).join('')
+    : '<p class="empty-note">まだフレンドがいません。<br>待機ルームで他のプレイヤーに申請を送ってみましょう。</p>';
+
+  /* 届いている申請 */
+  el.friendReqList.innerHTML = friends.incoming.length
+    ? friends.incoming.map(f => friendRowMarkup(f,
+        '<button type="button" class="friend-act is-ok" data-act="accept">承認</button>' +
+        '<button type="button" class="friend-act is-danger" data-act="reject">拒否</button>')).join('')
+    : '<p class="empty-note">届いているフレンド申請はありません。</p>';
+
+  /* 自分が送った申請 */
+  el.friendOutList.innerHTML = friends.outgoing.length
+    ? friends.outgoing.map(f => friendRowMarkup(f,
+        '<button type="button" class="friend-act is-danger" data-act="cancel">取消</button>')).join('')
+    : '<p class="empty-note">送信中の申請はありません。</p>';
+}
+
+function setFriendTab(tab){
+  friends.tab = tab;
+  el.friendTabs.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.tab === tab));
+  el.friendListView.hidden = tab !== 'list';
+  el.friendReqView.hidden = tab !== 'requests';
+}
+
+function openFriendPanel(){
+  if (!account.user){
+    toast('フレンド機能にはログインが必要です');
+    return openOverlay(el.accountOverlay);
+  }
+  setFriendTab(friends.incoming.length > 0 ? 'requests' : 'list');
+  renderFriendViews();
+  openOverlay(el.friendOverlay);
+  loadFriends(true);
+}
+
+async function friendAction(path, username, okMsg){
+  try {
+    await api('/api/friends/' + path, {
+      method: 'POST', body: JSON.stringify({ username })
+    });
+    audio.play('join');
+    if (okMsg) toast(okMsg);
+    await loadFriends(true);
+    return true;
+  } catch (e){
+    audio.play('error');
+    toast(e.message);
+    await loadFriends(true);
+    return false;
+  }
+}
+
+async function removeFriend(username){
+  if (!confirm('「' + username + '」とのフレンドを解除しますか?')) return;
+  try {
+    await api('/api/friends', { method: 'DELETE', body: JSON.stringify({ username }) });
+    toast('フレンドを解除しました');
+    audio.play('button');
+  } catch (e){ toast(e.message); audio.play('error'); }
+  await loadFriends(true);
+}
+
+/* 待機ルームからのフレンド申請 */
+async function sendFriendRequest(username, btn){
+  if (btn) btn.disabled = true;
+  friends.sent.add(username);
+  const ok = await friendAction('request', username, username + ' さんにフレンド申請を送りました');
+  if (!ok) friends.sent.delete(username);
+  if (screen === 'room' && online.state) renderRoomScreen(online.state);
 }
 
 /* =========================================================
@@ -1145,6 +1335,9 @@ async function submitAuth(){
     audio.play('join');
     toast(authMode === 'login' ? 'おかえりなさい、' + d.user.username + ' さん' : 'アカウントを作成しました');
     closeOverlay(el.accountOverlay);
+    loadFriends(true);
+    /* 招待URLから来ていた場合は、ログイン完了後に参加する(v3.0) */
+    resumeInviteJoin();
   } catch (e){
     authError(e.message);
   } finally {
@@ -1696,6 +1889,13 @@ function connectSocket(){
     setConn('on', '接続中');
     sock.emit('room:list');
     updateChatVisibility();
+    loadFriends(true);
+    /* 招待URL・招待通知からの参加待ちがあれば実行する(v3.0) */
+    const pend = online.pendingJoin;
+    if (pend){
+      online.pendingJoin = null;
+      sock.emit('room:join', { id: String(pend.id).toUpperCase(), via: pend.via });
+    }
   });
 
   sock.on('connect_error', (err) => {
@@ -1715,10 +1915,58 @@ function connectSocket(){
 
   sock.on('room:list', renderRoomList);
   sock.on('room:error', (msg) => { toast(msg); audio.play('error'); });
-  sock.on('room:joined', ({ id }) => { online.roomId = id; audio.play('join'); });
+  sock.on('room:joined', ({ id }) => {
+    online.roomId = id;
+    online.pendingJoin = null;
+    audio.play('join');
+  });
   sock.on('room:state', onRoomState);
   sock.on('room:countdown', ({ n }) => showCountdown(n));
   sock.on('chat:new', onChatMessage);
+
+  /* 観戦を開始した(v3.0) */
+  sock.on('room:spectating', ({ id }) => {
+    online.roomId = id;
+    online.pendingJoin = null;
+    view.spectating = true;
+    audio.play('join');
+    toast('観戦を開始しました');
+  });
+
+  /* 招待URL・フレンド招待からの参加に失敗した(v3.0) */
+  sock.on('room:joinFailed', ({ reason, via } = {}) => {
+    online.pendingJoin = null;
+    audio.play('error');
+    toast(reason || '参加できませんでした');
+    /* 招待URLから来た場合はタイトルへ戻す */
+    if (via === 'url') showScreen('title');
+    else if (screen !== 'room' && screen !== 'game') showScreen('lobby');
+  });
+
+  /* フレンド関連(v3.0) */
+  sock.on('friend:request', ({ username }) => {
+    toast(username + ' さんからフレンド申請が届きました');
+    audio.play('join');
+    loadFriends(true);
+  });
+  sock.on('friend:accepted', ({ username }) => {
+    toast(username + ' さんとフレンドになりました');
+    audio.play('win');
+    loadFriends(true);
+  });
+  sock.on('friend:update', () => loadFriends(true));
+
+  /* 部屋への招待が届いた(v3.0) */
+  sock.on('room:invited', (data) => {
+    /* 自分がすでに同じ部屋にいる/ゲーム中なら出さない */
+    if (online.roomId === data.roomId) return;
+    if (screen === 'game') return toast(data.from + ' さんから招待が届いています');
+    showInvited(data);
+  });
+  sock.on('room:inviteSent', ({ username }) => {
+    toast(username + ' さんに招待を送りました');
+    audio.play('chip');
+  });
 
   /* ホストが退出してルームが解散された */
   sock.on('room:closed', ({ reason } = {}) => {
@@ -1761,14 +2009,30 @@ function renderRoomList(list){
     const modeTag = r.mode === 'champion'
       ? '<span class="room-row-tag is-champ">🏆 ' + r.championRounds + 'R</span>'
       : '<span class="room-row-tag">エンジョイ</span>';
+
+    /* 試合中の部屋は観戦、満員の待機部屋は参加不可(v3.0) */
+    const stateTag = r.playing
+      ? '<span class="room-row-state is-playing">試合中</span>'
+      : '<span class="room-row-state is-waiting">待機中</span>';
+
+    const btn = r.playing
+      ? '<button type="button" class="mini-btn is-spectate" data-spectate="' + esc(r.id) + '">観戦</button>'
+      : (r.full
+          ? '<button type="button" class="mini-btn is-full" disabled>満員</button>'
+          : '<button type="button" class="mini-btn" data-join="' + esc(r.id) + '">参加</button>');
+
+    const spec = r.spectators > 0
+      ? '<span class="room-row-spec">👁' + r.spectators + '</span>' : '';
+
     return '' +
     '<div class="room-row">' +
       '<span class="room-row-id">' + esc(r.id) + '</span>' +
       '<span class="room-row-meta">' +
-        '<span class="room-row-count">' + r.count + ' / ' + r.max + ' 人 ' + modeTag + '</span>' +
+        '<span class="room-row-count' + (r.full && !r.playing ? ' is-full' : '') + '">' +
+          r.count + ' / ' + r.max + ' 人 ' + modeTag + spec + '</span>' +
         '<span class="room-row-host">ホスト: ' + esc(r.host || '-') + '</span>' +
       '</span>' +
-      '<button type="button" class="mini-btn" data-join="' + esc(r.id) + '">参加</button>' +
+      '<span class="room-row-actions">' + stateTag + btn + '</span>' +
     '</div>';
   }).join('');
 }
@@ -1934,6 +2198,10 @@ function endOnlineAnim(token){
 }
 
 function applyRoomState(state){
+  view.spectating = !!state.isSpectator;
+  view.spectators = state.spectatorCount || 0;
+  el.body.classList.toggle('is-spectating', view.spectating);
+
   if (state.phase === 'lobby'){
     online.lastResultRound = -1;
     online.dealtRound = -1;
@@ -1979,6 +2247,7 @@ function applyRoomState(state){
   renderTable();
   renderMedal();
   updateRoundChip();
+  renderSpectateChip();
   syncTurnTimer(state);
   setMessage(state.message || '');
   updateOnlinePanels(state);
@@ -2025,11 +2294,25 @@ function renderRoomScreen(state){
       : (p.lobbyReady
           ? '<span class="member-ready">準備完了</span>'
           : '<span class="member-wait">準備中</span>');
+
+    /* 自分以外の人には、フレンドなら🤝、そうでなければ申請ボタンを出す(v3.0) */
+    let social = '';
+    if (!p.isYou && !p.cpu && account.user){
+      if (isFriend(p.name)){
+        social = '<span class="member-mate" title="フレンド">🤝</span>';
+      } else if (friendPending(p.name)){
+        social = '<button type="button" class="member-req" disabled>申請中</button>';
+      } else {
+        social = '<button type="button" class="member-req" data-req="' + esc(p.name) + '">申請</button>';
+      }
+    }
+
     return '' +
       '<div class="member-row' + (p.isYou ? ' is-you' : '') + '">' +
         '<span class="member-avatar" data-icon-color="' + iconColorOf(p.iconColor) + '">' +
           esc(p.name.charAt(0).toUpperCase()) + '</span>' +
         '<span class="member-name">' + esc(p.name) + (p.isYou ? '(あなた)' : '') + '</span>' +
+        social +
         '<span class="member-lv">Lv.' + p.level + '</span>' +
         badge +
       '</div>';
@@ -2084,6 +2367,9 @@ function renderRoomScreen(state){
 }
 
 function updateOnlinePanels(state){
+  /* 観戦者は操作できないので、専用パネルだけを見せる(v3.0) */
+  if (state.isSpectator) return showPanel('spectate');
+
   const me = state.players.find(p => p.isYou);
   if (!me) return showPanel('none');
 
@@ -2166,6 +2452,8 @@ function updateOnlinePanels(state){
 const chat = { open: false, unread: 0, log: [], floatTimers: [] };
 
 function chatAvailable(){
+  /* 観戦者はチャットを見られない(v3.0) */
+  if (view.spectating) return false;
   return view.mode === 'online'
       && online.socket && online.socket.connected
       && (screen === 'room' || screen === 'game');
@@ -2407,6 +2695,96 @@ window.addEventListener('resize', () => {
 });
 
 /* =========================================================
+   12.35 招待(フレンド招待 / 招待URL)(v3.0)
+   ========================================================= */
+function inviteUrlFor(roomId){
+  const base = location.origin + location.pathname;
+  return base + '?room=' + encodeURIComponent(roomId);
+}
+
+function setInviteTab(tab){
+  el.inviteTabs.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.tab === tab));
+  el.inviteFriendView.hidden = tab !== 'friend';
+  el.inviteUrlView.hidden = tab !== 'url';
+}
+
+function renderInviteFriends(){
+  const st = online.state;
+  const inRoom = st ? st.players.map(p => p.name) : [];
+  const rows = friends.list.map(f => {
+    let action;
+    if (inRoom.includes(f.username)){
+      action = '<button type="button" class="friend-act" disabled>参加中</button>';
+    } else if (!f.online){
+      action = '<button type="button" class="friend-act" disabled>オフライン</button>';
+    } else {
+      action = '<button type="button" class="friend-act is-ok" data-invite="' +
+               esc(f.username) + '">招待</button>';
+    }
+    return friendRowMarkup(f, action);
+  });
+  el.inviteFriendList.innerHTML = rows.length
+    ? rows.join('')
+    : '<p class="empty-note">フレンドがいません。<br>待機ルームで他のプレイヤーに申請を送ってみましょう。</p>';
+}
+
+function openInvitePanel(){
+  if (!online.state || !online.roomId) return;
+  setInviteTab('friend');
+  el.inviteUrlText.value = inviteUrlFor(online.roomId);
+  el.inviteShareBtn.hidden = !navigator.share;
+  renderInviteFriends();
+  openOverlay(el.inviteOverlay);
+  loadFriends(true);
+}
+
+/* 招待が届いたとき */
+let pendingInvite = null;
+
+function showInvited(data){
+  pendingInvite = data;
+  const modeText = data.mode === 'champion'
+    ? '🏆 チャンピオン ' + data.championRounds + 'R'
+    : 'エンジョイ';
+  el.invitedText.innerHTML =
+    '<b>' + esc(data.from) + '</b> さんから招待が届きました。<br>' +
+    esc(modeText) + ' ・ ' + data.count + '/' + data.max + '人' +
+    '<span class="invited-room">' + esc(data.roomId) + '</span>';
+  openOverlay(el.invitedOverlay);
+  audio.play('join');
+}
+
+function acceptInvite(){
+  const inv = pendingInvite;
+  pendingInvite = null;
+  closeOverlay(el.invitedOverlay);
+  if (!inv) return;
+  audio.play('button');
+  joinRoomById(inv.roomId, 'invite');
+}
+
+/* 部屋に入る共通処理。via を付けると満員時のメッセージが変わる */
+function joinRoomById(id, via){
+  if (!online.socket || !online.socket.connected){
+    online.pendingJoin = { id, via };
+    enterOnline();
+    return;
+  }
+  if (screen !== 'lobby' && screen !== 'title') showScreen('lobby');
+  if (online.roomId) online.socket.emit('room:leave');
+  online.socket.emit('room:join', { id: String(id).toUpperCase(), via: via || undefined });
+}
+
+/* 観戦人数の表示 */
+function renderSpectateChip(){
+  const n = view.spectators || 0;
+  const show = screen === 'game' && view.mode === 'online' && n > 0;
+  el.spectateChip.hidden = !show;
+  if (show) el.spectateNum.textContent = n;
+}
+
+/* =========================================================
    12.4 手番タイマー(オンライン)
    ========================================================= */
 const turnTimer = { id: null, endAt: 0, key: '' };
@@ -2473,6 +2851,9 @@ function resetOnlineRoomView(){
   online.cardTotal = 0;
   online.dealerHole = true;
   view.onlineMode = 'enjoy';
+  view.spectating = false;
+  view.spectators = 0;
+  el.body.classList.remove('is-spectating');
   view.seats = [];
   view.dealer = { hand: [], hole: true };
   setStreak(0);
@@ -3022,10 +3403,18 @@ el.createRoomBtn.addEventListener('click', () => {
   });
 });
 el.roomList.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-join]');
-  if (!b || !online.socket) return;
-  audio.play('button');
-  online.socket.emit('room:join', { id: b.dataset.join });
+  if (!online.socket) return;
+  const join = e.target.closest('[data-join]');
+  if (join){
+    audio.play('button');
+    online.socket.emit('room:join', { id: join.dataset.join });
+    return;
+  }
+  const spec = e.target.closest('[data-spectate]');
+  if (spec){
+    audio.play('button');
+    online.socket.emit('room:spectate', { id: spec.dataset.spectate });
+  }
 });
 el.joinIdBtn.addEventListener('click', () => {
   const id = el.joinIdInput.value.trim().toUpperCase();
@@ -3038,6 +3427,97 @@ el.joinIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.jo
 
 /* --- 待機ルーム --- */
 el.roomLeaveBtn.addEventListener('click', () => { audio.play('button'); leaveOnlineRoom(); });
+
+/* --- フレンド(v3.0) --- */
+el.friendBtn.addEventListener('click', () => { audio.play('button'); openFriendPanel(); });
+el.friendCloseBtn.addEventListener('click', () => closeOverlay(el.friendOverlay));
+el.friendTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  audio.play('chip');
+  setFriendTab(b.dataset.tab);
+});
+
+function onFriendListClick(e){
+  const btn = e.target.closest('.friend-act');
+  if (!btn || btn.disabled) return;
+  const row = btn.closest('.friend-row');
+  if (!row) return;
+  const user = row.dataset.user;
+  const act = btn.dataset.act;
+  audio.play('button');
+  if (act === 'accept') friendAction('accept', user, user + ' さんとフレンドになりました');
+  else if (act === 'reject') friendAction('reject', user, '申請を拒否しました');
+  else if (act === 'cancel') friendAction('reject', user, '申請を取り消しました');
+  else if (act === 'remove') removeFriend(user);
+}
+[el.friendList, el.friendReqList, el.friendOutList].forEach(node =>
+  node.addEventListener('click', onFriendListClick));
+
+/* 待機ルームからのフレンド申請 */
+el.memberList.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-req]');
+  if (!b || b.disabled) return;
+  audio.play('button');
+  sendFriendRequest(b.dataset.req, b);
+});
+
+/* --- 招待(v3.0) --- */
+el.inviteBtn.addEventListener('click', () => { audio.play('button'); openInvitePanel(); });
+el.inviteCloseBtn.addEventListener('click', () => closeOverlay(el.inviteOverlay));
+el.inviteTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  audio.play('chip');
+  setInviteTab(b.dataset.tab);
+});
+el.inviteFriendList.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-invite]');
+  if (!b || b.disabled || !online.socket) return;
+  audio.play('button');
+  b.disabled = true;
+  b.textContent = '送信済み';
+  online.socket.emit('room:invite', { username: b.dataset.invite });
+});
+el.inviteUrlCopyBtn.addEventListener('click', async () => {
+  const url = el.inviteUrlText.value;
+  audio.play('button');
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('招待URLをコピーしました');
+  } catch {
+    el.inviteUrlText.select();
+    toast('URLを選択しました。コピーしてください');
+  }
+});
+el.inviteShareBtn.addEventListener('click', async () => {
+  if (!navigator.share) return;
+  try {
+    await navigator.share({
+      title: 'BLACKJACK 4',
+      text: '一緒にブラックジャックで遊びませんか?',
+      url: el.inviteUrlText.value
+    });
+  } catch {}
+});
+
+el.invitedAcceptBtn.addEventListener('click', acceptInvite);
+el.invitedRejectBtn.addEventListener('click', () => {
+  pendingInvite = null;
+  closeOverlay(el.invitedOverlay);
+  audio.play('button');
+});
+
+/* --- 観戦(v3.0) --- */
+el.spectateLeaveBtn.addEventListener('click', () => {
+  audio.play('button');
+  if (online.socket) online.socket.emit('room:stopSpectate');
+  resetOnlineRoomView();
+  showScreen('lobby');
+  renderMedal();
+  if (online.socket) online.socket.emit('room:list');
+});
+
 el.startGameBtn.addEventListener('click', () => {
   if (!online.socket) return;
   audio.play('button');
@@ -3298,12 +3778,17 @@ el.chatStamps.addEventListener('click', (e) => {
 });
 
 /* --- 全体 --- */
-[el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay].forEach(node =>
+/* 招待通知(invitedOverlay)は誤タップで消えると困るので背景クリックでは閉じない */
+const closableOverlays = [el.accountOverlay, el.rulesOverlay, el.settingsOverlay,
+  el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay,
+  el.friendOverlay, el.inviteOverlay];
+
+closableOverlays.forEach(node =>
   node.addEventListener('click', (e) => { if (e.target === node) closeOverlay(node); }));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
-    [el.accountOverlay, el.rulesOverlay, el.settingsOverlay, el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay].forEach(n => { if (!n.hidden) closeOverlay(n); });
+    closableOverlays.forEach(n => { if (!n.hidden) closeOverlay(n); });
     return;
   }
   if (!el.adOverlay.hidden) return;
@@ -3343,9 +3828,38 @@ window.addEventListener('beforeunload', () => {
 /* =========================================================
    17. 起動
    ========================================================= */
+/* 招待URL(?room=XXXX)で開かれた場合の処理(v3.0)
+   ログイン済みならそのまま参加、未ログインならログイン後に参加する */
+function readInviteFromUrl(){
+  let id = '';
+  try {
+    id = (new URLSearchParams(location.search).get('room') || '').trim().toUpperCase();
+  } catch { return; }
+  if (!/^[A-Z0-9]{4}$/.test(id)) return;
+
+  online.pendingJoin = { id, via: 'url' };
+  /* URLはそのままだとリロードのたびに参加してしまうので消しておく */
+  try { history.replaceState(null, '', location.pathname); } catch {}
+}
+
+/* 招待URLからの参加待ちがあれば実行する。未ログインならログインを促す */
+function resumeInviteJoin(){
+  const pend = online.pendingJoin;
+  if (!pend) return;
+  if (!account.user){
+    toast('参加するにはログインが必要です');
+    setAuthMode('login');
+    openOverlay(el.accountOverlay);
+    return;
+  }
+  toast('ルーム ' + pend.id + ' に参加します…');
+  enterOnline();   // 接続後、connectハンドラで join が走る
+}
+
 async function init(){
   buildShoe();
   if (settings.bgmOn) bgm.prefetch();
+  readInviteFromUrl();
   setAuthMode('login');
   renderSettings();
   renderAccountUi();
@@ -3357,6 +3871,8 @@ async function init(){
   showScreen('title');
   await restoreSession();
   updateAdBtn();
+  if (account.user) loadFriends(true);
+  resumeInviteJoin();
 }
 
 init();
