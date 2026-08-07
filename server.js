@@ -15,7 +15,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '3.0.0';
+const APP_VERSION = '3.1.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -309,7 +309,8 @@ function publicUser(u){
     champWins: u.champ_wins,
     champLosses: u.champ_losses,
     champDraws: u.champ_draws,
-    iconColor: ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR
+    iconColor: ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR,
+    isOwner: u.username === (process.env.OWNER_NAME || 'hiro')
   };
 }
 
@@ -959,6 +960,33 @@ app.get('/api/me', async (req, res) => {
   res.json({ user: publicUser(u) });
 });
 
+/* パスワード変更(v3.1)。現在のパスワードを確認してから差し替える */
+app.post('/api/password', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+
+  const current = String(req.body?.current || '');
+  const next = String(req.body?.next || '');
+
+  if (!verifyPassword(current, u.pass_hash))
+    return res.status(401).json({ error: '現在のパスワードが違います' });
+  if (!PASS_RE.test(next))
+    return res.status(400).json({ error: '新しいパスワードは英数字1〜8文字です' });
+  if (current === next)
+    return res.status(400).json({ error: '現在のパスワードと同じです' });
+
+  try {
+    u.pass_hash = hashPassword(next);
+    await db.saveUser(u);
+    /* 変更後は今のトークンだけを有効にし、他端末のセッションは切る */
+    const token = makeToken(u.username);
+    res.json({ ok: true, token, user: publicUser(u) });
+  } catch (e){
+    console.error('[password]', e);
+    res.status(500).json({ error: 'パスワードの変更に失敗しました' });
+  }
+});
+
 app.delete('/api/account', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return authFail(res, '認証が必要です');
@@ -1095,7 +1123,22 @@ async function friendPayload(me){
   friends.sort((a, b) => (b.online - a.online) || byName(a, b));
   incoming.sort(byName);
   outgoing.sort(byName);
-  return { friends, incoming, outgoing };
+  return {
+    friends, incoming, outgoing,
+    onlineCount: friends.filter(f => f.online).length
+  };
+}
+
+/* 自分をフレンドに持っている人へ「一覧を更新して」と伝える。
+   ログイン・ログアウトでオンライン人数の表示を追従させるために使う(v3.1) */
+async function notifyFriendPresence(username){
+  try {
+    const links = await db.listLinks(username);
+    const names = links
+      .filter(l => l.status === 'accepted')
+      .map(l => otherSide(l, username));
+    notifyFriends(names);
+  } catch (e){ console.error('[presence]', e.message); }
 }
 
 app.get('/api/friends', async (req, res) => {
@@ -1185,10 +1228,17 @@ app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: ro
 
 /* =========================================================
    8.5 開発者モード(管理者API)
-   暗証番号はサーバー側でも必ず検証する。
-   ADMIN_PIN を環境変数で設定すれば変更可能。
+   v3.1: 「ownerアカウント(hiro)としてログイン済み」かつ「暗証番号が一致」の
+   二重チェックにした。表示を隠すだけだと、PINを知っていれば
+   他のアカウントからでも直接APIを叩けてしまうため。
+   ADMIN_PIN / OWNER_NAME は環境変数で変更できる。
    ========================================================= */
-const ADMIN_PIN = process.env.ADMIN_PIN || '0223';
+const ADMIN_PIN  = process.env.ADMIN_PIN  || '20050223';
+const OWNER_NAME = process.env.OWNER_NAME || 'hiro';
+
+function isOwnerName(name){
+  return typeof name === 'string' && name === OWNER_NAME;
+}
 
 /* 接続中のソケットからログイン中ユーザー名を集める */
 function onlineUserNames(){
@@ -1199,25 +1249,34 @@ function onlineUserNames(){
   return set;
 }
 
-function checkAdmin(req, res){
-  const pin = String(req.headers['x-admin-pin'] || req.body?.pin || '');
-  const a = Buffer.from(pin);
+function pinMatches(pin){
+  const a = Buffer.from(String(pin || ''));
   const b = Buffer.from(ADMIN_PIN);
-  const ok = a.length === b.length && crypto.timingSafeEqual(a, b);
-  if (!ok){
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+/* 管理APIの入口。owner本人かどうかをトークンで確かめてから暗証番号を見る */
+async function checkAdmin(req, res){
+  const u = await currentUser(req);
+  if (!u || !isOwnerName(u.username)){
+    res.status(403).json({ error: 'この操作は許可されていません' });
+    return false;
+  }
+  const pin = String(req.headers['x-admin-pin'] || req.body?.pin || '');
+  if (!pinMatches(pin)){
     res.status(401).json({ error: '暗証番号が違います' });
     return false;
   }
   return true;
 }
 
-app.post('/api/admin/auth', (req, res) => {
-  if (!checkAdmin(req, res)) return;
+app.post('/api/admin/auth', async (req, res) => {
+  if (!await checkAdmin(req, res)) return;
   res.json({ ok: true });
 });
 
 app.post('/api/admin/users', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+  if (!await checkAdmin(req, res)) return;
   try {
     const rows = await db.listUsers();
     const online = onlineUserNames();
@@ -1240,7 +1299,7 @@ app.post('/api/admin/users', async (req, res) => {
 });
 
 app.post('/api/admin/medal', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+  if (!await checkAdmin(req, res)) return;
   const username = String(req.body?.username || '');
   const medal = Math.floor(Number(req.body?.medal));
   if (!Number.isFinite(medal) || medal < 0 || medal > 99999999)
@@ -1265,7 +1324,7 @@ app.post('/api/admin/medal', async (req, res) => {
 });
 
 app.post('/api/admin/delete', async (req, res) => {
-  if (!checkAdmin(req, res)) return;
+  if (!await checkAdmin(req, res)) return;
   const username = String(req.body?.username || '');
   try {
     const u = await db.findUser(username);
@@ -1308,6 +1367,8 @@ io.on('connection', (socket) => {
   const name = socket.data.name;
 
   socket.emit('room:list', roomList());
+  /* ログインしたことをフレンドに知らせ、相手のオンライン人数表示を更新させる(v3.1) */
+  notifyFriendPresence(name);
 
   socket.on('room:list', () => socket.emit('room:list', roomList()));
 
@@ -1694,6 +1755,8 @@ io.on('connection', (socket) => {
       const u = await db.findUser(name);
       if (u){ u.last_login = new Date(); await db.saveUser(u); }
     } catch {}
+    /* このソケットが閉じたあとに判定したいので、少しだけ待ってから通知する */
+    setTimeout(() => notifyFriendPresence(name), 60);
   });
 });
 

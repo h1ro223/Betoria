@@ -3043,3 +3043,84 @@ body.is-spectating #dealerArea{ opacity: .96; }
   .spectate-chip{ padding: 4px 9px; }
   .spectate-num{ font-size: 16px; }
 }
+
+/* =========================================================
+   41. v3.1 修正まとめ
+   ========================================================= */
+
+/* ---------- ボタン・入力欄の直後に来る説明文の間隔 ----------
+   .sheet-note / .block-note / .mode-desc は「見出しに添える一文」を
+   想定して上に負のマージンを持たせている。
+   そのため、セグメントボタンや入力欄の直後に置くと文字がくっついて見える。
+   該当パターンだけ打ち消して、他の箇所と同じ間隔に揃える。 */
+.seg + .sheet-note,
+.seg + .block-note,
+.seg + .mode-desc,
+/* タブ切り替えでは2番目以降のビューが表示されることもあるので、
+   隣接(+)ではなく一般兄弟(~)で拾う */
+.seg ~ div > .sheet-note:first-child,
+.seg ~ div > .block-note:first-child,
+.seg ~ div > .mode-desc:first-child,
+.text-input + .sheet-note,
+.text-input + .block-note,
+.text-input + .mode-desc,
+.range + .sheet-note,
+.range + .block-note,
+.checkbox-row + .sheet-note,
+.checkbox-row + .block-note,
+.btn + .sheet-note,
+.btn + .block-note,
+.friend-list + .sheet-note,
+.friend-list + .block-note{
+  margin-top: 11px;
+}
+
+/* 説明文のあとにセグメントや入力欄が続く場合も、同じだけ空ける */
+.sheet-note + .seg,
+.block-note + .seg,
+.mode-desc + .seg{
+  margin-top: 11px;
+}
+
+/* ---------- ヘッダー: フレンドのオンライン人数 ---------- */
+/* アカウントボタンが「アイコン＋Lv」で縦に伸びているので、
+   ❤の下にも人数を置いて高さを揃える */
+.friend-btn{
+  flex-direction: column;
+  gap: 2px;
+  width: auto;
+  min-width: 46px;
+  height: auto;
+  padding: 5px 7px;
+}
+.friend-online{
+  font-family: var(--font-display);
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: .04em;
+  color: var(--smoke);
+}
+.friend-btn.has-online .friend-online{ color: var(--jade); }
+
+/* ---------- マイページ: パスワード変更 ---------- */
+.pass-box{
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid rgba(201,162,39,.3);
+  border-radius: 12px;
+  background: rgba(201,162,39,.06);
+}
+.pass-box[hidden]{ display: none; }
+.pass-box .field-label:first-child{ margin-top: 0; }
+.pass-box .delete-actions{ margin-top: 14px; }
+.pass-ok{
+  margin: 10px 0 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--jade);
+}
+
+@media (max-width: 520px){
+  .friend-btn{ min-width: 42px; padding: 4px 6px; }
+  .friend-online{ font-size: 12px; }
+}

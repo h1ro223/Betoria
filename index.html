@@ -41,6 +41,7 @@
 
     <button type="button" class="friend-btn" id="friendBtn" title="フレンド" hidden>
       <span class="friend-btn-icon">❤</span>
+      <span class="friend-online" id="friendOnline">0</span>
       <span class="friend-badge" id="friendBadge" hidden>0</span>
     </button>
 
@@ -60,7 +61,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v3.0 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v3.1 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -470,6 +471,22 @@
 
         <button type="button" class="btn btn-ghost btn-wide" id="logoutBtn">ログアウト</button>
 
+        <button type="button" class="btn btn-ghost btn-wide" id="showPassBtn">パスワード変更</button>
+
+        <div id="passBox" class="pass-box" hidden>
+          <label class="field-label" for="passCurrent">現在のパスワード</label>
+          <input type="password" id="passCurrent" class="text-input" maxlength="8" placeholder="••••" autocomplete="current-password">
+          <label class="field-label" for="passNext">新しいパスワード</label>
+          <input type="password" id="passNext" class="text-input" maxlength="8" placeholder="英数字1〜8文字" autocomplete="new-password">
+          <label class="field-label" for="passConfirm">新しいパスワード(確認)</label>
+          <input type="password" id="passConfirm" class="text-input" maxlength="8" placeholder="もう一度入力" autocomplete="new-password">
+          <p class="form-error" id="passError" hidden></p>
+          <div class="delete-actions">
+            <button type="button" class="btn btn-ghost" id="passCancelBtn">やめる</button>
+            <button type="button" class="btn btn-primary" id="passSubmitBtn">変更する</button>
+          </div>
+        </div>
+
         <button type="button" class="danger-link" id="showDeleteBtn">アカウントを削除する</button>
 
         <div id="deleteBox" class="delete-box" hidden>
@@ -606,9 +623,9 @@
         <input type="range" id="seVol" class="range" min="0" max="100" value="60">
       </div>
 
-      <div class="sheet-section">
+      <div class="sheet-section" id="devSection" hidden>
         <h3>開発者モード</h3>
-        <p class="sheet-note">登録アカウントの管理画面を開きます。暗証番号が必要です。</p>
+        <p class="sheet-note">オーナーアカウント専用です。登録アカウントの管理画面を開きます。暗証番号が必要です。</p>
         <button type="button" class="btn btn-ghost btn-wide" id="devModeBtn">開発者モードを開く</button>
       </div>
 
@@ -658,6 +675,16 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v3.1</h3>
+        <ul class="rule-list">
+          <li>マイページに<b>「パスワード変更」</b>を追加しました。変更するとほかの端末のログインは解除されます。</li>
+          <li>❤ボタンの下に<b>オンライン中のフレンド人数</b>を表示するようにしました。</li>
+          <li>チャットの表示領域を<b>最大4件分</b>までにしました。それより古いメッセージはスクロールで見られます。</li>
+          <li>ボタンのすぐ下にある説明文の<b>余白を全体で統一</b>し、文字が詰まって見えないようにしました。</li>
+          <li>開発者モードの<b>セキュリティを強化</b>しました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v3.0</h3>
         <ul class="rule-list">

@@ -374,6 +374,7 @@ const el = {
 
   friendBtn: $('friendBtn'),
   friendBadge: $('friendBadge'),
+  friendOnline: $('friendOnline'),
   friendOverlay: $('friendOverlay'),
   friendCloseBtn: $('friendCloseBtn'),
   friendTabs: $('friendTabs'),
@@ -545,6 +546,16 @@ const el = {
   logoutBtn: $('logoutBtn'),
   showDeleteBtn: $('showDeleteBtn'),
   deleteBox: $('deleteBox'),
+
+  showPassBtn: $('showPassBtn'),
+  passBox: $('passBox'),
+  passCurrent: $('passCurrent'),
+  passNext: $('passNext'),
+  passConfirm: $('passConfirm'),
+  passError: $('passError'),
+  passCancelBtn: $('passCancelBtn'),
+  passSubmitBtn: $('passSubmitBtn'),
+  devSection: $('devSection'),
   deletePass: $('deletePass'),
   deleteError: $('deleteError'),
   deleteCancelBtn: $('deleteCancelBtn'),
@@ -959,6 +970,10 @@ function clearAccount(){
   account.user = null;
   account.token = '';
   store.del('bj4_token');
+  /* 次に開いたときに「新規登録」タブのままだと迷うので、ログインに戻しておく(v3.1) */
+  setAuthMode('login');
+  el.authName.value = '';
+  el.authPass.value = '';
   renderAccountUi();
 }
 
@@ -991,6 +1006,8 @@ function renderProfile(){
   el.deletePass.value = '';
   el.deleteError.hidden = true;
   el.iconPicker.hidden = true;
+  resetPassBox();
+  updateDevVisibility();
   if (!u) return;
 
   el.profileAvatarChar.textContent = u.username.charAt(0).toUpperCase();
@@ -1064,6 +1081,7 @@ const friends = {
   list: [],        // 成立しているフレンド
   incoming: [],    // 自分宛の申請
   outgoing: [],    // 自分が送った申請
+  onlineCount: 0,  // オンライン中のフレンド人数(v3.1)
   tab: 'list',
   loading: false,
   sent: new Set()  // このセッションで申請済みの相手(ボタンの二度押し防止)
@@ -1084,11 +1102,18 @@ function updateFriendBadge(){
   el.friendBadge.hidden = n === 0;
   el.friendTabBadge.textContent = n > 99 ? '99+' : n;
   el.friendTabBadge.hidden = n === 0;
+
+  /* ❤の下にオンライン中のフレンド人数を出す。0人でも「0」と表示する(v3.1) */
+  const online = friends.onlineCount || 0;
+  el.friendOnline.textContent = online;
+  el.friendBtn.classList.toggle('has-online', online > 0);
+  el.friendBtn.title = 'フレンド(オンライン ' + online + '人)';
 }
 
 async function loadFriends(silent){
   if (!account.user){
     friends.list = []; friends.incoming = []; friends.outgoing = [];
+    friends.onlineCount = 0;
     updateFriendBadge();
     return;
   }
@@ -1099,6 +1124,9 @@ async function loadFriends(silent){
     friends.list = d.friends || [];
     friends.incoming = d.incoming || [];
     friends.outgoing = d.outgoing || [];
+    friends.onlineCount = typeof d.onlineCount === 'number'
+      ? d.onlineCount
+      : friends.list.filter(f => f.online).length;
     /* サーバーの状態が正なので、ローカルの申請済みメモは掃除する */
     friends.sent.forEach(n => {
       if (!friends.outgoing.some(f => f.username === n) && !isFriend(n)) friends.sent.delete(n);
@@ -1206,6 +1234,65 @@ async function sendFriendRequest(username, btn){
   const ok = await friendAction('request', username, username + ' さんにフレンド申請を送りました');
   if (!ok) friends.sent.delete(username);
   if (screen === 'room' && online.state) renderRoomScreen(online.state);
+}
+
+/* =========================================================
+   10.45 パスワード変更 / 開発者モードの表示制御(v3.1)
+   ========================================================= */
+/* 開発者モードはオーナーアカウントでログイン中のときだけ見せる。
+   ただし見た目を隠すだけでは不十分なので、サーバー側でも
+   「オーナー本人 + 暗証番号」の二重チェックをしている */
+function isOwnerUser(){
+  return !!(account.user && account.user.isOwner);
+}
+
+function updateDevVisibility(){
+  if (el.devSection) el.devSection.hidden = !isOwnerUser();
+}
+
+function resetPassBox(){
+  if (!el.passBox) return;
+  el.passBox.hidden = true;
+  el.passCurrent.value = '';
+  el.passNext.value = '';
+  el.passConfirm.value = '';
+  el.passError.hidden = true;
+  el.passSubmitBtn.disabled = false;
+}
+
+function passFail(msg){
+  el.passError.textContent = msg;
+  el.passError.hidden = false;
+  audio.play('error');
+}
+
+async function submitPasswordChange(){
+  const current = el.passCurrent.value.trim();
+  const next = el.passNext.value.trim();
+  const confirm2 = el.passConfirm.value.trim();
+
+  if (!current || !next || !confirm2) return passFail('すべての欄を入力してください');
+  if (!/^[A-Za-z0-9]{1,8}$/.test(next)) return passFail('新しいパスワードは英数字1〜8文字です');
+  if (next !== confirm2) return passFail('新しいパスワードが一致しません');
+  if (current === next) return passFail('現在のパスワードと同じです');
+
+  el.passSubmitBtn.disabled = true;
+  el.passError.hidden = true;
+  try {
+    const d = await api('/api/password', {
+      method: 'POST',
+      body: JSON.stringify({ current, next })
+    });
+    /* 変更後は新しいトークンに差し替える(古い端末のセッションは無効になる) */
+    setAccount(d.user, d.token);
+    resetPassBox();
+    audio.play('win');
+    toast('パスワードを変更しました');
+  } catch (e){
+    passFail(e.message);
+  } finally {
+    el.passSubmitBtn.disabled = false;
+  }
 }
 
 /* =========================================================
@@ -2470,6 +2557,36 @@ function updateChatVisibility(){
   }
 }
 
+/* チャットの表示領域は最大4件分まで(v3.1)
+   吹き出しの高さは中身(文字数・スタンプ)で変わるので、
+   実際に描画された直近4件を測って上限を決める。5件目からはスクロールになる。 */
+const CHAT_MAX_ROWS = 4;
+
+function fitChatLog(){
+  const log = el.chatLog;
+  if (el.chatPanel.hidden) return;
+
+  log.style.maxHeight = '';
+  const items = Array.from(log.children).filter(n => !n.classList.contains('chat-empty'));
+  if (items.length <= CHAT_MAX_ROWS) return;
+
+  const cs = getComputedStyle(log);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const gap = parseFloat(cs.rowGap || cs.gap) || 0;
+
+  const tail = items.slice(-CHAT_MAX_ROWS);
+  let h = 0;
+  for (const n of tail) h += n.getBoundingClientRect().height;
+  h += gap * (CHAT_MAX_ROWS - 1) + padY;
+
+  log.style.maxHeight = Math.ceil(h) + 'px';
+}
+
+function scrollChatToEnd(){
+  fitChatLog();
+  el.chatLog.scrollTop = el.chatLog.scrollHeight;
+}
+
 function openChat(){
   chat.open = true;
   chat.unread = 0;
@@ -2477,7 +2594,7 @@ function openChat(){
   el.chatBadge.hidden = true;
   el.chatFloat.innerHTML = '';
   renderChatLog();
-  el.chatLog.scrollTop = el.chatLog.scrollHeight;
+  scrollChatToEnd();
   el.chatInput.focus();
 }
 
@@ -2530,7 +2647,7 @@ function onChatMessage(m){
 
   if (chat.open){
     renderChatLog();
-    el.chatLog.scrollTop = el.chatLog.scrollHeight;
+    scrollChatToEnd();
   } else {
     if (!mine){
       pushChatFloat(m);
@@ -3079,6 +3196,7 @@ function renderSettings(){
   el.seVolText.textContent = settings.seVol + '%';
 
   renderBgmStatus();
+  updateDevVisibility();
 }
 
 /* =========================================================
@@ -3087,6 +3205,11 @@ function renderSettings(){
 const dev = { pin: '', users: [] };
 
 function openDevPin(){
+  /* サーバー側でも検証しているが、入口でも念のため確認する(v3.1) */
+  if (!isOwnerUser()){
+    audio.play('error');
+    return toast('この操作は許可されていません');
+  }
   el.devPinInput.value = '';
   el.devPinError.hidden = true;
   openOverlay(el.devPinOverlay);
@@ -3686,6 +3809,19 @@ el.logoutBtn.addEventListener('click', () => {
   toast('ログアウトしました');
   if (screen !== 'title') showScreen('title');
 });
+
+/* --- パスワード変更(v3.1) --- */
+el.showPassBtn.addEventListener('click', () => {
+  audio.play('button');
+  const willOpen = el.passBox.hidden;
+  resetPassBox();
+  el.passBox.hidden = !willOpen;
+  if (willOpen) setTimeout(() => el.passCurrent.focus(), 60);
+});
+el.passCancelBtn.addEventListener('click', () => { audio.play('button'); resetPassBox(); });
+el.passSubmitBtn.addEventListener('click', submitPasswordChange);
+[el.passCurrent, el.passNext, el.passConfirm].forEach(inp =>
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitPasswordChange(); }));
 
 el.showDeleteBtn.addEventListener('click', () => {
   audio.play('button');
