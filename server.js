@@ -15,12 +15,44 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '3.1.0';
+const APP_VERSION = '3.2.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
    ========================================================= */
 const INITIAL_MEDAL = 1000;
+
+/* =========================================================
+   日付まわり(v3.2)
+   ランキングとログインボーナスの区切りは JST の 0:00。
+   Render は UTC で動くので、必ずこのユーティリティを通すこと。
+   ========================================================= */
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+/* 'YYYY-MM-DD' 形式のJST日付を返す */
+function jstDateKey(d){
+  const t = (d ? new Date(d) : new Date()).getTime();
+  return new Date(t + JST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/* JSTの日付キーを n 日ずらす */
+function shiftDateKey(key, days){
+  const t = Date.parse(key + 'T00:00:00Z') + days * 86400000;
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/* 次に JST 0:00 を迎えるまでのミリ秒 */
+function msUntilNextJstMidnight(){
+  const now = Date.now() + JST_OFFSET_MS;
+  const next = Math.floor(now / 86400000) * 86400000 + 86400000;
+  return next - now;
+}
+
+/* 表示用 'M/D' */
+function shortDate(key){
+  const [, m, d] = key.split('-');
+  return Number(m) + '/' + Number(d);
+}
 
 /* アカウントアイコンの色(v3.0)。クライアントの ICON_COLORS と必ず揃えること */
 const ICON_COLORS = [
@@ -37,6 +69,10 @@ const db = (() => {
     console.log('[db] DATABASE_URL 未設定のためメモリ保存で起動します');
     const users = new Map();
     const friends = new Map();   // 'a|b'(a<b) -> {user_a, user_b, status, requester}
+    const notices = [];          // {id, username, kind, title, body, is_read, created_at}
+    const ranks = new Map();     // dateKey -> Map(username -> row)
+    let noticeId = 1;
+    let lastSettled = null;
     const fkey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
     return {
       kind: 'memory',
@@ -48,6 +84,9 @@ const db = (() => {
         for (const [k, r] of [...friends]){
           if (r.user_a === name || r.user_b === name) friends.delete(k);
         }
+        for (let i = notices.length - 1; i >= 0; i--)
+          if (notices[i].username === name) notices.splice(i, 1);
+        for (const m of ranks.values()) m.delete(name);
         return users.delete(name);
       },
       async listUsers(){
@@ -60,6 +99,82 @@ const db = (() => {
       async deleteLink(a, b){ return friends.delete(fkey(a, b)); },
       async listLinks(name){
         return [...friends.values()].filter(r => r.user_a === name || r.user_b === name);
+      },
+      /* ---- 通知(v3.2) ---- */
+      async addNotice(n){
+        notices.push({
+          id: noticeId++, username: n.username, kind: n.kind,
+          title: n.title, body: n.body || '', is_read: false, created_at: new Date()
+        });
+      },
+      async listNotices(name, limit){
+        return notices.filter(n => n.username === name)
+          .sort((a, b) => b.id - a.id).slice(0, limit)
+          .map(n => Object.assign({}, n));
+      },
+      async countUnread(name){
+        return notices.filter(n => n.username === name && !n.is_read).length;
+      },
+      async markNoticesRead(name){
+        for (const n of notices) if (n.username === name) n.is_read = true;
+      },
+      async clearNotices(name){
+        for (let i = notices.length - 1; i >= 0; i--)
+          if (notices[i].username === name) notices.splice(i, 1);
+      },
+      async trimNotices(name, keep){
+        const mine = notices.filter(n => n.username === name).sort((a, b) => b.id - a.id);
+        for (const n of mine.slice(keep)){
+          const i = notices.indexOf(n);
+          if (i >= 0) notices.splice(i, 1);
+        }
+      },
+      /* ---- ランキング(v3.2) ---- */
+      async lastSettled(){ return lastSettled; },
+      async setLastSettled(key){ lastSettled = key; },
+      async usersWithDay(key){
+        return [...users.values()]
+          .filter(u => u.day_key === key && ((u.day_gain || 0) > 0 || (u.day_best || 0) > 0))
+          .map(u => ({
+            username: u.username, level: u.level,
+            icon_color: u.icon_color, day_gain: u.day_gain || 0, day_best: u.day_best || 0
+          }));
+      },
+      async saveDailyRanks(key, rows){
+        if (!ranks.has(key)) ranks.set(key, new Map());
+        const m = ranks.get(key);
+        for (const x of rows){
+          m.set(x.username, {
+            username: x.username, level: x.level, icon_color: x.icon_color,
+            total_gain: x.day_gain, best_gain: x.day_best
+          });
+        }
+      },
+      async getDailyRanks(key){
+        return ranks.has(key) ? [...ranks.get(key).values()] : [];
+      },
+      async purgeDailyRanks(before){
+        for (const k of [...ranks.keys()]) if (k < before) ranks.delete(k);
+      },
+      async topAllTimeBest(limit){
+        return [...users.values()]
+          .filter(u => (u.best_gain || 0) > 0)
+          .sort((a, b) => (b.best_gain - a.best_gain) ||
+                          String(a.username).localeCompare(String(b.username)))
+          .slice(0, limit)
+          .map(u => ({
+            username: u.username, level: u.level, icon_color: u.icon_color,
+            best_gain: u.best_gain, best_gain_at: u.best_gain_at
+          }));
+      },
+      async liveDay(key, limit){
+        return [...users.values()]
+          .filter(u => u.day_key === key && ((u.day_gain || 0) > 0 || (u.day_best || 0) > 0))
+          .slice(0, limit)
+          .map(u => ({
+            username: u.username, level: u.level, icon_color: u.icon_color,
+            day_gain: u.day_gain || 0, day_best: u.day_best || 0
+          }));
       }
     };
   }
@@ -73,7 +188,9 @@ const db = (() => {
   });
 
   const COLS = 'username, pass_hash, medal, level, exp, rounds, wins, losses, pushes, bj, ' +
-               'champ_plays, champ_wins, champ_losses, champ_draws, last_login, icon_color';
+               'champ_plays, champ_wins, champ_losses, champ_draws, last_login, icon_color, ' +
+               'total_gain, best_gain, best_gain_at, day_key, day_gain, day_best, ' +
+               'bonus_date, bonus_ad_date, login_streak, login_days, created_at';
 
   return {
     kind: 'postgres',
@@ -117,6 +234,52 @@ const db = (() => {
         )`);
       await pool.query(`CREATE INDEX IF NOT EXISTS friends_a_idx ON friends(user_a)`);
       await pool.query(`CREATE INDEX IF NOT EXISTS friends_b_idx ON friends(user_b)`);
+
+      /* ランキング・ログインボーナス用の列(v3.2) */
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS total_gain    BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS best_gain     BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS best_gain_at  TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS day_key       TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS day_gain      BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS day_best      BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_date    TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS bonus_ad_date TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_streak  INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_days    INTEGER NOT NULL DEFAULT 0`);
+
+      /* 通知(v3.2) */
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS notices(
+          id         BIGSERIAL PRIMARY KEY,
+          username   TEXT NOT NULL,
+          kind       TEXT NOT NULL,
+          title      TEXT NOT NULL,
+          body       TEXT NOT NULL DEFAULT '',
+          is_read    BOOLEAN NOT NULL DEFAULT FALSE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS notices_user_idx ON notices(username, id DESC)`);
+
+      /* 日次ランキングの確定結果(v3.2) */
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rank_daily(
+          date_key   TEXT NOT NULL,
+          username   TEXT NOT NULL,
+          level      INTEGER NOT NULL DEFAULT 1,
+          icon_color TEXT,
+          total_gain BIGINT NOT NULL DEFAULT 0,
+          best_gain  BIGINT NOT NULL DEFAULT 0,
+          PRIMARY KEY(date_key, username)
+        )`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS rank_daily_idx ON rank_daily(date_key)`);
+
+      /* 集計の進行状況(v3.2) */
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS rank_meta(
+          id           INTEGER PRIMARY KEY,
+          last_settled TEXT
+        )`);
+      await pool.query(`INSERT INTO rank_meta(id, last_settled) VALUES(1, NULL) ON CONFLICT (id) DO NOTHING`);
       console.log('[db] PostgreSQL 接続OK');
     },
     async findUser(name){
@@ -125,11 +288,17 @@ const db = (() => {
     },
     async createUser(row){
       await pool.query(
-        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+        `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+          $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
          row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
-         row.icon_color || DEFAULT_ICON_COLOR]);
+         row.icon_color || DEFAULT_ICON_COLOR,
+         row.total_gain || 0, row.best_gain || 0, row.best_gain_at || null,
+         row.day_key || null, row.day_gain || 0, row.day_best || 0,
+         row.bonus_date || null, row.bonus_ad_date || null,
+         row.login_streak || 0, row.login_days || 0,
+         row.created_at || new Date()]);
       return row;
     },
     async saveUser(row){
@@ -137,16 +306,25 @@ const db = (() => {
         `UPDATE users SET medal=$2, level=$3, exp=$4, rounds=$5,
          wins=$6, losses=$7, pushes=$8, bj=$9,
          champ_plays=$10, champ_wins=$11, champ_losses=$12, champ_draws=$13,
-         last_login=$14, icon_color=$15
+         last_login=$14, icon_color=$15,
+         total_gain=$16, best_gain=$17, best_gain_at=$18,
+         day_key=$19, day_gain=$20, day_best=$21,
+         bonus_date=$22, bonus_ad_date=$23, login_streak=$24, login_days=$25
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
          row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
-         row.icon_color || DEFAULT_ICON_COLOR]);
+         row.icon_color || DEFAULT_ICON_COLOR,
+         row.total_gain || 0, row.best_gain || 0, row.best_gain_at || null,
+         row.day_key || null, row.day_gain || 0, row.day_best || 0,
+         row.bonus_date || null, row.bonus_ad_date || null,
+         row.login_streak || 0, row.login_days || 0]);
       return row;
     },
     async deleteUser(name){
       await pool.query(`DELETE FROM friends WHERE user_a=$1 OR user_b=$1`, [name]);
+      await pool.query(`DELETE FROM notices WHERE username=$1`, [name]);
+      await pool.query(`DELETE FROM rank_daily WHERE username=$1`, [name]);
       const r = await pool.query(`DELETE FROM users WHERE username=$1`, [name]);
       return r.rowCount > 0;
     },
@@ -176,6 +354,87 @@ const db = (() => {
     async listLinks(name){
       const r = await pool.query(
         `SELECT user_a, user_b, status, requester FROM friends WHERE user_a=$1 OR user_b=$1`, [name]);
+      return r.rows;
+    },
+    /* ---- 通知(v3.2) ---- */
+    async addNotice(n){
+      await pool.query(
+        `INSERT INTO notices(username, kind, title, body) VALUES($1,$2,$3,$4)`,
+        [n.username, n.kind, n.title, n.body || '']);
+    },
+    async listNotices(name, limit){
+      const r = await pool.query(
+        `SELECT id, kind, title, body, is_read, created_at FROM notices
+         WHERE username=$1 ORDER BY id DESC LIMIT $2`, [name, limit]);
+      return r.rows;
+    },
+    async countUnread(name){
+      const r = await pool.query(
+        `SELECT COUNT(*)::int AS n FROM notices WHERE username=$1 AND is_read=FALSE`, [name]);
+      return r.rows[0].n;
+    },
+    async markNoticesRead(name){
+      await pool.query(`UPDATE notices SET is_read=TRUE WHERE username=$1 AND is_read=FALSE`, [name]);
+    },
+    async clearNotices(name){
+      await pool.query(`DELETE FROM notices WHERE username=$1`, [name]);
+    },
+    /* 通知が増えすぎないよう、古いものを間引く */
+    async trimNotices(name, keep){
+      await pool.query(
+        `DELETE FROM notices WHERE username=$1 AND id NOT IN (
+           SELECT id FROM notices WHERE username=$1 ORDER BY id DESC LIMIT $2)`, [name, keep]);
+    },
+    /* ---- ランキング(v3.2) ---- */
+    async lastSettled(){
+      const r = await pool.query(`SELECT last_settled FROM rank_meta WHERE id=1`);
+      return r.rows[0] ? r.rows[0].last_settled : null;
+    },
+    async setLastSettled(key){
+      await pool.query(
+        `INSERT INTO rank_meta(id, last_settled) VALUES(1,$1)
+         ON CONFLICT (id) DO UPDATE SET last_settled=EXCLUDED.last_settled`, [key]);
+    },
+    /* その日の成績を持つ人だけを確定用に取り出す */
+    async usersWithDay(key){
+      const r = await pool.query(
+        `SELECT username, level, icon_color, day_gain, day_best FROM users
+         WHERE day_key=$1 AND (day_gain > 0 OR day_best > 0)`, [key]);
+      return r.rows;
+    },
+    async saveDailyRanks(key, rows){
+      for (const x of rows){
+        await pool.query(
+          `INSERT INTO rank_daily(date_key, username, level, icon_color, total_gain, best_gain)
+           VALUES($1,$2,$3,$4,$5,$6)
+           ON CONFLICT (date_key, username) DO UPDATE SET
+             level=EXCLUDED.level, icon_color=EXCLUDED.icon_color,
+             total_gain=EXCLUDED.total_gain, best_gain=EXCLUDED.best_gain`,
+          [key, x.username, x.level, x.icon_color, x.day_gain, x.day_best]);
+      }
+    },
+    async getDailyRanks(key){
+      const r = await pool.query(
+        `SELECT username, level, icon_color, total_gain, best_gain
+         FROM rank_daily WHERE date_key=$1`, [key]);
+      return r.rows;
+    },
+    /* 保存期間を過ぎた日次ランキングを消す */
+    async purgeDailyRanks(before){
+      await pool.query(`DELETE FROM rank_daily WHERE date_key < $1`, [before]);
+    },
+    /* 歴代の一撃ランキング(usersテーブルから直接) */
+    async topAllTimeBest(limit){
+      const r = await pool.query(
+        `SELECT username, level, icon_color, best_gain, best_gain_at FROM users
+         WHERE best_gain > 0 ORDER BY best_gain DESC, username ASC LIMIT $1`, [limit]);
+      return r.rows;
+    },
+    /* 進行中(本日)の集計をその場で読む */
+    async liveDay(key, limit){
+      const r = await pool.query(
+        `SELECT username, level, icon_color, day_gain, day_best FROM users
+         WHERE day_key=$1 AND (day_gain > 0 OR day_best > 0) LIMIT $2`, [key, limit]);
       return r.rows;
     }
   };
@@ -310,7 +569,17 @@ function publicUser(u){
     champLosses: u.champ_losses,
     champDraws: u.champ_draws,
     iconColor: ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR,
-    isOwner: u.username === (process.env.OWNER_NAME || 'hiro')
+    isOwner: u.username === (process.env.OWNER_NAME || 'hiro'),
+    /* v3.2 */
+    totalGain: Number(u.total_gain || 0),
+    bestGain: Number(u.best_gain || 0),
+    bestGainAt: u.best_gain_at || null,
+    loginStreak: Number(u.login_streak || 0),
+    loginDays: Number(u.login_days || 0),
+    createdAt: u.created_at ? new Date(u.created_at).toISOString() : null,
+    /* 今日のログインボーナスを受け取れるか(v3.2) */
+    bonusReady: u.bonus_date !== jstDateKey(),
+    bonusAdReady: u.bonus_date === jstDateKey() && u.bonus_ad_date !== jstDateKey()
   };
 }
 
@@ -774,6 +1043,9 @@ async function finishRound(io, room){
         const u = await db.findUser(p.name);
         if (u){
           u.medal += p.result.payout;
+          /* ランキング用の記録(v3.2)。純増分だけを数える。
+             ログインボーナスや広告は対象外なのでここでは触らない */
+          recordGain(u, p.result.payout - p.bet);
           const up = applyEnjoyResult(u, p.result.kind);
           await db.saveUser(u);
           p.level = u.level;
@@ -911,12 +1183,97 @@ async function touchLogin(u){
   await db.saveUser(u);
 }
 
+/* =========================================================
+   8.7 ログインボーナス(v3.2)
+   その日はじめてアクセスすると500枚、広告を最後まで見るとさらに500枚。
+   区切りはJSTの0:00。ランキングの集計対象には入れない。
+   ========================================================= */
+const BONUS_MEDAL    = 500;   // 基本
+const BONUS_AD_MEDAL = 500;   // 広告視聴の追加分
+
+/* ログイン日数の記録を更新する。受け取り可能かどうかも返す */
+function updateLoginDays(u){
+  const today = jstDateKey();
+  const last = u.bonus_date || null;
+  if (last === today) return false;   // 今日はもう数えた
+
+  const yesterday = shiftDateKey(today, -1);
+  u.login_streak = (last === yesterday) ? (u.login_streak || 0) + 1 : 1;
+  u.login_days = (u.login_days || 0) + 1;
+  return true;
+}
+
+/* 今日のボーナスの状況を返す */
+function bonusState(u){
+  const today = jstDateKey();
+  return {
+    date: today,
+    claimed: u.bonus_date === today,
+    adClaimed: u.bonus_ad_date === today,
+    base: BONUS_MEDAL,
+    ad: BONUS_AD_MEDAL
+  };
+}
+
+app.get('/api/bonus', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  res.json(bonusState(u));
+});
+
+app.post('/api/bonus', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+
+  const today = jstDateKey();
+  if (u.bonus_date === today)
+    return res.status(409).json({ error: '本日のログインボーナスは受け取り済みです' });
+
+  updateLoginDays(u);
+  u.bonus_date = today;
+  u.medal += BONUS_MEDAL;
+  await db.saveUser(u);
+
+  await pushNotice(u.username, 'bonus', 'ログインボーナスを受け取りました',
+    BONUS_MEDAL + ' メダルを獲得しました。連続ログイン ' + u.login_streak + '日目です。');
+
+  res.json({
+    user: publicUser(u), reward: BONUS_MEDAL,
+    streak: u.login_streak, days: u.login_days,
+    state: bonusState(u)
+  });
+});
+
+/* 広告を最後まで見たときの追加分。基本ボーナスを受け取ってからでないと押せない */
+app.post('/api/bonus/ad', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+
+  const today = jstDateKey();
+  if (u.bonus_date !== today)
+    return res.status(400).json({ error: '先にログインボーナスを受け取ってください' });
+  if (u.bonus_ad_date === today)
+    return res.status(409).json({ error: '本日の追加ボーナスは受け取り済みです' });
+
+  u.bonus_ad_date = today;
+  u.medal += BONUS_AD_MEDAL;
+  await db.saveUser(u);
+
+  res.json({ user: publicUser(u), reward: BONUS_AD_MEDAL, state: bonusState(u) });
+});
+
 function blankUserRow(username, pass_hash){
   return {
     username, pass_hash, medal: INITIAL_MEDAL, level: 1, exp: 0,
     rounds: 0, wins: 0, losses: 0, pushes: 0, bj: 0,
     champ_plays: 0, champ_wins: 0, champ_losses: 0, champ_draws: 0,
-    last_login: null, icon_color: DEFAULT_ICON_COLOR
+    last_login: null, icon_color: DEFAULT_ICON_COLOR,
+    /* ランキング・ログインボーナス(v3.2) */
+    total_gain: 0, best_gain: 0, best_gain_at: null,
+    day_key: null, day_gain: 0, day_best: 0,
+    bonus_date: null, bonus_ad_date: null,
+    login_streak: 0, login_days: 0,
+    created_at: new Date()
   };
 }
 
@@ -1003,18 +1360,19 @@ app.delete('/api/account', async (req, res) => {
 });
 
 /* シングルプレイの結果反映 */
+/* シングルプレイの結果反映
+   v3.2: シングルは練習モードになり、アカウントのメダルは増減しない。
+   EXPと戦績だけを記録する(practice=true)。
+   旧クライアントからの bet/payout 付きリクエストも受け付けるが、
+   メダルの更新は行わない。 */
 app.post('/api/result', async (req, res) => {
   const u = await currentUser(req);
   if (!u) return authFail(res, '認証が必要です');
 
-  const bet = Math.floor(Number(req.body?.bet) || 0);
-  const payout = Math.floor(Number(req.body?.payout) || 0);
   const kind = String(req.body?.kind || '');
-  if (!['win','lose','push','bj','surrender'].includes(kind)) return res.status(400).json({ error: '不正な結果です' });
-  if (bet < MIN_BET || bet > u.medal) return res.status(400).json({ error: '不正なベット額です' });
-  if (payout < 0 || payout > bet * 3) return res.status(400).json({ error: '不正な配当です' });
+  if (!['win','lose','push','bj','surrender'].includes(kind))
+    return res.status(400).json({ error: '不正な結果です' });
 
-  u.medal = u.medal - bet + payout;
   const up = applyEnjoyResult(u, kind);
   await db.saveUser(u);
   res.json({ user: publicUser(u), levelUp: up });
@@ -1169,6 +1527,8 @@ app.post('/api/friends/request', async (req, res) => {
     existing.status = 'accepted';
     await db.saveLink(existing);
     notifyFriends([u.username, target]);
+    await pushNotice(target, 'friend', 'フレンドになりました',
+      u.username + ' さんとフレンドになりました。');
     for (const s of socketsOf(target)) s.emit('friend:accepted', { username: u.username });
     return res.json({ ok: true, accepted: true });
   }
@@ -1178,6 +1538,8 @@ app.post('/api/friends/request', async (req, res) => {
   });
   await db.saveLink(link);
   notifyFriends([u.username, target]);
+  await pushNotice(target, 'friend', 'フレンド申請が届きました',
+    u.username + ' さんからフレンド申請が届いています。');
   for (const s of socketsOf(target)) s.emit('friend:request', { username: u.username });
   res.json({ ok: true, accepted: false });
 });
@@ -1194,6 +1556,8 @@ app.post('/api/friends/accept', async (req, res) => {
   link.status = 'accepted';
   await db.saveLink(link);
   notifyFriends([u.username, target]);
+  await pushNotice(target, 'friend', 'フレンドになりました',
+    u.username + ' さんがフレンド申請を承認しました。');
   for (const s of socketsOf(target)) s.emit('friend:accepted', { username: u.username });
   res.json({ ok: true });
 });
@@ -1222,6 +1586,225 @@ app.delete('/api/friends', async (req, res) => {
   await db.deleteLink(u.username, target);
   notifyFriends([u.username, target]);
   res.json({ ok: true });
+});
+
+/* =========================================================
+   8.6 ランキング / 通知(v3.2)
+
+   集計はJSTの0:00区切り。Renderの無料プランはスリープするので、
+   「タイマーでの定時実行」と「アクセス時の取りこぼし確認」を
+   二重に走らせて、どちらか片方が動けば必ず確定するようにしている。
+   ========================================================= */
+const RANK_LIMIT   = 100;   // 表示するのはTOP100まで
+const RANK_KEEP_DAYS = 3;   // 日次ランキングの保存日数(前日分が見られれば十分)
+const NOTICE_KEEP  = 50;    // 1人あたりの通知の保持件数
+
+/* 通知を1件積む。接続中なら未読数の更新も伝える */
+async function pushNotice(username, kind, title, body){
+  try {
+    await db.addNotice({ username, kind, title, body: body || '' });
+    await db.trimNotices(username, NOTICE_KEEP);
+    for (const s of socketsOf(username)) s.emit('notice:new');
+  } catch (e){ console.error('[notice]', e.message); }
+}
+
+/* 勝ちで得たメダルを記録する。ログインボーナスや広告は対象外(v3.2)
+   gain には「配当 - ベット」の純増分を渡すこと */
+function recordGain(user, gain){
+  const g = Math.floor(Number(gain) || 0);
+  if (g <= 0) return;
+
+  const key = jstDateKey();
+  if (user.day_key !== key){
+    user.day_key = key;
+    user.day_gain = 0;
+    user.day_best = 0;
+  }
+  user.day_gain = (user.day_gain || 0) + g;
+  if (g > (user.day_best || 0)) user.day_best = g;
+
+  user.total_gain = (user.total_gain || 0) + g;
+  if (g > (user.best_gain || 0)){
+    user.best_gain = g;
+    user.best_gain_at = key;
+  }
+}
+
+/* 同じ数字は同じ順位にし、次の順位は人数分飛ばす(1位,1位,3位) */
+function withRanks(rows, valueOf){
+  let rank = 0, prev = null;
+  return rows.map((r, i) => {
+    const v = valueOf(r);
+    if (prev === null || v !== prev){ rank = i + 1; prev = v; }
+    return Object.assign({ rank }, r);
+  });
+}
+
+function sortByValue(rows, valueOf){
+  return rows.slice().sort((a, b) =>
+    (valueOf(b) - valueOf(a)) || String(a.username).localeCompare(String(b.username)));
+}
+
+/* 指定日のランキングを組み立てる。
+   確定済みなら rank_daily から、当日進行中なら users から直接読む */
+async function buildRanking(key, live){
+  const rows = live
+    ? (await db.liveDay(key, 5000)).map(r => ({
+        username: r.username, level: r.level, icon_color: r.icon_color,
+        total_gain: r.day_gain, best_gain: r.day_best
+      }))
+    : await db.getDailyRanks(key);
+
+  const total = withRanks(
+    sortByValue(rows.filter(r => r.total_gain > 0), r => r.total_gain),
+    r => r.total_gain).slice(0, RANK_LIMIT);
+  const best = withRanks(
+    sortByValue(rows.filter(r => r.best_gain > 0), r => r.best_gain),
+    r => r.best_gain).slice(0, RANK_LIMIT);
+
+  const shape = (r) => ({
+    rank: r.rank, username: r.username, level: r.level,
+    iconColor: ICON_COLORS.includes(r.icon_color) ? r.icon_color : DEFAULT_ICON_COLOR
+  });
+  return {
+    total: total.map(r => Object.assign(shape(r), { medal: Number(r.total_gain) })),
+    best:  best.map(r => Object.assign(shape(r), { medal: Number(r.best_gain) }))
+  };
+}
+
+/* 歴代の一撃ランキング */
+async function buildAllTimeBest(){
+  const rows = await db.topAllTimeBest(RANK_LIMIT);
+  return withRanks(rows, r => Number(r.best_gain)).map(r => ({
+    rank: r.rank, username: r.username, level: r.level,
+    iconColor: ICON_COLORS.includes(r.icon_color) ? r.icon_color : DEFAULT_ICON_COLOR,
+    medal: Number(r.best_gain),
+    date: r.best_gain_at || null
+  }));
+}
+
+/* 指定日の集計を確定し、入賞者に通知を送る */
+async function settleDay(key){
+  const rows = await db.usersWithDay(key);
+  if (rows.length){
+    await db.saveDailyRanks(key, rows);
+
+    const total = withRanks(sortByValue(rows.filter(r => r.day_gain > 0), r => Number(r.day_gain)),
+                            r => Number(r.day_gain)).slice(0, RANK_LIMIT);
+    const best  = withRanks(sortByValue(rows.filter(r => r.day_best > 0), r => Number(r.day_best)),
+                            r => Number(r.day_best)).slice(0, RANK_LIMIT);
+
+    const label = shortDate(key);
+    for (const r of total){
+      await pushNotice(r.username, 'rank',
+        label + ' 総獲得枚数ランキング ' + r.rank + '位',
+        '獲得メダル ' + Number(r.day_gain).toLocaleString() + ' 枚で ' + r.rank + '位に入賞しました。');
+    }
+    for (const r of best){
+      await pushNotice(r.username, 'rank',
+        label + ' 一撃獲得枚数ランキング ' + r.rank + '位',
+        '一撃 ' + Number(r.day_best).toLocaleString() + ' 枚で ' + r.rank + '位に入賞しました。');
+    }
+  }
+  await db.setLastSettled(key);
+  await db.purgeDailyRanks(shiftDateKey(jstDateKey(), -RANK_KEEP_DAYS));
+  console.log('[rank] ' + key + ' を確定しました(' + rows.length + '人)');
+}
+
+/* まだ確定していない過去の日をまとめて処理する。
+   スリープで定時実行を逃しても、次のアクセスでここが拾う */
+let settling = false;
+async function catchUpSettle(){
+  if (settling) return;
+  settling = true;
+  try {
+    const today = jstDateKey();
+    const last = await db.lastSettled();
+    if (!last){
+      /* 初回起動時は前日までを確定済み扱いにする(過去分は集計対象外) */
+      await db.setLastSettled(shiftDateKey(today, -1));
+      return;
+    }
+    /* last の翌日から「昨日」までを順に確定する。当日はまだ確定しない */
+    let key = shiftDateKey(last, 1);
+    let guard = 0;
+    while (key < today && guard++ < 400){
+      await settleDay(key);
+      key = shiftDateKey(key, 1);
+    }
+  } catch (e){
+    console.error('[rank] 確定に失敗:', e.message);
+  } finally {
+    settling = false;
+  }
+}
+
+/* JSTの0:00ちょうどに確定を走らせる。スリープで飛んだ場合は
+   起動時と各アクセス時の catchUpSettle が肩代わりする */
+function scheduleMidnight(){
+  const wait = msUntilNextJstMidnight() + 3000;   // 日付が確実に変わってから
+  setTimeout(async () => {
+    await catchUpSettle();
+    /* 接続中の全員に日付が変わったことを伝える */
+    for (const [, sock] of io.of('/').sockets) sock.emit('day:changed', { date: jstDateKey() });
+    scheduleMidnight();
+  }, wait);
+}
+
+/* 外部cronからの起こし用。ここを叩くとスリープから復帰して集計が走る */
+app.get('/api/cron/tick', async (req, res) => {
+  await catchUpSettle();
+  res.json({ ok: true, today: jstDateKey(), lastSettled: await db.lastSettled() });
+});
+
+app.get('/api/ranking', async (req, res) => {
+  const which = String(req.query.day || 'today');
+  const today = jstDateKey();
+  try {
+    await catchUpSettle();
+    if (which === 'alltime'){
+      return res.json({ day: 'alltime', best: await buildAllTimeBest() });
+    }
+    const key = which === 'yesterday' ? shiftDateKey(today, -1) : today;
+    const data = await buildRanking(key, key === today);
+    res.json({ day: which, dateKey: key, label: shortDate(key), total: data.total, best: data.best });
+  } catch (e){
+    console.error('[ranking]', e);
+    res.status(500).json({ error: 'ランキングの取得に失敗しました' });
+  }
+});
+
+/* ---- 通知API ---- */
+app.get('/api/notices', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  try {
+    const list = await db.listNotices(u.username, NOTICE_KEEP);
+    res.json({
+      notices: list.map(n => ({
+        id: Number(n.id), kind: n.kind, title: n.title, body: n.body,
+        read: !!n.is_read, at: new Date(n.created_at).toISOString()
+      })),
+      unread: await db.countUnread(u.username)
+    });
+  } catch (e){
+    console.error('[notices]', e);
+    res.status(500).json({ error: '通知の取得に失敗しました' });
+  }
+});
+
+app.post('/api/notices/read', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  await db.markNoticesRead(u.username);
+  res.json({ ok: true, unread: 0 });
+});
+
+app.delete('/api/notices', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+  await db.clearNotices(u.username);
+  res.json({ ok: true, unread: 0 });
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: rooms.size, version: APP_VERSION }));
@@ -1701,6 +2284,8 @@ io.on('connection', (socket) => {
         max: room.maxPlayers
       });
     }
+    await pushNotice(target, 'invite', 'ルームに招待されました',
+      name + ' さんがルーム ' + room.id + ' に招待しました。');
     socket.emit('room:inviteSent', { username: target });
   });
 
@@ -1858,5 +2443,10 @@ function leaveRoom(socket){
    10. 起動
    ========================================================= */
 db.init()
-  .then(() => server.listen(PORT, () => console.log('[server] v' + APP_VERSION + ' listening on ' + PORT)))
+  .then(async () => {
+    /* スリープ中に日付をまたいでいた場合の取りこぼしをここで拾う(v3.2) */
+    await catchUpSettle();
+    scheduleMidnight();
+    server.listen(PORT, () => console.log('[server] v' + APP_VERSION + ' listening on ' + PORT));
+  })
   .catch((e) => { console.error('[db] 初期化に失敗:', e); process.exit(1); });

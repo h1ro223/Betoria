@@ -3151,3 +3151,414 @@ body.is-spectating #dealerArea{ opacity: .96; }
 
 /* パスワード変更・削除の入力ボックスも同じ間隔で開く */
 .pass-box{ margin-top: 11px; }
+
+/* =========================================================
+   42. v3.2 シングルプレイ(練習モード / ノルマ)
+   ========================================================= */
+
+/* ---------- ノルマ進捗チップ ---------- */
+.norma-chip{
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(201,162,39,.5);
+  background: linear-gradient(180deg, rgba(201,162,39,.2), rgba(138,112,26,.14));
+  white-space: nowrap;
+}
+.norma-chip[hidden]{ display: none; }
+.norma-cap{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--brass);
+}
+.norma-now{
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ivory);
+}
+.norma-sep{ font-size: 12px; color: var(--smoke); }
+.norma-goal{
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1;
+  color: var(--brass);
+}
+/* 目標が近づいたら色を変えて煽る */
+.norma-chip.is-near{
+  border-color: rgba(240,145,60,.7);
+  background: linear-gradient(180deg, rgba(240,145,60,.26), rgba(138,74,18,.18));
+}
+.norma-chip.is-near .norma-now{ color: #FFC98A; }
+.norma-chip.is-done{
+  border-color: rgba(63,191,143,.8);
+  background: linear-gradient(180deg, rgba(63,191,143,.3), rgba(20,67,47,.2));
+}
+.norma-chip.is-done .norma-now{ color: #7BE8C0; }
+
+@media (max-width: 420px){
+  .norma-chip{ padding: 4px 9px; gap: 4px; }
+  .norma-now{ font-size: 15px; }
+  .norma-goal{ font-size: 12px; }
+  .norma-cap{ font-size: 9px; }
+}
+
+/* ---------- シングル終了パネル ---------- */
+#singleEndPanel{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+#singleEndPanel[hidden]{ display: none; }
+
+.single-end-title{
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(24px, 6vw, 32px);
+  letter-spacing: .06em;
+  line-height: 1;
+}
+.single-end-title.is-clear{
+  color: var(--brass);
+  text-shadow: 0 0 22px rgba(201,162,39,.6);
+}
+.single-end-title.is-over{
+  color: #F0736D;
+  text-shadow: 0 0 18px rgba(196,52,46,.45);
+}
+.single-end-text{
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--smoke);
+}
+.single-end-text b{ color: var(--ivory); font-size: 15px; }
+.single-end-actions{
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  max-width: 420px;
+  margin-top: 6px;
+}
+.single-end-actions .btn{ flex: 1 1 0; }
+
+/* =========================================================
+   43. v3.2 通知 / ランキング
+   ========================================================= */
+
+/* ---------- ヘッダーの通知ボタン ---------- */
+.notice-btn{
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 50px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: rgba(0,0,0,.34);
+  transition: background .18s, border-color .18s, transform .12s;
+}
+.notice-btn[hidden]{ display: none; }
+.notice-btn:hover{ background: rgba(201,162,39,.16); border-color: var(--brass); }
+.notice-btn:active{ transform: scale(.94); }
+.notice-btn-icon{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  font-size: 18px;
+}
+.notice-count{
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: .04em;
+  color: var(--smoke);
+}
+.notice-btn.has-unread{ border-color: var(--brass); box-shadow: 0 0 12px rgba(201,162,39,.3); }
+.notice-btn.has-unread .notice-count{ color: var(--brass); }
+.notice-btn.has-unread .notice-btn-icon{ animation: bellRing 2.4s ease-in-out infinite; }
+@keyframes bellRing{
+  0%, 82%, 100%{ transform: rotate(0); }
+  86%{ transform: rotate(13deg); }
+  90%{ transform: rotate(-11deg); }
+  94%{ transform: rotate(7deg); }
+}
+.notice-badge{
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--crimson);
+  border: 2px solid #08211B;
+  font-family: var(--font-display);
+  font-size: 12px;
+  line-height: 16px;
+  color: #fff;
+}
+.notice-badge[hidden]{ display: none; }
+
+/* ---------- 通知一覧 ---------- */
+.notice-list{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.notice-row{
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 10px;
+  background: rgba(0,0,0,.28);
+}
+.notice-row.is-unread{
+  border-color: rgba(201,162,39,.45);
+  background: rgba(201,162,39,.08);
+}
+.notice-icon{ flex: 0 0 auto; font-size: 19px; line-height: 1.3; }
+.notice-main{ flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.notice-title{ font-size: 14px; font-weight: 700; line-height: 1.4; }
+.notice-row.is-unread .notice-title{ color: var(--brass); }
+.notice-body{ font-size: 12px; line-height: 1.6; color: var(--smoke); }
+.notice-at{ font-size: 10.5px; color: rgba(255,255,255,.42); }
+
+/* ---------- ランキング ---------- */
+.seg-3{ display: grid; grid-template-columns: repeat(3, 1fr); }
+.seg-3 .seg-btn{ padding: 11px 4px; font-size: 13px; }
+.seg-btn:disabled{ opacity: .38; cursor: default; }
+.seg-btn:disabled:hover{ background: rgba(0,0,0,.3); border-color: var(--hairline); }
+
+.rank-list{
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 10px;
+}
+.rank-row{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid rgba(255,255,255,.09);
+  border-radius: 10px;
+  background: rgba(0,0,0,.28);
+}
+.rank-no{
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 46px;
+}
+.rank-crown{ font-size: 15px; line-height: 1; margin-right: 1px; }
+.rank-num{
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--ivory);
+}
+.rank-suffix{ font-size: 10px; color: var(--smoke); }
+
+.rank-avatar{
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 18px;
+  background: linear-gradient(160deg, #2E7F5F, #14432F);
+  border: 1px solid rgba(255,255,255,.16);
+}
+.rank-main{ flex: 1 1 auto; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rank-name{
+  font-size: 14.5px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rank-meta{ display: flex; align-items: baseline; gap: 8px; }
+.rank-lv{ font-family: var(--font-display); font-size: 14px; color: var(--brass); }
+.rank-date{ font-size: 10.5px; color: var(--smoke); }
+.rank-medal{
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 20px;
+  line-height: 1;
+  color: var(--brass);
+  letter-spacing: .02em;
+}
+
+/* 上位3名は豪華に */
+.rank-row.is-top{ border-width: 2px; }
+.rank-row.is-top1{
+  border-color: #E8C33A;
+  background: linear-gradient(100deg, rgba(232,195,58,.26), rgba(138,112,26,.1) 60%);
+  box-shadow: 0 0 20px rgba(232,195,58,.3), inset 0 0 22px rgba(232,195,58,.09);
+}
+.rank-row.is-top1 .rank-num{ font-size: 25px; color: #FFE27A; }
+.rank-row.is-top1 .rank-medal{ font-size: 24px; color: #FFE27A; text-shadow: 0 0 14px rgba(232,195,58,.6); }
+.rank-row.is-top1 .rank-avatar{ width: 40px; height: 40px; font-size: 21px; }
+.rank-row.is-top1 .rank-name{ font-size: 16px; }
+
+.rank-row.is-top2{
+  border-color: #BFC7CE;
+  background: linear-gradient(100deg, rgba(191,199,206,.2), rgba(90,100,110,.08) 60%);
+  box-shadow: 0 0 14px rgba(191,199,206,.2);
+}
+.rank-row.is-top2 .rank-num{ font-size: 23px; color: #E4EAEF; }
+.rank-row.is-top2 .rank-medal{ font-size: 22px; color: #E4EAEF; }
+
+.rank-row.is-top3{
+  border-color: #CD8B4E;
+  background: linear-gradient(100deg, rgba(205,139,78,.22), rgba(120,74,34,.08) 60%);
+  box-shadow: 0 0 14px rgba(205,139,78,.22);
+}
+.rank-row.is-top3 .rank-num{ font-size: 22px; color: #F0B784; }
+.rank-row.is-top3 .rank-medal{ font-size: 21px; color: #F0B784; }
+
+/* 自分の行 */
+.rank-row.is-me{
+  outline: 1px dashed rgba(63,191,143,.7);
+  outline-offset: 2px;
+}
+.rank-row.is-me .rank-name::after{
+  content: ' (あなた)';
+  font-size: 11px;
+  color: var(--jade);
+  font-weight: 700;
+}
+
+.rank-self{ margin-top: 14px; }
+.rank-self[hidden]{ display: none; }
+.rank-self-cap{
+  margin: 0 0 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--brass);
+}
+
+@media (max-width: 520px){
+  .notice-btn{ min-width: 40px; padding: 4px 5px; }
+  .notice-btn-icon{ height: 26px; font-size: 16px; }
+  .notice-count{ font-size: 11px; }
+  .rank-row{ gap: 8px; padding: 8px 9px; }
+  .rank-no{ min-width: 40px; }
+  .rank-num{ font-size: 17px; }
+  .rank-medal{ font-size: 17px; }
+  .rank-avatar{ width: 30px; height: 30px; font-size: 16px; }
+  .rank-name{ font-size: 13px; }
+  .rank-row.is-top1 .rank-num,
+  .rank-row.is-top1 .rank-medal{ font-size: 20px; }
+  .rank-row.is-top1 .rank-avatar{ width: 34px; height: 34px; font-size: 18px; }
+}
+
+/* =========================================================
+   44. v3.2 ログインボーナス / マイページの記録
+   ========================================================= */
+.bonus-lead{
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: center;
+  color: var(--ivory);
+}
+.bonus-lead[hidden]{ display: none; }
+
+.bonus-amount{
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 4px;
+  margin: 6px 0 14px;
+}
+.bonus-plus{
+  font-family: var(--font-display);
+  font-size: 28px;
+  line-height: 1;
+  color: var(--brass);
+}
+.bonus-value{
+  font-family: var(--font-display);
+  font-size: clamp(44px, 12vw, 60px);
+  line-height: 1;
+  color: var(--brass);
+  text-shadow: 0 0 26px rgba(201,162,39,.65);
+}
+.bonus-unit{ font-size: 14px; font-weight: 700; color: var(--smoke); }
+
+.bonus-streak{
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 6px;
+  margin: -6px 0 14px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(201,162,39,.1);
+  border: 1px solid rgba(201,162,39,.28);
+}
+.bonus-streak[hidden]{ display: none; }
+.bonus-streak-cap{ font-size: 11.5px; font-weight: 700; color: var(--smoke); }
+.bonus-streak-num{
+  font-family: var(--font-display);
+  font-size: 24px;
+  line-height: 1;
+  color: var(--brass);
+}
+
+.bonus-done{
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.8;
+  text-align: center;
+  color: var(--smoke);
+}
+.bonus-done[hidden]{ display: none; }
+#bonusAdBox[hidden]{ display: none; }
+#bonusAdBox{ margin-top: 12px; }
+#bonusClaimBtn[hidden]{ display: none; }
+
+/* マイページの記録セクション */
+.stat.is-wide{ grid-column: span 2; }
+.stat.is-wide .stat-val{ font-size: clamp(20px, 5vw, 26px); }
+
+@media (max-width: 420px){
+  .bonus-value{ font-size: 46px; }
+  .bonus-streak-num{ font-size: 21px; }
+}
+
+/* ログインボーナスの導線(未受取のときだけ出る) */
+.title-btn.is-bonus{
+  border-color: rgba(201,162,39,.6);
+  background: linear-gradient(100deg, rgba(201,162,39,.18), rgba(201,162,39,.05) 70%);
+  animation: bonusPulse 2.2s ease-in-out infinite;
+}
+.title-btn.is-bonus[hidden]{ display: none; }
+.title-btn.is-bonus .title-btn-name{ color: var(--brass); }
+@keyframes bonusPulse{
+  0%, 100%{ box-shadow: 0 0 0 0 rgba(201,162,39,0); }
+  50%{      box-shadow: 0 0 18px 2px rgba(201,162,39,.35); }
+}
+@media (prefers-reduced-motion: reduce){
+  .title-btn.is-bonus{ animation: none; }
+}

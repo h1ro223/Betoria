@@ -106,7 +106,10 @@ const settings = {
   bgmVol: Number(store.get('bj4_bgmVol') ?? 40),
   seOn: store.get('bj4_seOn') !== '0',
   seVol: Number(store.get('bj4_seVol') ?? 60),
-  seats: Number(store.get('bj4_seats') ?? 4)
+  seats: Number(store.get('bj4_seats') ?? 4),
+  /* ノルマモード(v3.2) */
+  normaOn: store.get('bj4_normaOn') === '1',
+  normaTarget: Number(store.get('bj4_normaTarget') ?? 5000)
 };
 
 function saveSettings(){
@@ -372,9 +375,60 @@ const el = {
   spectatePanel: $('spectatePanel'),
   spectateLeaveBtn: $('spectateLeaveBtn'),
 
+  normaRow: $('normaRow'),
+  normaCheck: $('normaCheck'),
+  normaTargetRow: $('normaTargetRow'),
+  normaSeg: $('normaSeg'),
+  normaTarget: $('normaTarget'),
+  normaChip: $('normaChip'),
+  normaNow: $('normaNow'),
+  normaGoal: $('normaGoal'),
+  singleEndPanel: $('singleEndPanel'),
+  singleEndTitle: $('singleEndTitle'),
+  singleEndText: $('singleEndText'),
+  singleEndBackBtn: $('singleEndBackBtn'),
+  singleEndRetryBtn: $('singleEndRetryBtn'),
+
   friendBtn: $('friendBtn'),
   friendBadge: $('friendBadge'),
   friendOnline: $('friendOnline'),
+
+  noticeBtn: $('noticeBtn'),
+  noticeCount: $('noticeCount'),
+  noticeBadge: $('noticeBadge'),
+  noticeOverlay: $('noticeOverlay'),
+  noticeCloseBtn: $('noticeCloseBtn'),
+  noticeList: $('noticeList'),
+  noticeClearBtn: $('noticeClearBtn'),
+
+  toRankingBtn: $('toRankingBtn'),
+  rankOverlay: $('rankOverlay'),
+
+  toBonusBtn: $('toBonusBtn'),
+  bonusOverlay: $('bonusOverlay'),
+  bonusCloseBtn: $('bonusCloseBtn'),
+  bonusLead: $('bonusLead'),
+  bonusValue: $('bonusValue'),
+  bonusStreak: $('bonusStreak'),
+  bonusStreakNum: $('bonusStreakNum'),
+  bonusClaimBtn: $('bonusClaimBtn'),
+  bonusAdBox: $('bonusAdBox'),
+  bonusAdBtn: $('bonusAdBtn'),
+  bonusDone: $('bonusDone'),
+
+  statTotalGain: $('statTotalGain'),
+  statBestGain: $('statBestGain'),
+  statStreak: $('statStreak'),
+  statLoginDays: $('statLoginDays'),
+  statCreated: $('statCreated'),
+  rankCloseBtn: $('rankCloseBtn'),
+  rankKindTabs: $('rankKindTabs'),
+  rankDayTabs: $('rankDayTabs'),
+  rankAllTimeBtn: $('rankAllTimeBtn'),
+  rankYesterdayBtn: $('rankYesterdayBtn'),
+  rankNote: $('rankNote'),
+  rankList: $('rankList'),
+  rankSelf: $('rankSelf'),
   friendOverlay: $('friendOverlay'),
   friendCloseBtn: $('friendCloseBtn'),
   friendTabs: $('friendTabs'),
@@ -824,27 +878,37 @@ function myMedal(){
   return account.user ? account.user.medal : guestMedal;
 }
 
-function renderMedal(){
-  const champ = view.mode === 'online' && view.onlineMode === 'champion' && !view.spectating;
-  if (champ){
-    const me = view.seats.find(s => s.isYou);
-    el.medalCount.textContent = me ? me.medal : 0;
-  } else {
-    el.medalCount.textContent = myMedal();
-  }
-  ledTick(el.medalCount);
-  if (el.medalLabel){
-    el.medalLabel.textContent = champ ? '大会メダル' : '所持メダル';
-  }
-  updateAdBtn();
-}
-
-function betCap(){
-  if (view.mode === 'online' && view.onlineMode === 'champion'){
+/* 画面に出す持ち分。シングル中は専用メダルを使う(v3.2) */
+function activeMedal(){
+  if (isSingleGame()) return single.medal;
+  if (view.mode === 'online' && view.onlineMode !== 'enjoy' && !view.spectating){
     const me = view.seats.find(s => s.isYou);
     return me ? me.medal : 0;
   }
   return myMedal();
+}
+
+function renderMedal(){
+  const tourney = view.mode === 'online' && view.onlineMode !== 'enjoy' && !view.spectating;
+
+  if (isSingleGame()){
+    el.medalCount.textContent = single.medal;
+    if (el.medalLabel) el.medalLabel.textContent = '練習メダル';
+  } else if (tourney){
+    const me = view.seats.find(s => s.isYou);
+    el.medalCount.textContent = me ? me.medal : 0;
+    if (el.medalLabel) el.medalLabel.textContent = '大会メダル';
+  } else {
+    el.medalCount.textContent = myMedal();
+    if (el.medalLabel) el.medalLabel.textContent = '所持メダル';
+  }
+  ledTick(el.medalCount);
+  renderNorma();
+  updateAdBtn();
+}
+
+function betCap(){
+  return activeMedal();
 }
 
 function renderBet(){
@@ -868,6 +932,7 @@ function showPanel(name){
   el.nextPanel.hidden   = name !== 'next';
   el.waitPanel.hidden   = name !== 'wait';
   el.spectatePanel.hidden = name !== 'spectate';
+  el.singleEndPanel.hidden = name !== 'single-end';
   el.controls.hidden    = (screen !== 'game') || name === 'none';
 }
 
@@ -886,17 +951,23 @@ function showScreen(name){
   el.screenGame.hidden  = name !== 'game';
 
   el.controls.hidden = name !== 'game';
-  el.adBtn.hidden = !(name === 'game' && !view.spectating
-                      && !(view.mode === 'online' && view.onlineMode === 'champion'));
+  /* v3.2: シングルは専用メダルで完結するので広告は出さない。
+     大会系(チャンピオン/早抜け)と観戦中も対象外 */
+  el.adBtn.hidden = !(name === 'game' && view.mode === 'online'
+                      && !view.spectating && view.onlineMode === 'enjoy');
   el.medalReadout.hidden = !(name === 'game' || account.user);
   el.brandBtn.disabled = name === 'title';
 
   updateRoundChip();
   renderStreak();
   renderSpectateChip();
-  updateAdBtn();
+  /* v3.2: 画面が変わると持ち分の意味も変わる(練習メダル↔所持メダル)ので
+     必ず表示を作り直す。これが無いとタイトルに戻っても練習メダルが残る */
+  renderMedal();
   updateChatVisibility();
   window.scrollTo(0, 0);
+
+  updateBonusBtn();
 }
 
 /* 連勝表示(v3.0)。2連勝から出し、5連勝以上は強調する */
@@ -993,6 +1064,8 @@ function renderAccountUi(){
   }
   el.medalReadout.hidden = !(screen === 'game' || u);
   updateFriendBadge();
+  updateNoticeBadge();
+  updateBonusBtn();
   renderMedal();
   renderProfile();
 }
@@ -1036,6 +1109,23 @@ function renderProfile(){
   el.champDraws.textContent = cd;
   const champDecided = cw + cl;
   el.champRate.textContent = champDecided ? Math.round((cw / champDecided) * 100) + '%' : '0%';
+
+  /* メダル記録・ログイン記録(v3.2) */
+  el.statTotalGain.textContent = Number(u.totalGain || 0).toLocaleString();
+  el.statBestGain.textContent = Number(u.bestGain || 0).toLocaleString();
+  el.statStreak.textContent = (u.loginStreak || 0) + '日';
+  el.statLoginDays.textContent = (u.loginDays || 0) + '日';
+  el.statCreated.textContent = fmtCreatedAt(u.createdAt);
+}
+
+/* アカウント作成日を YYYY/MM/DD で表示する(JST基準) */
+function fmtCreatedAt(iso){
+  if (!iso) return '-';
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '-';
+  const d = new Date(t + 9 * 3600000);
+  const p = (n) => String(n).padStart(2, '0');
+  return d.getUTCFullYear() + '/' + p(d.getUTCMonth() + 1) + '/' + p(d.getUTCDate());
 }
 
 /* =========================================================
@@ -1296,6 +1386,384 @@ async function submitPasswordChange(){
 }
 
 /* =========================================================
+   10.46 通知(v3.2)
+   ========================================================= */
+const notices = { list: [], unread: 0, loading: false };
+
+function updateNoticeBadge(){
+  el.noticeBtn.hidden = !account.user;
+  const n = notices.unread || 0;
+  el.noticeCount.textContent = n;
+  el.noticeBtn.classList.toggle('has-unread', n > 0);
+  el.noticeBadge.textContent = n > 99 ? '99+' : n;
+  el.noticeBadge.hidden = n === 0;
+  el.noticeBtn.title = n > 0 ? '通知(未読 ' + n + '件)' : '通知';
+}
+
+async function loadNotices(silent){
+  if (!account.user){
+    notices.list = []; notices.unread = 0;
+    updateNoticeBadge();
+    return;
+  }
+  if (notices.loading) return;
+  notices.loading = true;
+  try {
+    const d = await api('/api/notices');
+    notices.list = d.notices || [];
+    notices.unread = d.unread || 0;
+  } catch (e){
+    if (!silent) toast(e.message);
+  } finally {
+    notices.loading = false;
+    updateNoticeBadge();
+    if (!el.noticeOverlay.hidden) renderNoticeList();
+  }
+}
+
+const NOTICE_ICON = { friend: '🤝', invite: '✉', rank: '🏆', bonus: '🎁' };
+
+function renderNoticeList(){
+  if (!notices.list.length){
+    el.noticeList.innerHTML = '<p class="empty-note">通知はまだありません。</p>';
+    el.noticeClearBtn.hidden = true;
+    return;
+  }
+  el.noticeClearBtn.hidden = false;
+  el.noticeList.innerHTML = notices.list.map(n =>
+    '<div class="notice-row' + (n.read ? '' : ' is-unread') + '">' +
+      '<span class="notice-icon">' + (NOTICE_ICON[n.kind] || '📣') + '</span>' +
+      '<span class="notice-main">' +
+        '<span class="notice-title">' + esc(n.title) + '</span>' +
+        (n.body ? '<span class="notice-body">' + esc(n.body) + '</span>' : '') +
+        '<span class="notice-at">' + esc(noticeTime(n.at)) + '</span>' +
+      '</span>' +
+    '</div>').join('');
+}
+
+function noticeTime(iso){
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return '';
+  const diff = Date.now() - t;
+  if (diff < 60000) return 'たった今';
+  if (diff < 3600000) return Math.floor(diff / 60000) + '分前';
+  if (diff < 86400000) return Math.floor(diff / 3600000) + '時間前';
+  const d = new Date(t);
+  return (d.getMonth() + 1) + '/' + d.getDate();
+}
+
+async function openNoticePanel(){
+  if (!account.user){
+    toast('通知の確認にはログインが必要です');
+    return openOverlay(el.accountOverlay);
+  }
+  renderNoticeList();
+  openOverlay(el.noticeOverlay);
+  await loadNotices(true);
+  /* 開いた時点で既読にする */
+  if (notices.unread > 0){
+    try {
+      await api('/api/notices/read', { method: 'POST' });
+      notices.unread = 0;
+      notices.list = notices.list.map(n => Object.assign({}, n, { read: true }));
+      updateNoticeBadge();
+      renderNoticeList();
+    } catch {}
+  }
+}
+
+/* =========================================================
+   10.47 ランキング(v3.2)
+   ========================================================= */
+const ranking = { kind: 'total', day: 'today', data: null, loading: false };
+
+const RANK_NOTES = {
+  total: 'その日にラウンドで勝って得たメダルの合計です(ログインボーナス・広告は含みません)。',
+  best: 'その日の中で、1ラウンドの勝利で得た最も多いメダル枚数です。',
+  alltime: 'サービス開始からの一撃獲得枚数の記録です。記録した日も表示されます。'
+};
+
+function setRankKind(kind){
+  ranking.kind = kind;
+  /* 「歴代」は一撃獲得枚数だけの機能 */
+  if (kind === 'total' && ranking.day === 'alltime') ranking.day = 'today';
+  syncRankTabs();
+  loadRanking();
+}
+
+function setRankDay(day){
+  ranking.day = day;
+  if (day === 'alltime') ranking.kind = 'best';
+  syncRankTabs();
+  loadRanking();
+}
+
+function syncRankTabs(){
+  el.rankKindTabs.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.kind === ranking.kind));
+  el.rankDayTabs.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.day === ranking.day));
+  /* 総獲得枚数には歴代がないので押せなくする */
+  el.rankAllTimeBtn.disabled = ranking.kind === 'total';
+  el.rankNote.textContent = ranking.day === 'alltime'
+    ? RANK_NOTES.alltime : RANK_NOTES[ranking.kind];
+}
+
+async function loadRanking(){
+  if (ranking.loading) return;
+  ranking.loading = true;
+  el.rankList.innerHTML = '<p class="empty-note">読み込み中…</p>';
+  el.rankSelf.hidden = true;
+  try {
+    const d = await api('/api/ranking?day=' + encodeURIComponent(ranking.day));
+    ranking.data = d;
+    if (d.label && ranking.day === 'yesterday'){
+      el.rankYesterdayBtn.textContent = '前日(' + d.label + ')';
+    }
+    renderRankList();
+  } catch (e){
+    el.rankList.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>';
+  } finally {
+    ranking.loading = false;
+  }
+}
+
+function renderRankList(){
+  const d = ranking.data;
+  if (!d) return;
+  const rows = ranking.day === 'alltime' ? (d.best || [])
+             : (ranking.kind === 'total' ? (d.total || []) : (d.best || []));
+
+  if (!rows.length){
+    el.rankList.innerHTML = '<p class="empty-note">まだ記録がありません。<br>オンラインのエンジョイモードで勝つと記録されます。</p>';
+    return;
+  }
+
+  const me = account.user ? account.user.username : null;
+  el.rankList.innerHTML = rows.map(r => {
+    const top = r.rank <= 3 ? ' is-top is-top' + r.rank : '';
+    const mine = me && r.username === me ? ' is-me' : '';
+    const crown = r.rank === 1 ? '👑' : (r.rank === 2 ? '🥈' : (r.rank === 3 ? '🥉' : ''));
+    return '' +
+      '<div class="rank-row' + top + mine + '">' +
+        '<span class="rank-no">' +
+          (crown ? '<span class="rank-crown">' + crown + '</span>' : '') +
+          '<span class="rank-num">' + r.rank + '</span>' +
+          '<span class="rank-suffix">位</span>' +
+        '</span>' +
+        '<span class="rank-avatar" data-icon-color="' + iconColorOf(r.iconColor) + '">' +
+          esc(String(r.username).charAt(0).toUpperCase()) + '</span>' +
+        '<span class="rank-main">' +
+          '<span class="rank-name">' + esc(r.username) + '</span>' +
+          '<span class="rank-meta">' +
+            '<span class="rank-lv">Lv.' + r.level + '</span>' +
+            (r.date ? '<span class="rank-date">' + esc(fmtRankDate(r.date)) + '</span>' : '') +
+          '</span>' +
+        '</span>' +
+        '<span class="rank-medal led">' + Number(r.medal).toLocaleString() + '</span>' +
+      '</div>';
+  }).join('');
+
+  /* 自分が圏外なら、自分の記録を下に出す */
+  renderRankSelf(rows);
+}
+
+function fmtRankDate(key){
+  const p = String(key).split('-');
+  return p.length === 3 ? p[0] + '/' + Number(p[1]) + '/' + Number(p[2]) : key;
+}
+
+function renderRankSelf(rows){
+  const u = account.user;
+  if (!u){ el.rankSelf.hidden = true; return; }
+  if (rows.some(r => r.username === u.username)){ el.rankSelf.hidden = true; return; }
+
+  /* 圏外のときは自分の記録だけ表示する(順位は出せないので「-」) */
+  const val = ranking.day === 'alltime' ? u.bestGain : null;
+  if (ranking.day !== 'alltime'){ el.rankSelf.hidden = true; return; }
+  el.rankSelf.hidden = false;
+  el.rankSelf.innerHTML =
+    '<p class="rank-self-cap">あなたの記録</p>' +
+    '<div class="rank-row is-me">' +
+      '<span class="rank-no"><span class="rank-num">-</span></span>' +
+      '<span class="rank-avatar" data-icon-color="' + iconColorOf(u.iconColor) + '">' +
+        esc(u.username.charAt(0).toUpperCase()) + '</span>' +
+      '<span class="rank-main"><span class="rank-name">' + esc(u.username) + '</span>' +
+        '<span class="rank-meta"><span class="rank-lv">Lv.' + u.level + '</span></span></span>' +
+      '<span class="rank-medal led">' + Number(val || 0).toLocaleString() + '</span>' +
+    '</div>';
+}
+
+function openRankPanel(){
+  syncRankTabs();
+  openOverlay(el.rankOverlay);
+  loadRanking();
+}
+
+/* =========================================================
+   10.48 日付の切り替わり監視(v3.2)
+   JSTの0:00をまたいだらタイトルに戻し、通知とランキングを読み直す。
+   サーバーからの day:changed が届かない場合の保険として、
+   クライアント側でも自前で見張る。
+   ========================================================= */
+function jstToday(){
+  return new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+}
+
+let currentDay = jstToday();
+let dayChanging = false;
+
+function onDayChanged(){
+  const now = jstToday();
+  if (now === currentDay || dayChanging) return;
+  dayChanging = true;
+  currentDay = now;
+
+  /* 対戦中に強制的に飛ばすと迷惑なので、ゲーム中は終わってから案内する */
+  const inGame = screen === 'game' || screen === 'room' || screen === 'countdown';
+  if (inGame && view.mode === 'online'){
+    toast('日付が変わりました。ゲーム終了後にタイトルへ戻ります');
+    dayChanging = false;
+    return;
+  }
+
+  alert('日付が変わりました。タイトル画面に戻ります');
+  if (online.socket && online.roomId) online.socket.emit('room:leave');
+  resetOnlineRoomView();
+  showScreen('title');
+  refreshAccount().then(() => checkBonus(true));
+  loadNotices(true);
+  dayChanging = false;
+}
+
+function startDayWatch(){
+  setInterval(() => {
+    if (jstToday() !== currentDay) onDayChanged();
+  }, 20000);
+}
+
+/* サーバーから最新のアカウント情報を取り直す */
+async function refreshAccount(){
+  if (!account.user) return;
+  try {
+    const d = await api('/api/me');
+    setAccount(d.user);
+  } catch {}
+}
+
+/* =========================================================
+   10.49 ログインボーナス(v3.2)
+   その日はじめてタイトルに来たときに出す。基本500枚 + 広告で500枚。
+   広告は最後まで見る必要があるので、スキップ不可の30秒で再生する。
+   ========================================================= */
+const bonus = { open: false, checking: false, shown: false };
+
+function renderBonus(){
+  updateBonusBtn();
+  const u = account.user;
+  if (!u) return;
+  const canBase = !!u.bonusReady;
+  const canAd = !!u.bonusAdReady;
+
+  el.bonusClaimBtn.hidden = !canBase;
+  el.bonusAdBox.hidden = !canAd;
+  el.bonusDone.hidden = canBase || canAd;
+  el.bonusValue.textContent = canBase ? 500 : (canAd ? 500 : 0);
+  el.bonusLead.textContent = canBase
+    ? '本日のログインボーナスです!'
+    : (canAd ? '広告を見るともう500メダル受け取れます' : '');
+  el.bonusLead.hidden = !canBase && !canAd;
+
+  const streak = u.loginStreak || 0;
+  el.bonusStreak.hidden = streak < 1 || canBase;
+  el.bonusStreakNum.textContent = streak;
+}
+
+/* ログイン直後・日付切替後に、受け取れるボーナスがあれば自動で開く。
+   ただし他の画面や別のシートを開いている最中に割り込むと操作の邪魔になるので、
+   タイトル画面で何も開いていないときだけ出す(v3.2) */
+function canShowBonus(){
+  if (screen !== 'title') return false;
+  const overlays = [el.accountOverlay, el.rulesOverlay, el.settingsOverlay,
+    el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay,
+    el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay,
+    el.invitedOverlay, el.adOverlay];
+  return overlays.every(o => !o || o.hidden);
+}
+
+async function checkBonus(auto){
+  if (!account.user || bonus.checking) return;
+  bonus.checking = true;
+  try {
+    const s = await api('/api/bonus');
+    account.user.bonusReady = !s.claimed;
+    account.user.bonusAdReady = s.claimed && !s.adClaimed;
+    /* 自動で開くのは1セッションにつき1回だけ。
+       閉じたあとはタイトルの「ログインボーナス」ボタンから開ける */
+    if (auto && !s.claimed && !bonus.shown && canShowBonus()){
+      bonus.shown = true;
+      renderBonus();
+      openOverlay(el.bonusOverlay);
+      audio.play('join');
+    }
+  } catch {} finally {
+    bonus.checking = false;
+    updateBonusBtn();
+  }
+}
+
+/* 未受取のボーナスがあるときだけ、タイトルにボタンを出す */
+function updateBonusBtn(){
+  const u = account.user;
+  const can = !!(u && (u.bonusReady || u.bonusAdReady));
+  el.toBonusBtn.hidden = !can;
+  if (can){
+    el.toBonusBtn.querySelector('.title-btn-desc').textContent = u.bonusReady
+      ? '受け取っていないボーナスがあります'
+      : '広告を見るともう500メダル受け取れます';
+  }
+}
+
+async function claimBonus(){
+  el.bonusClaimBtn.disabled = true;
+  try {
+    const d = await api('/api/bonus', { method: 'POST' });
+    setAccount(d.user);
+    audio.play('win');
+    showFx('bonus');
+    toast('+' + d.reward + ' メダル(連続ログイン ' + d.streak + '日目)');
+    renderBonus();
+  } catch (e){
+    toast(e.message);
+    audio.play('error');
+    renderBonus();
+  } finally {
+    el.bonusClaimBtn.disabled = false;
+  }
+}
+
+/* 広告分。必ず最後まで見てもらう */
+async function claimBonusAd(){
+  if (!account.user || !account.user.bonusAdReady) return;
+  closeOverlay(el.bonusOverlay);
+  const watched = await playAd({ forced: true });
+  if (!watched){
+    /* 途中でやめた場合は受け取らせない */
+    openOverlay(el.bonusOverlay);
+    renderBonus();
+    return;
+  }
+  try {
+    const d = await api('/api/bonus/ad', { method: 'POST' });
+    setAccount(d.user);
+    audio.play('win');
+    toast('+' + d.reward + ' メダルを受け取りました');
+  } catch (e){ toast(e.message); }
+  renderBonus();
+  openOverlay(el.bonusOverlay);
+}
+
+/* =========================================================
    10.5 演出(画面中央のカットイン)
    ========================================================= */
 const FX_LABEL = {
@@ -1307,6 +1775,8 @@ const FX_LABEL = {
   push:      'PUSH',
   surrender: 'SURRENDER',
   double:    'DOUBLE DOWN!',
+  bonus:     'LOGIN BONUS!',
+  clear:     'GAME CLEAR!',
   blackjack: 'BLACKJACK!!'
 };
 
@@ -1423,6 +1893,8 @@ async function submitAuth(){
     toast(authMode === 'login' ? 'おかえりなさい、' + d.user.username + ' さん' : 'アカウントを作成しました');
     closeOverlay(el.accountOverlay);
     loadFriends(true);
+    loadNotices(true);
+    checkBonus(true);
     /* 招待URLから来ていた場合は、ログイン完了後に参加する(v3.0) */
     resumeInviteJoin();
   } catch (e){
@@ -1461,14 +1933,32 @@ async function submitDeleteAccount(){
 /* =========================================================
    11. シングルプレイ
    ========================================================= */
-const single = { busy: false, activeIndex: -1, resolveTurn: null };
+/* v3.2: シングルプレイはアカウントのメダルを一切消費しない練習モードになった。
+   ゲーム開始のたびに専用メダル1000枚が配られ、その中だけで完結する。
+   EXP・戦績は今まで通りアカウントに反映される。 */
+const SINGLE_START_MEDAL = 1000;
+const NORMA_MIN = 1100;    // ノルマの下限(配布額より上でないと意味がない)
+const NORMA_MAX = 999999;
+
+const single = {
+  busy: false, activeIndex: -1, resolveTurn: null,
+  medal: SINGLE_START_MEDAL,   // シングル専用の持ち分
+  norma: false,                // ノルマモードかどうか
+  normaTarget: 5000,           // 目標メダル
+  over: false                  // クリア/ゲームオーバーで終了したか
+};
+
+/* シングル中は専用メダル、それ以外はアカウント(またはゲスト)のメダルを見る */
+function isSingleGame(){
+  return view.mode === 'single' && screen === 'game';
+}
 
 function makeSingleSeats(count){
   const prev = new Map(view.seats.map(s => [s.name, s.medal]));
   const seats = [{
     name: account.user ? account.user.username : 'あなた',
     level: account.user ? account.user.level : 0,
-    medal: myMedal(), bet: 0, hand: [], result: null,
+    medal: single.medal, bet: 0, hand: [], result: null,
     isYou: true, active: false, cpu: false, done: false, playing: false
   }];
   for (let i = 1; i < count; i++){
@@ -1493,10 +1983,13 @@ function openSingleSetup(){
 function renderSingleSetup(){
   el.singleSeatSeg.querySelectorAll('.seg-btn').forEach(b =>
     b.classList.toggle('is-on', Number(b.dataset.seats) === settings.seats));
+  renderNormaSetup();
 
   const you = account.user ? account.user.username : 'あなた';
+  const color = account.user ? iconColorOf(account.user.iconColor) : '';
   const items = ['<div class="preview-seat is-you">' +
-      '<span class="preview-avatar">' + esc(you.charAt(0).toUpperCase()) + '</span>' +
+      '<span class="preview-avatar"' + (color ? ' data-icon-color="' + color + '"' : '') + '>' +
+      esc(you.charAt(0).toUpperCase()) + '</span>' +
       '<span class="preview-name">' + esc(you) + '</span></div>'];
   for (let i = 1; i < settings.seats; i++){
     items.push('<div class="preview-seat">' +
@@ -1512,13 +2005,31 @@ async function startSingle(){
   buildShoe();
   shownCount.clear();
   setStreak(0);
+
+  /* 毎回ここで専用メダルを配り直す。アカウントのメダルには一切触れない(v3.2) */
+  single.medal = SINGLE_START_MEDAL;
+  single.over = false;
+  single.norma = settings.normaOn;
+  single.normaTarget = clampNorma(settings.normaTarget);
+
+  view.seats = [];   // 前回の持ち分を引き継がないよう作り直す
   makeSingleSeats(settings.seats);
 
   /* オンラインと同じく、開始前に3・2・1のカウントダウンを見せる */
   await runCountdown();
 
   showScreen('game');
+  renderMedal();
+  if (single.norma){
+    toast('ノルマモード: ' + single.normaTarget + ' メダルを目指しましょう');
+  }
   singleBetPhase();
+}
+
+function clampNorma(v){
+  const n = Math.floor(Number(v) || 0);
+  if (!Number.isFinite(n)) return NORMA_MIN;
+  return Math.min(NORMA_MAX, Math.max(NORMA_MIN, n));
 }
 
 /* 3→2→1→GO のカウントダウン画面(シングル用) */
@@ -1555,21 +2066,49 @@ function singleBetPhase(){
     s.doubled = false;
     if (s.cpu && s.medal < MIN_BET) s.medal = CPU_REFILL;
   });
-  view.seats[0].medal = myMedal();
+  view.seats[0].medal = single.medal;
   view.seats[0].name = account.user ? account.user.username : 'あなた';
   view.seats[0].level = account.user ? account.user.level : 0;
+
+  /* ノルマ達成 / メダル切れの判定はベットに入る前に行う(v3.2) */
+  if (single.norma && single.medal >= single.normaTarget) return singleFinish('clear');
+  if (single.medal < MIN_BET) return singleFinish('over');
 
   renderTable();
   renderMedal();
   renderBet();
   showPanel('bet');
   el.dealBtn.textContent = 'カードを配る';
+  setMessage('ベット額を決めてください');
+}
 
-  if (myMedal() < MIN_BET){
-    setMessage('メダルが足りません。広告を見て ' + AD_REWARD + ' メダルを受け取れます。', 'alert');
+/* シングルの終了(ノルマ達成 or メダル切れ)(v3.2) */
+function singleFinish(kind){
+  single.over = true;
+  single.busy = false;
+  view.phase = 'result';
+  renderTable();
+  renderMedal();
+  showPanel('single-end');
+
+  const clear = kind === 'clear';
+  el.singleEndTitle.textContent = clear ? 'ゲームクリア!' : 'ゲームオーバー';
+  el.singleEndTitle.classList.toggle('is-clear', clear);
+  el.singleEndTitle.classList.toggle('is-over', !clear);
+
+  if (clear){
+    el.singleEndText.innerHTML =
+      '目標の <b>' + single.normaTarget + '</b> メダルを達成しました!<br>' +
+      '最終メダル: <b>' + single.medal + '</b>';
+    audio.play('win');
+    showFx('clear');
   } else {
-    setMessage('ベット額を決めてください');
+    el.singleEndText.innerHTML = single.norma
+      ? 'メダルが尽きてしまいました…<br>目標は <b>' + single.normaTarget + '</b> メダルでした。'
+      : 'メダルが尽きました。<br>お疲れさまでした!';
+    audio.play('lose');
   }
+  setMessage(clear ? 'ゲームクリア!' : 'ゲームオーバー', clear ? 'good' : 'alert');
 }
 
 async function singleDeal(){
@@ -1889,18 +2428,17 @@ async function singleSettle(){
 
     if (account.user){
       try {
+        /* v3.2: シングルはメダルを消費しないので、EXPと戦績だけを送る */
         const d = await api('/api/result', {
           method: 'POST',
-          body: JSON.stringify({ bet: me.bet, payout: me.result.payout, kind: me.result.kind })
+          body: JSON.stringify({ kind: me.result.kind, practice: true })
         });
         setAccount(d.user);
-        me.medal = d.user.medal;
         if (d.levelUp > 0) showLevelUp(d.user.level);
       } catch (e){ console.warn('[result]', e.message); }
-    } else {
-      guestMedal = me.medal;
-      store.set('bj4_guestMedal', String(guestMedal));
     }
+    /* 専用メダルを更新する。アカウント・ゲストのメダルには触れない */
+    single.medal = me.medal;
   }
 
   renderTable();
@@ -1908,6 +2446,44 @@ async function singleSettle(){
   single.busy = false;
   el.nextBtn.textContent = '次のラウンドへ';
   showPanel('next');
+}
+
+/* =========================================================
+   11.1 ノルマモード(v3.2)
+   ========================================================= */
+function renderNormaSetup(){
+  el.normaCheck.classList.toggle('is-on', settings.normaOn);
+  el.normaCheck.setAttribute('aria-checked', String(settings.normaOn));
+  el.normaTargetRow.hidden = !settings.normaOn;
+
+  const preset = [2000, 5000, 10000];
+  const isPreset = preset.includes(settings.normaTarget);
+  el.normaSeg.querySelectorAll('.seg-btn').forEach(b => {
+    const on = b.dataset.norma === 'custom'
+      ? !isPreset
+      : Number(b.dataset.norma) === settings.normaTarget;
+    b.classList.toggle('is-on', on);
+  });
+  el.normaTarget.hidden = isPreset;
+  if (!isPreset) el.normaTarget.value = settings.normaTarget;
+}
+
+function setNormaTarget(v){
+  settings.normaTarget = clampNorma(v);
+  store.set('bj4_normaTarget', String(settings.normaTarget));
+  renderNormaSetup();
+}
+
+/* ゲーム中のノルマ進捗表示 */
+function renderNorma(){
+  const show = isSingleGame() && single.norma;
+  el.normaChip.hidden = !show;
+  if (!show) return;
+  el.normaNow.textContent = single.medal;
+  el.normaGoal.textContent = single.normaTarget;
+  const rate = single.medal / single.normaTarget;
+  el.normaChip.classList.toggle('is-near', rate >= 0.7 && rate < 1);
+  el.normaChip.classList.toggle('is-done', rate >= 1);
 }
 
 /* =========================================================
@@ -1977,6 +2553,7 @@ function connectSocket(){
     sock.emit('room:list');
     updateChatVisibility();
     loadFriends(true);
+    loadNotices(true);
     /* 招待URL・招待通知からの参加待ちがあれば実行する(v3.0) */
     const pend = online.pendingJoin;
     if (pend){
@@ -2042,6 +2619,15 @@ function connectSocket(){
     loadFriends(true);
   });
   sock.on('friend:update', () => loadFriends(true));
+
+  /* 通知が増えた(v3.2) */
+  sock.on('notice:new', () => loadNotices(true));
+
+  /* 日付が変わった(v3.2) */
+  sock.on('day:changed', () => {
+    loadNotices(true);
+    onDayChanged();
+  });
 
   /* 部屋への招待が届いた(v3.0) */
   sock.on('room:invited', (data) => {
@@ -3017,7 +3603,8 @@ function confirmBet(){
 /* =========================================================
    14. 広告
    ========================================================= */
-const ad = { open: false, forced: false, need: AD_SKIP_SEC, elapsed: 0, timerId: null, ready: false };
+const ad = { open: false, forced: false, need: AD_SKIP_SEC, elapsed: 0, timerId: null, ready: false,
+             mode: 'reward', resolve: null };
 
 /* 広告のクールタイム(v3.0)。所持メダルが上限以上のときも受け取れない */
 const adGate = { nextAt: 0, tickId: null };
@@ -3067,10 +3654,17 @@ function openAd(){
     audio.play('error');
     return toast('あと' + Math.ceil((adGate.nextAt - Date.now()) / 1000) + '秒お待ちください');
   }
+  startAdVideo('reward', Math.random() >= AD_SKIP_RATE);
+}
+
+/* 動画の再生開始。mode で終了時の処理を切り替える(v3.2)
+   'reward' = 通常の広告報酬 / 'bonus' = ログインボーナスの追加分 */
+function startAdVideo(mode, forced){
   ad.open = true;
+  ad.mode = mode;
   ad.elapsed = 0;
   ad.ready = false;
-  ad.forced = Math.random() >= AD_SKIP_RATE;
+  ad.forced = !!forced;
   ad.need = ad.forced ? AD_FULL_SEC : AD_SKIP_SEC;
 
   el.adFallback.hidden = true;
@@ -3125,6 +3719,16 @@ async function closeAd(){
   el.adOverlay.hidden = true;
   bgm.duck(false);
 
+  /* ログインボーナスの広告はここで完了を伝えるだけ。
+     通常の広告報酬(/api/ad)とは別扱いにする(v3.2) */
+  if (ad.mode === 'bonus'){
+    ad.mode = 'reward';
+    const done = ad.resolve;
+    ad.resolve = null;
+    if (done) done(true);
+    return;
+  }
+
   let gained = AD_REWARD;
   if (account.user){
     try {
@@ -3148,11 +3752,8 @@ async function closeAd(){
   updateAdBtn();
 
   if (view.phase === 'bet'){
-    if (view.mode === 'single'){
-      view.seats[0].medal = myMedal();
-      renderTable();
-      setMessage('ベット額を決めてください');
-    } else if (online.socket && online.socket.connected){
+    /* v3.2: シングルは専用メダルで完結するので広告の対象外。オンラインのみ同期する */
+    if (view.mode === 'online' && online.socket && online.socket.connected){
       /* サーバーが持つルーム内のメダルは接続時のスナップショットなので
          広告で増えた分をDBから読み直させる */
       online.socket.emit('player:sync');
@@ -3163,6 +3764,15 @@ async function closeAd(){
   updateAdBtn();
   audio.play('win');
   toast('+' + gained + ' メダルを受け取りました');
+}
+
+/* 最後まで見てもらう広告。見終わったら true を返す(v3.2) */
+function playAd(opts){
+  return new Promise((resolve) => {
+    if (ad.open) return resolve(false);
+    ad.resolve = resolve;
+    startAdVideo('bonus', opts && opts.forced);
+  });
 }
 
 function setSoundIcon(){
@@ -3446,6 +4056,38 @@ el.singleSeatSeg.addEventListener('click', (e) => {
   renderSingleSetup();
   audio.play('chip');
 });
+/* --- ノルマモード(v3.2) --- */
+el.normaRow.addEventListener('click', () => {
+  audio.play('chip');
+  settings.normaOn = !settings.normaOn;
+  store.set('bj4_normaOn', settings.normaOn ? '1' : '0');
+  renderNormaSetup();
+});
+el.normaSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  audio.play('chip');
+  if (b.dataset.norma === 'custom'){
+    el.normaTarget.hidden = false;
+    el.normaSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
+    el.normaTarget.value = settings.normaTarget;
+    setTimeout(() => el.normaTarget.focus(), 60);
+  } else {
+    setNormaTarget(b.dataset.norma);
+  }
+});
+el.normaTarget.addEventListener('change', () => setNormaTarget(el.normaTarget.value));
+el.normaTarget.addEventListener('blur', () => setNormaTarget(el.normaTarget.value));
+
+el.singleEndRetryBtn.addEventListener('click', () => {
+  audio.play('button');
+  openSingleSetup();
+});
+el.singleEndBackBtn.addEventListener('click', () => {
+  audio.play('button');
+  showScreen('title');
+});
+
 el.singleStartBtn.addEventListener('click', () => { audio.play('button'); startSingle(); });
 el.changelogCloseBtn.addEventListener('click', () => closeOverlay(el.changelogOverlay));
 
@@ -3550,6 +4192,46 @@ el.joinIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.jo
 
 /* --- 待機ルーム --- */
 el.roomLeaveBtn.addEventListener('click', () => { audio.play('button'); leaveOnlineRoom(); });
+
+/* --- ログインボーナス(v3.2) --- */
+el.toBonusBtn.addEventListener('click', () => {
+  audio.play('button');
+  renderBonus();
+  openOverlay(el.bonusOverlay);
+});
+el.bonusCloseBtn.addEventListener('click', () => closeOverlay(el.bonusOverlay));
+el.bonusClaimBtn.addEventListener('click', claimBonus);
+el.bonusAdBtn.addEventListener('click', claimBonusAd);
+
+/* --- 通知・ランキング(v3.2) --- */
+el.noticeBtn.addEventListener('click', () => { audio.play('button'); openNoticePanel(); });
+el.noticeCloseBtn.addEventListener('click', () => closeOverlay(el.noticeOverlay));
+el.noticeClearBtn.addEventListener('click', async () => {
+  if (!confirm('通知をすべて削除しますか?')) return;
+  audio.play('button');
+  try {
+    await api('/api/notices', { method: 'DELETE' });
+    notices.list = []; notices.unread = 0;
+    updateNoticeBadge();
+    renderNoticeList();
+    toast('通知を削除しました');
+  } catch (e){ toast(e.message); }
+});
+
+el.toRankingBtn.addEventListener('click', () => { audio.play('button'); openRankPanel(); });
+el.rankCloseBtn.addEventListener('click', () => closeOverlay(el.rankOverlay));
+el.rankKindTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  audio.play('chip');
+  setRankKind(b.dataset.kind);
+});
+el.rankDayTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b || b.disabled) return;
+  audio.play('chip');
+  setRankDay(b.dataset.day);
+});
 
 /* --- フレンド(v3.0) --- */
 el.friendBtn.addEventListener('click', () => { audio.play('button'); openFriendPanel(); });
@@ -3917,7 +4599,7 @@ el.chatStamps.addEventListener('click', (e) => {
 /* 招待通知(invitedOverlay)は誤タップで消えると困るので背景クリックでは閉じない */
 const closableOverlays = [el.accountOverlay, el.rulesOverlay, el.settingsOverlay,
   el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay,
-  el.friendOverlay, el.inviteOverlay];
+  el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay, el.bonusOverlay];
 
 closableOverlays.forEach(node =>
   node.addEventListener('click', (e) => { if (e.target === node) closeOverlay(node); }));
@@ -4007,7 +4689,8 @@ async function init(){
   showScreen('title');
   await restoreSession();
   updateAdBtn();
-  if (account.user) loadFriends(true);
+  if (account.user){ loadFriends(true); loadNotices(true); checkBonus(true); }
+  startDayWatch();
   resumeInviteJoin();
 }
 

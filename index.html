@@ -39,6 +39,12 @@
       </span>
     </button>
 
+    <button type="button" class="notice-btn" id="noticeBtn" title="通知" hidden>
+      <span class="notice-btn-icon">🔔</span>
+      <span class="notice-count" id="noticeCount">0</span>
+      <span class="notice-badge" id="noticeBadge" hidden>0</span>
+    </button>
+
     <button type="button" class="friend-btn" id="friendBtn" title="フレンド" hidden>
       <span class="friend-btn-icon">❤</span>
       <span class="friend-online" id="friendOnline">0</span>
@@ -61,10 +67,17 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v3.1 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v3.2 更新履歴</button>
     </div>
 
     <nav class="title-menu">
+      <button type="button" class="title-btn is-bonus" id="toBonusBtn" hidden>
+        <span class="title-btn-icon">🎁</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">ログインボーナス</span>
+          <span class="title-btn-desc">受け取っていないボーナスがあります</span>
+        </span>
+      </button>
       <button type="button" class="title-btn is-main" id="toSingleBtn">
         <span class="title-btn-icon">🂡</span>
         <span class="title-btn-text">
@@ -77,6 +90,13 @@
         <span class="title-btn-text">
           <span class="title-btn-name">オンラインプレイ</span>
           <span class="title-btn-desc">部屋を作って友達と対戦</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="toRankingBtn">
+        <span class="title-btn-icon">🏆</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">ランキング</span>
+          <span class="title-btn-desc">総獲得枚数・一撃獲得枚数を競う</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRulesBtn">
@@ -115,7 +135,35 @@
         </div>
 
         <div class="setup-preview" id="setupPreview"></div>
+      </div>
 
+      <div class="card-block">
+        <h3 class="block-title">ノルマモード</h3>
+        <p class="block-note">目標メダルに到達すればゲームクリア。0枚になるとゲームオーバーです。オフのときはメダルが尽きるまで自由に遊べます。</p>
+
+        <div class="checkbox-row" id="normaRow">
+          <button type="button" class="checkbox" id="normaCheck" role="checkbox" aria-checked="false"></button>
+          <span class="checkbox-body">
+            <span class="checkbox-title">ノルマモードで遊ぶ</span>
+            <span class="checkbox-note">目標を決めて挑戦します</span>
+          </span>
+        </div>
+
+        <div id="normaTargetRow" hidden>
+          <label class="field-label" for="normaTarget">目標メダル</label>
+          <div class="seg seg-4" id="normaSeg">
+            <button type="button" class="seg-btn is-on" data-norma="2000">2000</button>
+            <button type="button" class="seg-btn" data-norma="5000">5000</button>
+            <button type="button" class="seg-btn" data-norma="10000">10000</button>
+            <button type="button" class="seg-btn" data-norma="custom">自由入力</button>
+          </div>
+          <input type="number" id="normaTarget" class="text-input" min="1100" max="999999" placeholder="1100〜999999" hidden>
+          <p class="block-note">最初に <b>1000メダル</b> が配られます。目標は1100枚以上で設定してください。</p>
+        </div>
+      </div>
+
+      <div class="card-block">
+        <p class="block-note">シングルプレイは<b>練習モード</b>です。毎回1000メダルが配られ、<b>アカウントの所持メダルは増減しません</b>。経験値と戦績は記録されます。</p>
         <button type="button" class="btn btn-primary btn-wide" id="singleStartBtn">ゲーム開始</button>
       </div>
     </div>
@@ -250,6 +298,12 @@
         <span class="round-sep">/</span>
         <span class="round-max" id="roundMax">30</span>
       </div>
+      <div class="norma-chip" id="normaChip" hidden>
+        <span class="norma-cap">ノルマ</span>
+        <span class="norma-now led" id="normaNow">0</span>
+        <span class="norma-sep">/</span>
+        <span class="norma-goal led" id="normaGoal">0</span>
+      </div>
       <div class="streak-chip" id="streakChip" hidden>
         <span class="streak-icon">🔥</span>
         <span class="streak-num led" id="streakNum">2</span>
@@ -351,6 +405,15 @@
   <div class="panel" id="spectatePanel" hidden>
     <p class="spectate-text"><span class="spectate-eye">👁</span> 観戦中です。操作はできません。</p>
     <button type="button" class="btn btn-ghost" id="spectateLeaveBtn">観戦をやめる</button>
+  </div>
+
+  <div class="panel" id="singleEndPanel" hidden>
+    <p class="single-end-title" id="singleEndTitle">ゲームクリア!</p>
+    <p class="single-end-text" id="singleEndText">-</p>
+    <div class="single-end-actions">
+      <button type="button" class="btn btn-ghost" id="singleEndBackBtn">タイトルへ</button>
+      <button type="button" class="btn btn-primary" id="singleEndRetryBtn">もう一度あそぶ</button>
+    </div>
   </div>
 
 </footer>
@@ -469,6 +532,24 @@
           </div>
         </div>
 
+        <div class="profile-section">
+          <h3>メダル記録</h3>
+          <div class="stat-grid">
+            <div class="stat is-wide"><span class="stat-key">総獲得枚数</span><span class="stat-val led" id="statTotalGain">0</span></div>
+            <div class="stat is-wide"><span class="stat-key">一撃獲得枚数</span><span class="stat-val led" id="statBestGain">0</span></div>
+          </div>
+          <p class="block-note">オンラインのエンジョイモードで勝って得たメダルの記録です。</p>
+        </div>
+
+        <div class="profile-section">
+          <h3>ログイン記録</h3>
+          <div class="stat-grid">
+            <div class="stat"><span class="stat-key">連続ログイン</span><span class="stat-val led" id="statStreak">0</span></div>
+            <div class="stat"><span class="stat-key">通算ログイン</span><span class="stat-val led" id="statLoginDays">0</span></div>
+            <div class="stat is-wide"><span class="stat-key">アカウント作成日</span><span class="stat-val" id="statCreated">-</span></div>
+          </div>
+        </div>
+
         <button type="button" class="btn btn-ghost btn-wide" id="logoutBtn">ログアウト</button>
 
         <button type="button" class="btn btn-ghost btn-wide" id="showPassBtn">パスワード変更</button>
@@ -574,6 +655,34 @@
         </ul>
       </div>
       <div class="sheet-section">
+        <h3>シングルプレイ(練習モード)</h3>
+        <ul class="rule-list">
+          <li>ゲーム開始のたびに<b>専用メダル1000枚</b>が配られます。<b>アカウントの所持メダルは増減しません</b>。</li>
+          <li>経験値とエンジョイモードの戦績は今まで通り記録されます。</li>
+          <li><b>ノルマモード</b>をオンにすると、目標メダルに到達で<b>ゲームクリア</b>、0枚で<b>ゲームオーバー</b>です。</li>
+          <li>シングルプレイでは広告によるメダル獲得はできません。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>ランキング</h3>
+        <ul class="rule-list">
+          <li><b>総獲得枚数</b> … その日にラウンドで勝って得たメダルの合計です。</li>
+          <li><b>一撃獲得枚数</b> … その日の中で、1ラウンドの勝利で得た最も多い枚数です。</li>
+          <li>対象は<b>オンラインのエンジョイモード</b>です。ログインボーナス・広告・練習モード・大会メダルは含みません。</li>
+          <li>集計は<b>0:00〜23:59</b>まで。結果は翌日の23:59まで「前日」で確認できます。一撃のみ<b>歴代</b>の記録も残ります。</li>
+          <li>同じ枚数の場合は<b>同率順位</b>になります(1位・1位・3位のように表示)。</li>
+          <li>前日のランキングに入賞していると、翌日<b>🔔通知</b>でお知らせが届きます。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>ログインボーナス</h3>
+        <ul class="rule-list">
+          <li>その日はじめてアクセスすると<b>500メダル</b>を受け取れます(0:00で切り替わります)。</li>
+          <li>さらに広告を<b>最後まで</b>見ると<b>500メダル</b>、合計<b>1000メダル</b>になります。</li>
+          <li>受け取っていないボーナスがあると、タイトル画面に<b>🎁ボタン</b>が表示されます。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>フレンド・招待</h3>
         <ul class="rule-list">
           <li>画面右上の<b>❤ボタン</b>からフレンド一覧と、届いているフレンド申請を確認できます。</li>
@@ -675,6 +784,17 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v3.2</h3>
+        <ul class="rule-list">
+          <li><b>シングルプレイが練習モードになりました。</b>毎回<b>1000メダル</b>が配られ、<b>アカウントの所持メダルは増減しません</b>(経験値と戦績は今まで通り記録されます)。</li>
+          <li>シングルプレイに<b>ノルマモード</b>を追加。目標メダルに到達すればゲームクリア、0枚になるとゲームオーバーです。オフなら今まで通り自由に遊べます。</li>
+          <li><b>🏆 ランキング</b>を追加。<b>総獲得枚数</b>と<b>一撃獲得枚数</b>の2種類を、本日・前日・歴代(一撃のみ)で確認できます。TOP100まで表示され、同じ枚数なら同率順位になります。</li>
+          <li><b>🔔 通知</b>を追加。フレンド申請・ルームへの招待・ランキング入賞のお知らせが届きます。</li>
+          <li><b>🎁 ログインボーナス</b>を追加。1日1回<b>500メダル</b>、広告を最後まで見るとさらに<b>500メダル</b>受け取れます。</li>
+          <li>マイページに<b>総獲得枚数・一撃獲得枚数・連続ログイン日数・通算ログイン日数・アカウント作成日</b>を追加しました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v3.1</h3>
         <ul class="rule-list">
@@ -887,6 +1007,89 @@
         <button type="button" class="btn btn-ghost" id="invitedRejectBtn">拒否する</button>
         <button type="button" class="btn btn-primary" id="invitedAcceptBtn">参加する</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ログインボーナス ============ -->
+<div class="overlay" id="bonusOverlay" hidden>
+  <div class="sheet sheet-narrow" role="dialog" aria-modal="true" aria-label="ログインボーナス">
+    <div class="sheet-head">
+      <h2>🎁 ログインボーナス</h2>
+      <button type="button" class="close-btn" id="bonusCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="bonus-lead" id="bonusLead">本日のログインボーナスです!</p>
+
+      <div class="bonus-amount">
+        <span class="bonus-plus">+</span>
+        <span class="bonus-value led" id="bonusValue">500</span>
+        <span class="bonus-unit">メダル</span>
+      </div>
+
+      <div class="bonus-streak" id="bonusStreak" hidden>
+        <span class="bonus-streak-cap">連続ログイン</span>
+        <span class="bonus-streak-num led" id="bonusStreakNum">1</span>
+        <span class="bonus-streak-cap">日目</span>
+      </div>
+
+      <button type="button" class="btn btn-primary btn-wide" id="bonusClaimBtn">受け取る</button>
+
+      <div id="bonusAdBox" hidden>
+        <p class="block-note">広告を最後まで見ると、さらに <b>500メダル</b> を受け取れます。</p>
+        <button type="button" class="btn btn-ghost btn-wide" id="bonusAdBtn">
+          <span class="ad-btn-icon">🎬</span> 広告を見て +500
+        </button>
+      </div>
+
+      <p class="bonus-done" id="bonusDone" hidden>本日のボーナスは受け取り済みです。<br>また明日お越しください!</p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ランキング ============ -->
+<div class="overlay" id="rankOverlay" hidden>
+  <div class="sheet sheet-wide" role="dialog" aria-modal="true" aria-label="ランキング">
+    <div class="sheet-head">
+      <h2>🏆 ランキング</h2>
+      <button type="button" class="close-btn" id="rankCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="seg seg-2" id="rankKindTabs">
+        <button type="button" class="seg-btn is-on" data-kind="total">総獲得枚数</button>
+        <button type="button" class="seg-btn" data-kind="best">一撃獲得枚数</button>
+      </div>
+
+      <div class="seg seg-3" id="rankDayTabs">
+        <button type="button" class="seg-btn is-on" data-day="today">本日</button>
+        <button type="button" class="seg-btn" data-day="yesterday" id="rankYesterdayBtn">前日</button>
+        <button type="button" class="seg-btn" data-day="alltime" id="rankAllTimeBtn">歴代</button>
+      </div>
+
+      <p class="sheet-note" id="rankNote">その日にラウンドで勝って得たメダルの合計です(ログインボーナス・広告は含みません)。</p>
+
+      <div class="rank-list" id="rankList">
+        <p class="empty-note">読み込み中…</p>
+      </div>
+
+      <div class="rank-self" id="rankSelf" hidden></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 通知 ============ -->
+<div class="overlay" id="noticeOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="通知">
+    <div class="sheet-head">
+      <h2>🔔 通知</h2>
+      <button type="button" class="close-btn" id="noticeCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="sheet-note">フレンド申請やルームへの招待、ランキング入賞のお知らせが届きます。</p>
+      <div class="notice-list" id="noticeList">
+        <p class="empty-note">読み込み中…</p>
+      </div>
+      <button type="button" class="btn btn-ghost btn-wide" id="noticeClearBtn">すべて削除</button>
     </div>
   </div>
 </div>
