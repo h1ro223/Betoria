@@ -180,7 +180,17 @@ const db = (() => {
   }
 
   /* ---- PostgreSQL実装 ---- */
-  const { Pool } = require('pg');
+  const { Pool, types } = require('pg');
+
+  /* v3.2 修正: pg は BIGINT(OID 20) を「数値の精度が落ちないように」
+     既定で文字列として返す。そのまま加算すると
+     "500" + 150 → "500150" と文字列連結になり、
+     ランキングの数値が桁違いに壊れる。
+     このゲームで扱う桁ではNumberで安全に表せるので数値に変換しておく。
+     ついでに NUMERIC(OID 1700) も数値にしておく。 */
+  types.setTypeParser(20, (v) => (v === null ? null : Number(v)));
+  types.setTypeParser(1700, (v) => (v === null ? null : Number(v)));
+
   const pool = new Pool({
     connectionString: url,
     ssl: { rejectUnauthorized: false },
@@ -280,6 +290,19 @@ const db = (() => {
           last_settled TEXT
         )`);
       await pool.query(`INSERT INTO rank_meta(id, last_settled) VALUES(1, NULL) ON CONFLICT (id) DO NOTHING`);
+
+      /* v3.2 修正: BIGINTが文字列として扱われていた期間に、
+         メダルの加算が文字列連結になって桁が壊れた記録が残っている。
+         一度だけ集計値をリセットする(このフラグで二度目は走らない)。 */
+      await pool.query(`ALTER TABLE rank_meta ADD COLUMN IF NOT EXISTS gain_fixed BOOLEAN NOT NULL DEFAULT FALSE`);
+      const fixed = await pool.query(`SELECT gain_fixed FROM rank_meta WHERE id=1`);
+      if (!fixed.rows[0] || !fixed.rows[0].gain_fixed){
+        await pool.query(`UPDATE users SET total_gain=0, best_gain=0, best_gain_at=NULL,
+                          day_gain=0, day_best=0, day_key=NULL`);
+        await pool.query(`DELETE FROM rank_daily`);
+        await pool.query(`UPDATE rank_meta SET gain_fixed=TRUE WHERE id=1`);
+        console.log('[db] 壊れていたランキング集計値をリセットしました');
+      }
       console.log('[db] PostgreSQL 接続OK');
     },
     async findUser(name){
@@ -1389,6 +1412,23 @@ app.post('/api/bonus/ad', async (req, res) => {
   res.json({ user: publicUser(u), reward: BONUS_AD_MEDAL, state: bonusState(u) });
 });
 
+/* 広告を見ずに閉じた場合。その日はもう案内しない(v3.2)
+   受け取り済みと同じ扱いにして、タイトルのボタンも消す */
+app.post('/api/bonus/skipad', async (req, res) => {
+  const u = await currentUser(req);
+  if (!u) return authFail(res, '認証が必要です');
+
+  const today = jstDateKey();
+  if (u.bonus_date !== today)
+    return res.status(400).json({ error: 'ログインボーナスを受け取っていません' });
+
+  if (u.bonus_ad_date !== today){
+    u.bonus_ad_date = today;   // メダルは渡さず、案内だけ終了させる
+    await db.saveUser(u);
+  }
+  res.json({ user: publicUser(u), state: bonusState(u) });
+});
+
 function blankUserRow(username, pass_hash){
   return {
     username, pass_hash, medal: INITIAL_MEDAL, level: 1, exp: 0,
@@ -1741,17 +1781,24 @@ function recordGain(user, gain){
   const g = Math.floor(Number(gain) || 0);
   if (g <= 0) return;
 
+  /* DBから来た値が文字列だと加算が文字列連結になってしまうので、
+     必ず数値に直してから足す(v3.2で発生した不具合の対策) */
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+
   const key = jstDateKey();
   if (user.day_key !== key){
     user.day_key = key;
     user.day_gain = 0;
     user.day_best = 0;
   }
-  user.day_gain = (user.day_gain || 0) + g;
-  if (g > (user.day_best || 0)) user.day_best = g;
+  user.day_gain = num(user.day_gain) + g;
+  if (g > num(user.day_best)) user.day_best = g;
 
-  user.total_gain = (user.total_gain || 0) + g;
-  if (g > (user.best_gain || 0)){
+  user.total_gain = num(user.total_gain) + g;
+  if (g > num(user.best_gain)){
     user.best_gain = g;
     user.best_gain_at = key;
   }
@@ -2005,6 +2052,25 @@ app.post('/api/admin/users', async (req, res) => {
   } catch (e){
     console.error('[admin/users]', e);
     res.status(500).json({ error: '一覧の取得に失敗しました' });
+  }
+});
+
+/* 指定アカウントの詳細(マイページ相当)を返す(v3.2) */
+app.post('/api/admin/detail', async (req, res) => {
+  if (!await checkAdmin(req, res)) return;
+  const username = String(req.body?.username || '');
+  try {
+    const u = await db.findUser(username);
+    if (!u) return res.status(404).json({ error: 'アカウントが見つかりません' });
+    res.json({
+      user: publicUser(u),
+      online: onlineUserNames().has(u.username),
+      lastLogin: u.last_login ? new Date(u.last_login).toISOString() : null,
+      expNext: expToNext(u.level)
+    });
+  } catch (e){
+    console.error('[admin/detail]', e);
+    res.status(500).json({ error: '詳細の取得に失敗しました' });
   }
 });
 

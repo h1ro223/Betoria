@@ -3070,6 +3070,16 @@ body.is-spectating #dealerArea{ opacity: .96; }
 .range + .block-note,
 .checkbox-row + .sheet-note,
 .checkbox-row + .block-note,
+/* マイページの記録セクションなど、グリッドの直後に説明文が来る場合(v3.2) */
+.stat-grid + .sheet-note,
+.stat-grid + .block-note,
+/* 説明文のあとにボタンや別の説明文が続く場合(v3.2) */
+.block-note + .btn,
+.sheet-note + .btn,
+.block-note + .block-note,
+.sheet-note + .sheet-note,
+.notice-list + .btn-wide,
+.rank-list + .sheet-note,
 .btn + .sheet-note,
 .btn + .block-note,
 .friend-list + .sheet-note,
@@ -3645,4 +3655,19 @@ body.is-spectating #dealerArea{ opacity: .96; }
   .sprint-now{ font-size: 15px; }
   .sprint-goal{ font-size: 12px; }
   .sprint-cap{ font-size: 9px; }
+}
+
+/* =========================================================
+   46. v3.2 修正まとめ
+   ========================================================= */
+/* 開発者モードの詳細表示 */
+#devDetailBody .profile-head{ margin-bottom: 4px; }
+#devDetailBody .profile-avatar{ cursor: default; }
+#devDetailBody .profile-avatar:hover{ transform: none; box-shadow: none; }
+#devDetailBody .sheet-section:first-child{ padding-top: 0; }
+.dev-actions .dev-btn{ white-space: nowrap; }
+
+@media (max-width: 420px){
+  .dev-actions{ gap: 5px; }
+  .dev-actions .dev-btn{ padding: 6px 8px; font-size: 11.5px; }
 }

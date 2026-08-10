@@ -71,14 +71,7 @@
     </div>
 
     <nav class="title-menu">
-      <button type="button" class="title-btn is-bonus" id="toBonusBtn" hidden>
-        <span class="title-btn-icon">🎁</span>
-        <span class="title-btn-text">
-          <span class="title-btn-name">ログインボーナス</span>
-          <span class="title-btn-desc">受け取っていないボーナスがあります</span>
-        </span>
-      </button>
-      <button type="button" class="title-btn is-main" id="toSingleBtn">
+      <button type="button" class="title-btn" id="toSingleBtn">
         <span class="title-btn-icon">🂡</span>
         <span class="title-btn-text">
           <span class="title-btn-name">シングルプレイ</span>
@@ -142,7 +135,7 @@
         <p class="block-note">目標メダルに到達すればゲームクリア。0枚になるとゲームオーバーです。オフのときはメダルが尽きるまで自由に遊べます。</p>
 
         <div class="checkbox-row" id="normaRow">
-          <button type="button" class="checkbox" id="normaCheck" role="checkbox" aria-checked="false"></button>
+          <button type="button" class="checkbox" id="normaCheck" role="checkbox" aria-checked="false"><span></span></button>
           <span class="checkbox-body">
             <span class="checkbox-title">ノルマモードで遊ぶ</span>
             <span class="checkbox-note">目標を決めて挑戦します</span>
@@ -817,6 +810,7 @@
       <div class="sheet-section">
         <h3>v3.2</h3>
         <ul class="rule-list">
+          <li>ランキングの<b>総獲得枚数が異常な数値になる不具合</b>を修正しました。これまでの集計値は一度リセットされます。</li>
           <li><b>⚡ 早抜けモード</b>を追加。大会専用メダル1000枚から、決められた枚数を超えるまでの<b>早さ</b>を競います。早く抜けるほど多くのEXPがもらえます。</li>
           <li><b>シングルプレイが練習モードになりました。</b>毎回<b>1000メダル</b>が配られ、<b>アカウントの所持メダルは増減しません</b>(経験値と戦績は今まで通り記録されます)。</li>
           <li>シングルプレイに<b>ノルマモード</b>を追加。目標メダルに到達すればゲームクリア、0枚になるとゲームオーバーです。オフなら今まで通り自由に遊べます。</li>
@@ -1038,6 +1032,19 @@
         <button type="button" class="btn btn-ghost" id="invitedRejectBtn">拒否する</button>
         <button type="button" class="btn btn-primary" id="invitedAcceptBtn">参加する</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ 開発者モード: アカウント詳細 ============ -->
+<div class="overlay" id="devDetailOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="アカウント詳細">
+    <div class="sheet-head">
+      <h2 id="devDetailTitle">アカウント詳細</h2>
+      <button type="button" class="close-btn" id="devDetailCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body" id="devDetailBody">
+      <p class="empty-note">読み込み中…</p>
     </div>
   </div>
 </div>

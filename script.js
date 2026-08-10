@@ -418,7 +418,6 @@ const el = {
   toRankingBtn: $('toRankingBtn'),
   rankOverlay: $('rankOverlay'),
 
-  toBonusBtn: $('toBonusBtn'),
   bonusOverlay: $('bonusOverlay'),
   bonusCloseBtn: $('bonusCloseBtn'),
   bonusLead: $('bonusLead'),
@@ -659,6 +658,10 @@ const el = {
   devReloadBtn: $('devReloadBtn'),
   devSummary: $('devSummary'),
   devList: $('devList'),
+  devDetailOverlay: $('devDetailOverlay'),
+  devDetailCloseBtn: $('devDetailCloseBtn'),
+  devDetailTitle: $('devDetailTitle'),
+  devDetailBody: $('devDetailBody'),
 
   bgmStatus: $('bgmStatus'),
 
@@ -1737,17 +1740,10 @@ async function checkBonus(auto){
   }
 }
 
-/* 未受取のボーナスがあるときだけ、タイトルにボタンを出す */
-function updateBonusBtn(){
-  const u = account.user;
-  const can = !!(u && (u.bonusReady || u.bonusAdReady));
-  el.toBonusBtn.hidden = !can;
-  if (can){
-    el.toBonusBtn.querySelector('.title-btn-desc').textContent = u.bonusReady
-      ? '受け取っていないボーナスがあります'
-      : '広告を見るともう500メダル受け取れます';
-  }
-}
+/* v3.2: タイトルの常設ボタンは廃止した。
+   ・基本の500が未受取 → 開き直せばまた案内する
+   ・広告分は「見る」か「閉じる」で、その日は完結させる */
+function updateBonusBtn(){ /* 何もしない(互換のため残す) */ }
 
 async function claimBonus(){
   el.bonusClaimBtn.disabled = true;
@@ -1784,8 +1780,21 @@ async function claimBonusAd(){
     audio.play('win');
     toast('+' + d.reward + ' メダルを受け取りました');
   } catch (e){ toast(e.message); }
-  renderBonus();
-  openOverlay(el.bonusOverlay);
+  /* v3.2: 見終わったらボーナス画面には戻さず、そのままタイトルに残す。
+     戻すと「+0メダル」と表示されて紛らわしいため */
+  if (screen !== 'title') showScreen('title');
+}
+
+/* ボーナス画面を閉じる。広告の案内が出ている段階で閉じたら、
+   その日はもう案内しない(v3.2) */
+async function closeBonusPanel(){
+  const skipAd = !!(account.user && account.user.bonusAdReady);
+  closeOverlay(el.bonusOverlay);
+  if (!skipAd) return;
+  try {
+    const d = await api('/api/bonus/skipad', { method: 'POST' });
+    setAccount(d.user);
+  } catch {}
 }
 
 /* =========================================================
@@ -3933,6 +3942,82 @@ async function submitDevPin(){
   }
 }
 
+/* 指定アカウントのマイページ相当を読み取り専用で表示する(v3.2) */
+async function openDevDetail(username){
+  el.devDetailTitle.textContent = username + ' の詳細';
+  el.devDetailBody.innerHTML = '<p class="empty-note">読み込み中…</p>';
+  openOverlay(el.devDetailOverlay);
+  try {
+    const d = await api('/api/admin/detail', {
+      method: 'POST',
+      body: JSON.stringify({ pin: dev.pin, username })
+    });
+    renderDevDetail(d);
+  } catch (e){
+    el.devDetailBody.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>';
+  }
+}
+
+function renderDevDetail(d){
+  const u = d.user;
+  const rate = (w, n) => (n > 0 ? Math.round((w / n) * 100) + '%' : '0%');
+  const decided = u.wins + u.losses;
+  const champDecided = u.champWins + u.champLosses;
+
+  const stat = (k, v, wide) =>
+    '<div class="stat' + (wide ? ' is-wide' : '') + '">' +
+      '<span class="stat-key">' + esc(k) + '</span>' +
+      '<span class="stat-val led">' + esc(String(v)) + '</span></div>';
+
+  el.devDetailBody.innerHTML = '' +
+    '<div class="sheet-section">' +
+      '<div class="profile-head">' +
+        '<span class="profile-avatar" data-icon-color="' + iconColorOf(u.iconColor) + '">' +
+          '<span class="profile-avatar-char">' + esc(u.username.charAt(0).toUpperCase()) + '</span>' +
+        '</span>' +
+        '<div class="profile-id">' +
+          '<span class="profile-name">' + esc(u.username) + '</span>' +
+          '<span class="profile-level led">Lv.' + u.level + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<p class="sheet-note">' +
+        (d.online ? '<b style="color:var(--jade)">ログイン中</b>' : 'オフライン') +
+        ' ・ 最終ログイン: ' + esc(formatLastSeen({ lastLogin: d.lastLogin })) +
+        (u.isOwner ? ' ・ <b>オーナー</b>' : '') +
+      '</p>' +
+    '</div>' +
+
+    '<div class="sheet-section"><h3>基本</h3><div class="stat-grid">' +
+      stat('所持メダル', Number(u.medal).toLocaleString()) +
+      stat('レベル', u.level) +
+      stat('EXP', u.exp + ' / ' + d.expNext) +
+    '</div></div>' +
+
+    '<div class="sheet-section"><h3>戦績(エンジョイモード)</h3><div class="stat-grid">' +
+      stat('ラウンド', u.rounds) + stat('勝ち', u.wins) + stat('負け', u.losses) +
+      stat('引き分け', u.pushes) + stat('BJ', u.bj) + stat('勝率', rate(u.wins, decided)) +
+    '</div></div>' +
+
+    '<div class="sheet-section"><h3>戦績(チャンピオンモード)</h3><div class="stat-grid">' +
+      stat('プレイ数', u.champPlays) + stat('勝ち(1位)', u.champWins) +
+      stat('負け', u.champLosses) + stat('引き分け', u.champDraws) +
+      stat('勝率', rate(u.champWins, champDecided)) +
+    '</div></div>' +
+
+    '<div class="sheet-section"><h3>メダル記録</h3><div class="stat-grid">' +
+      stat('総獲得枚数', Number(u.totalGain || 0).toLocaleString(), true) +
+      stat('一撃獲得枚数', Number(u.bestGain || 0).toLocaleString(), true) +
+    '</div>' +
+    (u.bestGainAt ? '<p class="block-note">一撃の記録日: ' + esc(u.bestGainAt) + '</p>' : '') +
+    '</div>' +
+
+    '<div class="sheet-section"><h3>ログイン記録</h3><div class="stat-grid">' +
+      stat('連続ログイン', (u.loginStreak || 0) + '日') +
+      stat('通算ログイン', (u.loginDays || 0) + '日') +
+      stat('アカウント作成日', fmtCreatedAt(u.createdAt), true) +
+    '</div></div>';
+}
+
 function openDevPanel(){
   openOverlay(el.devOverlay);
   loadDevUsers();
@@ -3991,6 +4076,7 @@ function renderDevUsers(){
         '<span class="dev-seen">最終ログイン: ' + esc(formatLastSeen(u)) + '</span>' +
       '</div>' +
       '<div class="dev-actions">' +
+        '<button type="button" class="dev-btn" data-act="detail">詳細</button>' +
         '<button type="button" class="dev-btn" data-act="edit">編集</button>' +
         '<button type="button" class="dev-btn is-danger" data-act="delete">削除</button>' +
       '</div>' +
@@ -4301,12 +4387,11 @@ el.joinIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.jo
 el.roomLeaveBtn.addEventListener('click', () => { audio.play('button'); leaveOnlineRoom(); });
 
 /* --- ログインボーナス(v3.2) --- */
-el.toBonusBtn.addEventListener('click', () => {
-  audio.play('button');
-  renderBonus();
-  openOverlay(el.bonusOverlay);
+el.bonusCloseBtn.addEventListener('click', closeBonusPanel);
+/* 背景クリック・Escでも「閉じた」扱いにする(広告の案内はその日は終了) */
+el.bonusOverlay.addEventListener('click', (e) => {
+  if (e.target === el.bonusOverlay) closeBonusPanel();
 });
-el.bonusCloseBtn.addEventListener('click', () => closeOverlay(el.bonusOverlay));
 el.bonusClaimBtn.addEventListener('click', claimBonus);
 el.bonusAdBtn.addEventListener('click', claimBonusAd);
 
@@ -4664,6 +4749,10 @@ el.devModeBtn.addEventListener('click', () => { audio.play('button'); openDevPin
 el.devPinCloseBtn.addEventListener('click', () => closeOverlay(el.devPinOverlay));
 el.devPinSubmitBtn.addEventListener('click', submitDevPin);
 el.devPinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitDevPin(); });
+el.devDetailCloseBtn.addEventListener('click', () => closeOverlay(el.devDetailOverlay));
+el.devDetailOverlay.addEventListener('click', (e) => {
+  if (e.target === el.devDetailOverlay) closeOverlay(el.devDetailOverlay);
+});
 el.devCloseBtn.addEventListener('click', () => closeOverlay(el.devOverlay));
 el.devReloadBtn.addEventListener('click', () => { audio.play('button'); loadDevUsers(); });
 
@@ -4677,6 +4766,7 @@ el.devList.addEventListener('click', (e) => {
   audio.play('button');
   if (act === 'edit') openDevEdit(row, username);
   else if (act === 'save') saveDevMedal(row, username);
+  else if (act === 'detail') openDevDetail(row.dataset.user);
   else if (act === 'cancel'){ const b = row.querySelector('.dev-edit'); if (b) b.remove(); }
   else if (act === 'delete') deleteDevUser(username);
 });
@@ -4706,7 +4796,7 @@ el.chatStamps.addEventListener('click', (e) => {
 /* 招待通知(invitedOverlay)は誤タップで消えると困るので背景クリックでは閉じない */
 const closableOverlays = [el.accountOverlay, el.rulesOverlay, el.settingsOverlay,
   el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay,
-  el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay, el.bonusOverlay];
+  el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay];
 
 closableOverlays.forEach(node =>
   node.addEventListener('click', (e) => { if (e.target === node) closeOverlay(node); }));
@@ -4714,6 +4804,8 @@ closableOverlays.forEach(node =>
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
     closableOverlays.forEach(n => { if (!n.hidden) closeOverlay(n); });
+    if (!el.bonusOverlay.hidden) closeBonusPanel();
+    if (!el.devDetailOverlay.hidden) closeOverlay(el.devDetailOverlay);
     return;
   }
   if (!el.adOverlay.hidden) return;
