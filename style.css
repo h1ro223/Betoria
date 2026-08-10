@@ -2313,9 +2313,13 @@ input, textarea{
 /* =========================================================
    32. v2.3 シングル準備画面
    ========================================================= */
+/* v3.2: カードが複数になったので縦積みにする。
+   横並びのままだと画面外にはみ出して文字が縦書きのように潰れてしまう */
 .setup-wrap{
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: clamp(10px, 2vh, 16px);
   padding-top: clamp(8px, 3vh, 30px);
 }
 .setup-wrap .card-block{ width: min(460px, 100%); gap: 13px; }
@@ -3539,7 +3543,9 @@ body.is-spectating #dealerArea{ opacity: .96; }
 #bonusClaimBtn[hidden]{ display: none; }
 
 /* マイページの記録セクション */
-.stat.is-wide{ grid-column: span 2; }
+/* 横に広い項目は必ず行頭から始める。
+   途中の列から始まると次の項目とかみ合わず、詰まって見えてしまう */
+.stat.is-wide{ grid-column: 1 / -1; }
 .stat.is-wide .stat-val{ font-size: clamp(20px, 5vw, 26px); }
 
 @media (max-width: 420px){
@@ -3561,4 +3567,82 @@ body.is-spectating #dealerArea{ opacity: .96; }
 }
 @media (prefers-reduced-motion: reduce){
   .title-btn.is-bonus{ animation: none; }
+}
+
+/* =========================================================
+   45. v3.2 早抜けモード
+   ========================================================= */
+/* 勝ち抜け条件の進捗チップ */
+.sprint-chip{
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(120,190,230,.55);
+  background: linear-gradient(180deg, rgba(90,170,220,.22), rgba(20,70,110,.16));
+  white-space: nowrap;
+}
+.sprint-chip[hidden]{ display: none; }
+.sprint-cap{
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: #A9DCF5;
+}
+.sprint-now{
+  font-family: var(--font-display);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--ivory);
+}
+.sprint-sep{ font-size: 12px; color: var(--smoke); }
+.sprint-goal{
+  font-family: var(--font-display);
+  font-size: 14px;
+  line-height: 1;
+  color: #A9DCF5;
+}
+.sprint-chip.is-near{
+  border-color: rgba(240,145,60,.7);
+  background: linear-gradient(180deg, rgba(240,145,60,.26), rgba(138,74,18,.18));
+}
+.sprint-chip.is-near .sprint-now{ color: #FFC98A; }
+.sprint-chip.is-done{
+  border-color: rgba(232,195,58,.85);
+  background: linear-gradient(180deg, rgba(232,195,58,.3), rgba(138,112,26,.2));
+  box-shadow: 0 0 16px rgba(232,195,58,.35);
+}
+.sprint-chip.is-done .sprint-now,
+.sprint-chip.is-done .sprint-goal{ color: #FFE27A; }
+
+/* モードバッジ・部屋一覧タグ */
+.room-mode-badge.is-sprint,
+.room-row-tag.is-sprint{
+  border-color: #78BEE6;
+  color: #A9DCF5;
+}
+
+/* 勝ち抜け条件の選択 */
+.seg-btn .seg-sub{
+  display: block;
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  color: var(--jade);
+}
+.seg-btn.is-on .seg-sub{ color: var(--brass); }
+.block-note.is-warn{ color: #F0B784; }
+.block-note.is-warn[hidden]{ display: none; }
+#createSprintRow[hidden]{ display: none; }
+
+/* 結果画面: リタイアの「ー」表示 */
+.standing-row.is-eliminated .standing-rank{ letter-spacing: .1em; }
+
+@media (max-width: 420px){
+  .sprint-chip{ padding: 4px 9px; gap: 4px; }
+  .sprint-now{ font-size: 15px; }
+  .sprint-goal{ font-size: 12px; }
+  .sprint-cap{ font-size: 9px; }
 }

@@ -184,11 +184,23 @@
         <p class="block-note">あなたがホストになります。ルームIDは自動で発行されます。</p>
 
         <label class="field-label">モード</label>
-        <div class="seg seg-2" id="createModeSeg">
+        <div class="seg seg-3" id="createModeSeg">
           <button type="button" class="seg-btn is-on" data-mode="enjoy">エンジョイ</button>
           <button type="button" class="seg-btn" data-mode="champion">チャンピオン</button>
+          <button type="button" class="seg-btn" data-mode="sprint">早抜け</button>
         </div>
         <p class="mode-desc" id="createModeDesc">気軽に遊べる通常モード。メダルはアカウントに反映されます。</p>
+
+        <div id="createSprintRow" hidden>
+          <label class="field-label">勝ち抜け条件</label>
+          <div class="seg seg-2" id="sprintGoalSeg">
+            <button type="button" class="seg-btn is-on" data-goal="10000">10000メダル超え<span class="seg-sub">おすすめ</span></button>
+            <button type="button" class="seg-btn" data-goal="custom">自分で決める</button>
+          </div>
+          <input type="number" id="sprintGoalInput" class="text-input" min="2000" max="1000000" placeholder="2000〜1000000" hidden>
+          <p class="block-note" id="sprintGoalNote">全員に大会専用メダル1000枚が配布されます。条件を超えた人から勝ち抜けとなり、早く抜けるほど多くのEXPがもらえます。</p>
+          <p class="block-note is-warn" id="sprintWarn" hidden>※ 達成できる範囲内での設定が推奨されます。</p>
+        </div>
 
         <label class="field-label">参加人数</label>
         <div class="seg" id="createSeg">
@@ -280,7 +292,7 @@
   <!-- ---------- チャンピオン結果 ---------- -->
   <section class="screen" id="screenChampionEnd" hidden>
     <div class="page-head">
-      <h2 class="page-title">大会結果</h2>
+      <h2 class="page-title" id="standingsTitle">大会結果</h2>
     </div>
     <div class="standings-list" id="standingsList"></div>
     <div class="champion-end-actions">
@@ -297,6 +309,12 @@
         <span class="round-now led" id="roundNow">1</span>
         <span class="round-sep">/</span>
         <span class="round-max" id="roundMax">30</span>
+      </div>
+      <div class="sprint-chip" id="sprintChip" hidden>
+        <span class="sprint-cap">勝ち抜け</span>
+        <span class="sprint-now led" id="sprintNow">0</span>
+        <span class="sprint-sep">/</span>
+        <span class="sprint-goal led" id="sprintGoalNum">0</span>
       </div>
       <div class="norma-chip" id="normaChip" hidden>
         <span class="norma-cap">ノルマ</span>
@@ -532,7 +550,7 @@
           </div>
         </div>
 
-        <div class="profile-section">
+        <div class="sheet-section">
           <h3>メダル記録</h3>
           <div class="stat-grid">
             <div class="stat is-wide"><span class="stat-key">総獲得枚数</span><span class="stat-val led" id="statTotalGain">0</span></div>
@@ -541,7 +559,7 @@
           <p class="block-note">オンラインのエンジョイモードで勝って得たメダルの記録です。</p>
         </div>
 
-        <div class="profile-section">
+        <div class="sheet-section">
           <h3>ログイン記録</h3>
           <div class="stat-grid">
             <div class="stat"><span class="stat-key">連続ログイン</span><span class="stat-val led" id="statStreak">0</span></div>
@@ -661,6 +679,18 @@
           <li>経験値とエンジョイモードの戦績は今まで通り記録されます。</li>
           <li><b>ノルマモード</b>をオンにすると、目標メダルに到達で<b>ゲームクリア</b>、0枚で<b>ゲームオーバー</b>です。</li>
           <li>シングルプレイでは広告によるメダル獲得はできません。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>早抜けモード</h3>
+        <ul class="rule-list">
+          <li>全員に<b>大会専用メダル1000枚</b>が配られ、決められた枚数を<b>超える</b>までの早さを競います(アカウントのメダルは減りません)。</li>
+          <li>条件は<b>10000メダル超え</b>(おすすめ)か、<b>ホストが決めた枚数</b>のどちらかです。</li>
+          <li>条件を超えると<b>勝ち抜け</b>となり、そのまま観戦に移ります。<b>残り1人になった時点でゲーム終了</b>で、その人は<b>リタイア扱い</b>(順位は「ー」)になります。</li>
+          <li>同じラウンドで複数人が同時に達成した場合、そのラウンドの<b>ベット額が多い人が上位</b>になります。</li>
+          <li>大会メダルが<b>0枚</b>になった場合もリタイアです。</li>
+          <li>EXPは抜けた順位で決まります(<b>1抜け120 / 2抜け80 / 3抜け50</b>、リタイアは一律<b>20</b>)。ラウンド数や目標枚数では変わりません。</li>
+          <li>誰も勝ち抜けられなかった場合は、<b>全員0EXP</b>です。</li>
         </ul>
       </div>
       <div class="sheet-section">
@@ -787,6 +817,7 @@
       <div class="sheet-section">
         <h3>v3.2</h3>
         <ul class="rule-list">
+          <li><b>⚡ 早抜けモード</b>を追加。大会専用メダル1000枚から、決められた枚数を超えるまでの<b>早さ</b>を競います。早く抜けるほど多くのEXPがもらえます。</li>
           <li><b>シングルプレイが練習モードになりました。</b>毎回<b>1000メダル</b>が配られ、<b>アカウントの所持メダルは増減しません</b>(経験値と戦績は今まで通り記録されます)。</li>
           <li>シングルプレイに<b>ノルマモード</b>を追加。目標メダルに到達すればゲームクリア、0枚になるとゲームオーバーです。オフなら今まで通り自由に遊べます。</li>
           <li><b>🏆 ランキング</b>を追加。<b>総獲得枚数</b>と<b>一撃獲得枚数</b>の2種類を、本日・前日・歴代(一撃のみ)で確認できます。TOP100まで表示され、同じ枚数なら同率順位になります。</li>

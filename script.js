@@ -53,6 +53,20 @@ const ALLIN_BONUS_RATE = 1.5;
 /* 連勝表示を出し始める連勝数 */
 const STREAK_MIN_SHOW = 2;
 
+/* 早抜けモード(v3.2・サーバーと合わせる) */
+const SPRINT_GOAL_DEFAULT = 10000;
+const SPRINT_GOAL_MIN = 2000;
+const SPRINT_GOAL_MAX = 1000000;
+
+/* 大会用メダルを使うモードかどうか */
+const isTourneyMode = (m) => m === 'champion' || m === 'sprint';
+
+const MODE_DESC = {
+  enjoy: '気軽に遊べる通常モード。メダルはアカウントに反映されます。',
+  champion: '全員に大会専用メダル1000枚を配布して競う特別モード。最終順位に応じてEXPが変わります。',
+  sprint: '大会専用メダル1000枚から、決められた枚数を超えるまでの早さを競うモード。早く抜けるほどEXPが増えます。'
+};
+
 const DEAL_MS     = 240;
 const CPU_THINK_MS = 620;
 const REVEAL_MS   = 520;
@@ -479,6 +493,7 @@ const el = {
   screenRoom: $('screenRoom'),
   screenCountdown: $('screenCountdown'),
   screenChampionEnd: $('screenChampionEnd'),
+  standingsTitle: $('standingsTitle'),
   screenGame: $('screenGame'),
 
   toSingleBtn: $('toSingleBtn'),
@@ -492,6 +507,13 @@ const el = {
   lobbyBackBtn: $('lobbyBackBtn'),
   connBadge: $('connBadge'),
   createModeSeg: $('createModeSeg'),
+  createSprintRow: $('createSprintRow'),
+  sprintGoalSeg: $('sprintGoalSeg'),
+  sprintGoalInput: $('sprintGoalInput'),
+  sprintWarn: $('sprintWarn'),
+  sprintChip: $('sprintChip'),
+  sprintNow: $('sprintNow'),
+  sprintGoalNum: $('sprintGoalNum'),
   createModeDesc: $('createModeDesc'),
   createSeg: $('createSeg'),
   createCpuRow: $('createCpuRow'),
@@ -659,7 +681,8 @@ const view = {
   tone: '',
   streak: 0,             // 自分の連勝数(v3.0)
   spectating: false,     // 観戦中かどうか(v3.0)
-  spectators: 0
+  spectators: 0,
+  sprintGoal: 0          // 早抜けモードの勝ち抜け条件(v3.2)
 };
 
 const account = { token: store.get('bj4_token') || '', user: null };
@@ -904,6 +927,7 @@ function renderMedal(){
   }
   ledTick(el.medalCount);
   renderNorma();
+  renderSprint();
   updateAdBtn();
 }
 
@@ -961,6 +985,7 @@ function showScreen(name){
   updateRoundChip();
   renderStreak();
   renderSpectateChip();
+  renderSprint();
   /* v3.2: 画面が変わると持ち分の意味も変わる(練習メダル↔所持メダル)ので
      必ず表示を作り直す。これが無いとタイトルに戻っても練習メダルが残る */
   renderMedal();
@@ -2475,6 +2500,27 @@ function setNormaTarget(v){
 }
 
 /* ゲーム中のノルマ進捗表示 */
+/* 早抜けモードの進捗表示(v3.2) */
+function renderSprint(){
+  const show = screen === 'game' && view.mode === 'online'
+            && view.onlineMode === 'sprint' && !view.spectating && view.sprintGoal > 0;
+  el.sprintChip.hidden = !show;
+  if (!show) return;
+
+  const me = view.seats.find(s => s.isYou);
+  const now = me ? me.medal : 0;
+  el.sprintNow.textContent = Number(now).toLocaleString();
+  el.sprintGoalNum.textContent = Number(view.sprintGoal).toLocaleString();
+
+  const rate = now / view.sprintGoal;
+  el.sprintChip.classList.toggle('is-near', rate >= 0.7 && rate <= 1);
+  el.sprintChip.classList.toggle('is-done', !!(me && me.finished));
+  if (me && me.finished){
+    el.sprintNow.textContent = me.finishRank + '抜け';
+    el.sprintGoalNum.textContent = '達成';
+  }
+}
+
 function renderNorma(){
   const show = isSingleGame() && single.norma;
   el.normaChip.hidden = !show;
@@ -2492,6 +2538,7 @@ function renderNorma(){
 const online = {
   socket: null, roomId: null, state: null, connecting: false,
   createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10,
+  createSprintGoal: SPRINT_GOAL_DEFAULT,
   lastResultRound: -1,
   /* 演出の重複防止用(v3.0) */
   dealtRound: -1, dealerRound: -1, cardTotal: 0, dealerHole: true
@@ -2681,7 +2728,9 @@ function renderRoomList(list){
   el.roomList.innerHTML = list.map(r => {
     const modeTag = r.mode === 'champion'
       ? '<span class="room-row-tag is-champ">🏆 ' + r.championRounds + 'R</span>'
-      : '<span class="room-row-tag">エンジョイ</span>';
+      : r.mode === 'sprint'
+        ? '<span class="room-row-tag is-sprint">⚡ ' + Number(r.sprintGoal || 0).toLocaleString() + '超え</span>'
+        : '<span class="room-row-tag">エンジョイ</span>';
 
     /* 試合中の部屋は観戦、満員の待機部屋は参加不可(v3.0) */
     const stateTag = r.playing
@@ -2738,6 +2787,7 @@ function mapSeats(state){
     hand: p.hand || [], result: p.result, isYou: p.isYou,
     active: state.activeName === p.name, ready: p.ready, cpu: !!p.cpu,
     eliminated: !!p.eliminated, doubled: !!p.doubled,
+    finished: !!p.finished, finishRank: p.finishRank || null, retired: !!p.retired,
     iconColor: iconColorOf(p.iconColor)
   }));
 }
@@ -2873,6 +2923,7 @@ function endOnlineAnim(token){
 function applyRoomState(state){
   view.spectating = !!state.isSpectator;
   view.spectators = state.spectatorCount || 0;
+  view.sprintGoal = state.sprintGoal || 0;
   el.body.classList.toggle('is-spectating', view.spectating);
 
   if (state.phase === 'lobby'){
@@ -2928,19 +2979,42 @@ function applyRoomState(state){
 
 function renderStandings(state){
   const standings = state.standings || [];
+  const sprint = state.mode === 'sprint';
+  el.standingsTitle.textContent = sprint ? '早抜け 結果' : '大会結果';
+
   el.standingsList.innerHTML = standings.map(p => {
     const isYou = p.name === (state.players.find(x => x.isYou) || {}).name;
-    const rankLabel = p.eliminated ? '脱落' : ('#' + p.rank);
-    const kindLabel = p.rankKind === 'win' ? '優勝' : p.rankKind === 'draw' ? '同率1位' : (p.eliminated ? '脱落' : '順位');
+
+    /* 早抜けは「抜けた順位」。リタイアした人は順位なしで「-」表示(v3.2) */
+    let rankLabel, kindLabel, first;
+    if (sprint){
+      first = p.rank === 1;
+      rankLabel = p.rank ? ('#' + p.rank) : 'ー';
+      kindLabel = p.rank
+        ? (p.rank === 1 ? '1抜け' : p.rank + '抜け')
+        : 'リタイア';
+    } else {
+      first = p.rank === 1 && !p.eliminated;
+      rankLabel = p.eliminated ? '脱落' : ('#' + p.rank);
+      kindLabel = p.rankKind === 'win' ? '優勝'
+                : p.rankKind === 'draw' ? '同率1位'
+                : (p.eliminated ? '脱落' : '順位');
+    }
+
+    const sub = sprint
+      ? (p.rank ? '<span class="standing-sub">' + Number(p.sprintGoal || 0).toLocaleString() + ' メダル突破</span>' : '')
+      : (p.scoredRounds != null
+          ? '<span class="standing-sub">勝負したラウンド ' + p.scoredRounds + ' / ' + p.totalRounds + '</span>'
+          : '');
+
     return '' +
-      '<div class="standing-row' + (isYou ? ' is-you' : '') + (p.eliminated ? ' is-eliminated' : '') + '">' +
-        '<span class="standing-rank' + (p.rank === 1 && !p.eliminated ? ' is-first' : '') + '">' + rankLabel + '</span>' +
+      '<div class="standing-row' + (isYou ? ' is-you' : '') +
+        ((sprint ? !p.rank : p.eliminated) ? ' is-eliminated' : '') + '">' +
+        '<span class="standing-rank' + (first ? ' is-first' : '') + '">' + rankLabel + '</span>' +
         '<div class="standing-info">' +
           '<span class="standing-name">' + esc(p.name) + (p.cpu ? ' (CPU)' : '') + (isYou ? '(あなた)' : '') + '</span>' +
-          '<span class="standing-meta">' + kindLabel + ' ・ 大会メダル ' + p.medal +
-            (p.scoredRounds != null
-              ? '<span class="standing-sub">勝負したラウンド ' + p.scoredRounds + ' / ' + p.totalRounds + '</span>'
-              : '') +
+          '<span class="standing-meta">' + kindLabel + ' ・ 大会メダル ' + Number(p.medal).toLocaleString() +
+            sub +
           '</span>' +
         '</div>' +
         '<span class="standing-exp">' + (p.cpu ? '-' : '+' + p.expGain + ' EXP') + '</span>' +
@@ -2955,9 +3029,14 @@ function renderRoomScreen(state){
   if (state.mode === 'champion'){
     el.roomModeBadge.textContent = '🏆 チャンピオン ' + state.championRounds + 'R';
     el.roomModeBadge.classList.add('is-champ');
+    el.roomModeBadge.classList.remove('is-sprint');
+  } else if (state.mode === 'sprint'){
+    el.roomModeBadge.textContent = '⚡ 早抜け ' + Number(state.sprintGoal || 0).toLocaleString() + '超え';
+    el.roomModeBadge.classList.add('is-sprint');
+    el.roomModeBadge.classList.remove('is-champ');
   } else {
     el.roomModeBadge.textContent = 'エンジョイ';
-    el.roomModeBadge.classList.remove('is-champ');
+    el.roomModeBadge.classList.remove('is-champ', 'is-sprint');
   }
 
   const rows = state.players.map(p => {
@@ -3449,7 +3528,9 @@ function showInvited(data){
   pendingInvite = data;
   const modeText = data.mode === 'champion'
     ? '🏆 チャンピオン ' + data.championRounds + 'R'
-    : 'エンジョイ';
+    : data.mode === 'sprint'
+      ? '⚡ 早抜け ' + Number(data.sprintGoal || 0).toLocaleString() + '超え'
+      : 'エンジョイ';
   el.invitedText.innerHTML =
     '<b>' + esc(data.from) + '</b> さんから招待が届きました。<br>' +
     esc(modeText) + ' ・ ' + data.count + '/' + data.max + '人' +
@@ -3556,6 +3637,7 @@ function resetOnlineRoomView(){
   view.onlineMode = 'enjoy';
   view.spectating = false;
   view.spectators = 0;
+  view.sprintGoal = 0;
   el.body.classList.remove('is-spectating');
   view.seats = [];
   view.dealer = { hand: [], hole: true };
@@ -4123,13 +4205,37 @@ el.createModeSeg.addEventListener('click', (e) => {
   if (!b) return;
   online.createMode = b.dataset.mode;
   el.createModeSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
-  const isChamp = online.createMode === 'champion';
-  el.createChampRow.hidden = !isChamp;
+  const mode = online.createMode;
+  el.createChampRow.hidden = mode !== 'champion';
+  el.createSprintRow.hidden = mode !== 'sprint';
   updateCreateCpuRow();
-  el.createModeDesc.textContent = isChamp
-    ? '全員に大会専用メダル1000枚を配布して競う特別モード。最終順位に応じてEXPが変わります。'
-    : '気軽に遊べる通常モード。メダルはアカウントに反映されます。';
+  el.createModeDesc.textContent = MODE_DESC[mode] || MODE_DESC.enjoy;
   audio.play('chip');
+});
+
+/* 早抜けモードの勝ち抜け条件(v3.2) */
+el.sprintGoalSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  el.sprintGoalSeg.querySelectorAll('.seg-btn').forEach(x => x.classList.toggle('is-on', x === b));
+  if (b.dataset.goal === 'custom'){
+    el.sprintGoalInput.hidden = false;
+    el.sprintGoalInput.value = online.createSprintGoal;
+    el.sprintWarn.hidden = false;
+    setTimeout(() => el.sprintGoalInput.focus(), 60);
+  } else {
+    el.sprintGoalInput.hidden = true;
+    el.sprintWarn.hidden = true;
+    online.createSprintGoal = Number(b.dataset.goal);
+  }
+  audio.play('chip');
+});
+el.sprintGoalInput.addEventListener('input', () => {
+  online.createSprintGoal = clamp(
+    Number(el.sprintGoalInput.value) || SPRINT_GOAL_DEFAULT, SPRINT_GOAL_MIN, SPRINT_GOAL_MAX);
+});
+el.sprintGoalInput.addEventListener('blur', () => {
+  el.sprintGoalInput.value = online.createSprintGoal;
 });
 
 el.createCpuCheck.addEventListener('click', () => {
@@ -4164,7 +4270,8 @@ el.createRoomBtn.addEventListener('click', () => {
     maxPlayers: online.createMax,
     mode: online.createMode,
     cpuFill: online.createCpuFill,
-    championRounds: online.createRounds
+    championRounds: online.createRounds,
+    sprintGoal: online.createSprintGoal
   });
 });
 el.roomList.addEventListener('click', (e) => {

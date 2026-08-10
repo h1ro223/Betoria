@@ -609,6 +609,20 @@ const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤ�
 /* チャンピオンモードの全額ベットボーナス(WIN/BLACKJACKの獲得メダルを1.5倍)(v3.0) */
 const ALLIN_BONUS_RATE = 1.5;
 
+/* =========================================================
+   早抜けモード(v3.2)
+   大会メダル1000枚からスタートし、目標枚数を「超えた」人から順に勝ち抜け。
+   最後の1人が残った時点で終了し、その人はリタイア扱いになる。
+   もらえるEXPは抜けた順位で決まり、ラウンド数や目標枚数では変わらない。
+   ========================================================= */
+const SPRINT_GOAL_DEFAULT = 10000;   // おすすめの目標
+const SPRINT_GOAL_MIN     = 2000;
+const SPRINT_GOAL_MAX     = 1000000;
+/* 順位ごとの固定EXP(1位から順に) */
+const SPRINT_EXP = [120, 80, 50];
+/* リタイア(メダル切れ・最後の1人)は一律この値 */
+const SPRINT_EXP_RETIRE = 20;
+
 function buildShoe(){
   const shoe = [];
   for (let d = 0; d < DECK_COUNT; d++)
@@ -654,8 +668,11 @@ function makeRoomId(){
   return id;
 }
 
+/* 大会用メダルを使うモード(チャンピオン / 早抜け)かどうか */
+function isTourney(mode){ return mode === 'champion' || mode === 'sprint'; }
+
 function createRoom(opts){
-  const mode = opts.mode === 'champion' ? 'champion' : 'enjoy';
+  const mode = ['champion', 'sprint'].includes(opts.mode) ? opts.mode : 'enjoy';
   const room = {
     id: makeRoomId(),
     mode,
@@ -669,6 +686,12 @@ function createRoom(opts){
       ? Math.min(Math.max(Number(opts.championRounds) || CHAMPION_ROUND_MIN,
                           CHAMPION_ROUND_MIN), CHAMPION_ROUND_MAX)
       : null,
+    /* 早抜けモード(v3.2): この枚数を「超える」と勝ち抜け */
+    sprintGoal: mode === 'sprint'
+      ? Math.min(Math.max(Number(opts.sprintGoal) || SPRINT_GOAL_DEFAULT,
+                          SPRINT_GOAL_MIN), SPRINT_GOAL_MAX)
+      : null,
+    finishers: [],          // 勝ち抜けた順の名前(早抜けモード)
     hostName: null,
     players: [],            // {name, sid, cpu, level, medal, bet, hand, done, surrendered, ready, connected, eliminated}
     spectators: [],         // {name, sid, level, iconColor} 途中観戦(v3.0)
@@ -705,7 +728,7 @@ function roomList(){
     const playing = r.phase !== 'lobby';
     out.push({
       id: r.id, count: humanN, max: r.maxPlayers, host: r.hostName,
-      mode: r.mode, championRounds: r.championRounds, cpuFill: r.cpuFill,
+      mode: r.mode, championRounds: r.championRounds, sprintGoal: r.sprintGoal, cpuFill: r.cpuFill,
       playing,
       full: humanN >= r.maxPlayers,
       spectators: r.spectators.length
@@ -753,6 +776,8 @@ function roomState(room, forName, asSpectator){
     maxPlayers: room.maxPlayers,
     cpuFill: room.cpuFill,
     championRounds: room.championRounds,
+    sprintGoal: room.sprintGoal,
+    finishers: room.finishers ? room.finishers.slice() : [],
     hostName: room.hostName,
     isHost: !asSpectator && forName === room.hostName,
     isSpectator: !!asSpectator,
@@ -783,6 +808,10 @@ function roomState(room, forName, asSpectator){
       doubled: !!p.doubled,
       allIn: !!p.allIn,
       streak: p.streak || 0,
+      /* 早抜けモード(v3.2) */
+      finished: !!p.finished,
+      finishRank: p.finishRank || null,
+      retired: !!p.retired,
       isYou: p.name === forName
     }))
   };
@@ -876,13 +905,17 @@ function beginCountdown(io, room){
     if (n <= 0){
       clearInterval(room.countdownTimer);
       room.countdownTimer = null;
-      if (room.mode === 'champion'){
+      if (isTourney(room.mode)){
         for (const p of room.players){
           p.medal = CHAMPION_START_MEDAL;
           p.eliminated = false;
           p.eliminatedAtRound = null;
           p.scoredRounds = 0;   // サレンダー以外で勝負したラウンド数
+          p.finished = false;        // 早抜け: 条件を達成したか(v3.2)
+          p.finishRank = null;
+          p.retired = false;
         }
+        room.finishers = [];
         room.round = 0;
         room.standings = null;
       }
@@ -1055,14 +1088,32 @@ async function finishRound(io, room){
     }
 
     /* サレンダーはEXP計算の対象外。実際に勝負したラウンドだけ数える */
-    if (room.mode === 'champion' && !p.surrendered && p.bet > 0){
+    if (isTourney(room.mode) && !p.surrendered && p.bet > 0){
       p.scoredRounds = (p.scoredRounds || 0) + 1;
     }
 
-    if (room.mode === 'champion' && p.medal <= 0 && !p.eliminated){
+    if (isTourney(room.mode) && p.medal <= 0 && !p.eliminated){
       p.medal = 0;
       p.eliminated = true;
       p.eliminatedAtRound = room.round;
+      if (room.mode === 'sprint') p.retired = true;   // 早抜けではリタイア扱い
+    }
+  }
+
+  /* 早抜け: 目標を「超えた」人を、そのラウンドで抜けた扱いにする(v3.2)
+     同じラウンドで複数人が達成したときは、そのラウンドのベット額が多い方が上位 */
+  if (room.mode === 'sprint'){
+    const cleared = room.players
+      .filter(p => !p.finished && !p.eliminated && p.medal > room.sprintGoal)
+      .sort((a, b) => (b.bet - a.bet) || String(a.name).localeCompare(String(b.name)));
+    for (const p of cleared){
+      p.finished = true;
+      p.eliminated = true;                 // 以降は観戦にする
+      p.eliminatedAtRound = room.round;
+      p.finishRank = room.finishers.length + 1;
+      room.finishers.push(p.name);
+      chatSystem(io, room, p.name + ' さんが ' + room.sprintGoal +
+                 ' メダルを突破! (' + p.finishRank + '抜け)');
     }
   }
 
@@ -1070,6 +1121,7 @@ async function finishRound(io, room){
   broadcast(io, room);
 
   if (room.mode === 'champion') await maybeEndChampionship(io, room);
+  else if (room.mode === 'sprint') await maybeEndSprint(io, room);
 }
 
 /* =========================================================
@@ -1153,6 +1205,81 @@ async function maybeEndChampionship(io, room){
   room.standings = results;
   room.phase = 'champion_end';
   room.message = '大会終了';
+  broadcast(io, room);
+  broadcastLobby(io);
+}
+
+/* =========================================================
+   7.5 早抜けモードの終了判定・EXP付与(v3.2)
+
+   ・目標を超えた人から順に勝ち抜け(勝ち抜けた時点で観戦になる)
+   ・残りが1人になった瞬間に終了。その1人はリタイア扱いで順位は「-」
+   ・メダルが尽きた人もリタイア
+   ・EXPは抜けた順位で固定。ラウンド数や目標枚数では変わらない
+   ・全員がリタイア(誰も抜けられなかった)ときは全員0EXP
+   ========================================================= */
+async function maybeEndSprint(io, room){
+  /* まだ勝負を続けられる人 */
+  const alive = room.players.filter(p => !p.eliminated);
+  /* 残り1人になったら終了。全員抜けた/全滅した場合も終了 */
+  if (alive.length > 1) return;
+  if (room.players.length <= 1 && alive.length === 1) return;
+
+  /* 最後まで残った1人はリタイア扱い */
+  for (const p of alive){
+    p.eliminated = true;
+    p.retired = true;
+    p.eliminatedAtRound = room.round;
+  }
+
+  const anyFinished = room.players.some(p => p.finished);
+
+  /* 抜けた順 → リタイア(遅く落ちたほど上) の順に並べる */
+  const ranked = [...room.players].sort((a, b) => {
+    if (a.finished !== b.finished) return a.finished ? -1 : 1;
+    if (a.finished) return a.finishRank - b.finishRank;
+    return (b.eliminatedAtRound || 0) - (a.eliminatedAtRound || 0);
+  });
+
+  const results = [];
+  for (const p of ranked){
+    let expGain, rankKind, rank;
+    if (p.finished){
+      rank = p.finishRank;
+      expGain = SPRINT_EXP[rank - 1] || SPRINT_EXP[SPRINT_EXP.length - 1];
+      rankKind = rank === 1 ? 'win' : 'lose';
+    } else {
+      /* リタイアは順位なし。誰も抜けられなかった場合はEXPも0 */
+      rank = null;
+      expGain = anyFinished ? SPRINT_EXP_RETIRE : 0;
+      rankKind = 'lose';
+    }
+
+    let levelUp = 0, userAfter = null;
+    if (!p.cpu){
+      try {
+        const u = await db.findUser(p.name);
+        if (u){
+          levelUp = applyChampionResult(u, { rankKind, expGain });
+          await db.saveUser(u);
+          userAfter = publicUser(u);
+          p.level = u.level;
+        }
+      } catch (e){ console.error('[sprint]', e.message); }
+    }
+
+    results.push({
+      name: p.name, cpu: !!p.cpu, rank, medal: p.medal,
+      eliminated: !p.finished, retired: !p.finished,
+      expGain, rankKind, sprintGoal: room.sprintGoal
+    });
+
+    if (p.sid && userAfter) io.to(p.sid).emit('account:update', { user: userAfter, levelUp });
+  }
+
+  room.standings = results;
+  room.phase = 'champion_end';
+  room.message = anyFinished ? '早抜け終了' : '全員リタイアで終了';
   broadcast(io, room);
   broadcastLobby(io);
 }
@@ -1955,12 +2082,12 @@ io.on('connection', (socket) => {
 
   socket.on('room:list', () => socket.emit('room:list', roomList()));
 
-  socket.on('room:create', async ({ maxPlayers, mode, cpuFill, championRounds } = {}) => {
+  socket.on('room:create', async ({ maxPlayers, mode, cpuFill, championRounds, sprintGoal } = {}) => {
     if (findAnyRoom(socket.id)) return;
     await refreshSocketUser(socket);
     if (findAnyRoom(socket.id)) return;
 
-    const room = createRoom({ maxPlayers, mode, cpuFill, championRounds });
+    const room = createRoom({ maxPlayers, mode, cpuFill, championRounds, sprintGoal });
     room.hostName = name;
     room.players.push(makePlayer(socket));
     socket.join(room.id);
@@ -2090,7 +2217,7 @@ io.on('connection', (socket) => {
     const bet = Math.floor(Number(amount) || 0);
     if (bet < MIN_BET) return socket.emit('room:error', 'ベット額が不正です');
 
-    if (room.mode === 'champion'){
+    if (isTourney(room.mode)){
       if (bet > p.medal) return socket.emit('room:error', '大会用メダルが足りません');
       /* 全額ベット判定(チャンピオンモードのボーナス対象) */
       p.allIn = bet === p.medal;
@@ -2171,7 +2298,7 @@ io.on('connection', (socket) => {
     const extra = p.bet;
     if (extra <= 0) return;
 
-    if (room.mode === 'champion'){
+    if (isTourney(room.mode)){
       if (p.medal < extra) return socket.emit('room:error', '大会用メダルが足りません');
       p.medal -= extra;
     } else {
@@ -2280,6 +2407,7 @@ io.on('connection', (socket) => {
         roomId: room.id,
         mode: room.mode,
         championRounds: room.championRounds,
+        sprintGoal: room.sprintGoal,
         count: humanCount(room),
         max: room.maxPlayers
       });
