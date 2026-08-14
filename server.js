@@ -194,7 +194,20 @@ const db = (() => {
   const pool = new Pool({
     connectionString: url,
     ssl: { rejectUnauthorized: false },
-    max: 5
+    max: 5,
+    /* 長時間放置された接続はDB側から切られることがあるので、
+       こちらから先に片付けて作り直す(v3.2 修正) */
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000,
+    keepAlive: true
+  });
+
+  /* これが無いと、待機中の接続でエラーが起きたときに
+     Node.jsのプロセスごと落ちる(pgの仕様)。
+     Renderの無料プランは寝て起きてを繰り返すため、
+     アイドル接続が切られる場面が多く、実際にクラッシュしていた。 */
+  pool.on('error', (e) => {
+    console.error('[db] プール接続でエラー(処理は継続します):', e.message);
   });
 
   const COLS = 'username, pass_hash, medal, level, exp, rounds, wins, losses, pushes, bj, ' +
@@ -1314,6 +1327,15 @@ const app = express();
 app.use(express.json({ limit: '16kb' }));
 app.use(express.static(path.join(__dirname), { extensions: ['html'] }));
 
+/* APIの応答が確実にJSONになるようにする(v3.2 修正)。
+   静的配信が先に効いていると、/api/... のエラー時に
+   HTMLのページが返ってしまい、外部cronから見ると
+   「HTMLが返ってきた」「サイズが大きすぎる」という失敗になる。 */
+app.use('/api', (req, res, next) => {
+  res.set('Cache-Control', 'no-store');
+  next();
+});
+
 function authFail(res, msg){ return res.status(401).json({ error: msg }); }
 
 async function currentUser(req){
@@ -1918,17 +1940,32 @@ async function catchUpSettle(){
 function scheduleMidnight(){
   const wait = msUntilNextJstMidnight() + 3000;   // 日付が確実に変わってから
   setTimeout(async () => {
-    await catchUpSettle();
-    /* 接続中の全員に日付が変わったことを伝える */
-    for (const [, sock] of io.of('/').sockets) sock.emit('day:changed', { date: jstDateKey() });
-    scheduleMidnight();
+    /* ここで例外が漏れると、次回の予約がされず定時処理が二度と動かなくなる。
+       何があっても必ず再予約する(v3.2 修正) */
+    try {
+      await catchUpSettle();
+      /* 接続中の全員に日付が変わったことを伝える */
+      for (const [, sock] of io.of('/').sockets) sock.emit('day:changed', { date: jstDateKey() });
+    } catch (e){
+      console.error('[rank] 定時処理でエラー:', e.message);
+    } finally {
+      scheduleMidnight();
+    }
   }, wait);
 }
 
-/* 外部cronからの起こし用。ここを叩くとスリープから復帰して集計が走る */
+/* 外部cronからの起こし用。ここを叩くとスリープから復帰して集計が走る。
+   cron側は応答サイズの上限が小さいので、必ず短いJSONだけを返す(v3.2) */
 app.get('/api/cron/tick', async (req, res) => {
-  await catchUpSettle();
-  res.json({ ok: true, today: jstDateKey(), lastSettled: await db.lastSettled() });
+  try {
+    await catchUpSettle();
+    res.json({ ok: true, today: jstDateKey(), lastSettled: await db.lastSettled() });
+  } catch (e){
+    /* ここで例外を投げると500になり、cron側は「HTTP error」で失敗扱いになる。
+       集計は次のアクセス時にやり直せるので、200で状況だけ伝える */
+    console.error('[cron]', e.message);
+    res.json({ ok: false, today: jstDateKey(), error: 'retry' });
+  }
 });
 
 app.get('/api/ranking', async (req, res) => {
@@ -2636,6 +2673,31 @@ function leaveRoom(socket){
 /* =========================================================
    10. 起動
    ========================================================= */
+/* ここまでのルートで処理されなかった /api/... は404をJSONで返す。
+   これが無いと静的配信のHTMLが返り、外部cronが誤判定する(v3.2) */
+app.use('/api', (req, res) => {
+  res.status(404).json({ error: 'not found' });
+});
+
+/* ルート内で例外が漏れた場合も、HTMLではなく短いJSONで返す(v3.2) */
+app.use((err, req, res, next) => {
+  console.error('[api]', err && err.message ? err.message : err);
+  if (res.headersSent) return next(err);
+  if (req.path && req.path.startsWith('/api')){
+    return res.status(500).json({ error: 'server error' });
+  }
+  res.status(500).send('server error');
+});
+
+/* 想定外の例外でプロセスごと落ちると、対戦中の全員が切断されてしまう。
+   ログだけ残して動き続ける(v3.2 修正) */
+process.on('unhandledRejection', (e) => {
+  console.error('[fatal] 未処理のPromise拒否(継続します):', e && e.message ? e.message : e);
+});
+process.on('uncaughtException', (e) => {
+  console.error('[fatal] 未処理の例外(継続します):', e && e.message ? e.message : e);
+});
+
 db.init()
   .then(async () => {
     /* スリープ中に日付をまたいでいた場合の取りこぼしをここで拾う(v3.2) */
