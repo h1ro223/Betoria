@@ -67,7 +67,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BLACKJACK<em>4</em></h1>
       <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v3.2 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v3.3 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -90,6 +90,13 @@
         <span class="title-btn-text">
           <span class="title-btn-name">ランキング</span>
           <span class="title-btn-desc">総獲得枚数・一撃獲得枚数を競う</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="toTutorialBtn">
+        <span class="title-btn-icon">🎓</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">チュートリアル</span>
+          <span class="title-btn-desc">遊び方を実際の画面で学ぶ</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRulesBtn">
@@ -296,6 +303,14 @@
   <!-- ---------- ゲーム ---------- -->
   <section class="screen" id="screenGame" hidden>
 
+    <div class="tutorial-head" id="tutorialHead" hidden>
+      <button type="button" class="back-btn" id="tutorialExitBtn">← 退出</button>
+      <div class="tutorial-progress">
+        <span class="tutorial-chapter" id="tutorialChapter">1 / 6</span>
+        <span class="tutorial-title" id="tutorialTitle">基本の流れ</span>
+      </div>
+    </div>
+
     <div class="game-bar">
       <div class="round-chip" id="roundChip" hidden>
         <span class="round-cap">ラウンド</span>
@@ -418,6 +433,26 @@
     <button type="button" class="btn btn-ghost" id="spectateLeaveBtn">観戦をやめる</button>
   </div>
 
+  <div class="panel" id="tutorialPanel" hidden>
+    <p class="tutorial-text" id="tutorialText">-</p>
+    <div class="tutorial-actions">
+      <button type="button" class="btn btn-ghost" id="tutorialSkipBtn">この章をとばす</button>
+      <button type="button" class="btn btn-primary" id="tutorialNextBtn">次へ ▶</button>
+    </div>
+  </div>
+
+  <div class="panel" id="tutorialEndPanel" hidden>
+    <p class="single-end-title is-clear">チュートリアル完了!</p>
+    <p class="single-end-text">
+      これで基本ルールはばっちりです。<br>
+      さっそくシングルプレイで練習してみましょう!
+    </p>
+    <div class="single-end-actions">
+      <button type="button" class="btn btn-ghost" id="tutorialEndBackBtn">タイトルへ</button>
+      <button type="button" class="btn btn-primary" id="tutorialEndPlayBtn">遊んでみる</button>
+    </div>
+  </div>
+
   <div class="panel" id="singleEndPanel" hidden>
     <p class="single-end-title" id="singleEndTitle">ゲームクリア!</p>
     <p class="single-end-text" id="singleEndText">-</p>
@@ -479,7 +514,7 @@
 
         <label class="field-label" for="authName">ユーザー名<span class="field-hint">英数字1〜8文字</span></label>
         <input type="text" id="authName" class="text-input" maxlength="8" autocomplete="username"
-               autocapitalize="off" spellcheck="false" placeholder="hiro">
+               autocapitalize="off" spellcheck="false" placeholder="Jack">
 
         <label class="field-label" for="authPass">パスワード<span class="field-hint">英数字1〜8文字</span></label>
         <input type="password" id="authPass" class="text-input" maxlength="8" autocomplete="current-password"
@@ -666,6 +701,14 @@
         </ul>
       </div>
       <div class="sheet-section">
+        <h3>はじめての方へ</h3>
+        <ul class="rule-list">
+          <li>タイトル画面の <b>🎓 チュートリアル</b> では、実際のゲーム画面を使って遊び方を学べます。</li>
+          <li>全6章で、4つの選択肢(HIT / STAND / DOUBLE / SURRENDER)と、5つの結果(WIN / LOSE / BUST / PUSH / BLACKJACK)をひと通り体験できます。</li>
+          <li>「次へ」を押すだけで進みます。メダルや戦績には影響しないので、気軽に試してください。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>シングルプレイ(練習モード)</h3>
         <ul class="rule-list">
           <li>ゲーム開始のたびに<b>専用メダル1000枚</b>が配られます。<b>アカウントの所持メダルは増減しません</b>。</li>
@@ -807,6 +850,15 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v3.3</h3>
+        <ul class="rule-list">
+          <li><b>🎓 チュートリアル</b>を追加しました。タイトル画面から、実際のゲーム画面で遊び方を学べます。</li>
+          <li>全6章で <b>HIT・STAND・DOUBLE・SURRENDER</b> の使い方と、<b>WIN・LOSE・BUST・PUSH・BLACKJACK</b> の結果をひと通り体験できます。</li>
+          <li>手札は固定なので毎回同じ流れで学べます。<b>「次へ」を押すだけ</b>で進み、いつでも<b>退出</b>できます。</li>
+          <li>チュートリアルの結果はメダル・経験値・戦績・ランキングに<b>影響しません</b>。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v3.2</h3>
         <ul class="rule-list">

@@ -398,6 +398,19 @@ const el = {
   normaNow: $('normaNow'),
   normaGoal: $('normaGoal'),
   singleEndPanel: $('singleEndPanel'),
+
+  toTutorialBtn: $('toTutorialBtn'),
+  tutorialHead: $('tutorialHead'),
+  tutorialExitBtn: $('tutorialExitBtn'),
+  tutorialChapter: $('tutorialChapter'),
+  tutorialTitle: $('tutorialTitle'),
+  tutorialPanel: $('tutorialPanel'),
+  tutorialText: $('tutorialText'),
+  tutorialNextBtn: $('tutorialNextBtn'),
+  tutorialSkipBtn: $('tutorialSkipBtn'),
+  tutorialEndPanel: $('tutorialEndPanel'),
+  tutorialEndBackBtn: $('tutorialEndBackBtn'),
+  tutorialEndPlayBtn: $('tutorialEndPlayBtn'),
   singleEndTitle: $('singleEndTitle'),
   singleEndText: $('singleEndText'),
   singleEndBackBtn: $('singleEndBackBtn'),
@@ -917,6 +930,18 @@ function activeMedal(){
 function renderMedal(){
   const tourney = view.mode === 'online' && view.onlineMode !== 'enjoy' && !view.spectating;
 
+  /* チュートリアルは架空のメダルで進むので、席の値をそのまま出す(v3.3) */
+  if (view.mode === 'tutorial'){
+    const me = view.seats[0];
+    el.medalCount.textContent = me ? me.medal : 1000;
+    if (el.medalLabel) el.medalLabel.textContent = '練習メダル';
+    ledTick(el.medalCount);
+    renderNorma();
+    renderSprint();
+    updateAdBtn();
+    return;
+  }
+
   if (isSingleGame()){
     el.medalCount.textContent = single.medal;
     if (el.medalLabel) el.medalLabel.textContent = '練習メダル';
@@ -960,6 +985,8 @@ function showPanel(name){
   el.waitPanel.hidden   = name !== 'wait';
   el.spectatePanel.hidden = name !== 'spectate';
   el.singleEndPanel.hidden = name !== 'single-end';
+  el.tutorialPanel.hidden = name !== 'tutorial';
+  el.tutorialEndPanel.hidden = name !== 'tutorial-end';
   el.controls.hidden    = (screen !== 'game') || name === 'none';
 }
 
@@ -982,6 +1009,11 @@ function showScreen(name){
      大会系(チャンピオン/早抜け)と観戦中も対象外 */
   el.adBtn.hidden = !(name === 'game' && view.mode === 'online'
                       && !view.spectating && view.onlineMode === 'enjoy');
+  /* チュートリアル中はヘッダーの各種ボタンを触らせない(v3.3) */
+  if (view.mode === 'tutorial'){
+    el.adBtn.hidden = true;
+    el.roundChip.hidden = true;
+  }
   el.medalReadout.hidden = !(name === 'game' || account.user);
   el.brandBtn.disabled = name === 'title';
 
@@ -2539,6 +2571,377 @@ function renderNorma(){
   const rate = single.medal / single.normaTarget;
   el.normaChip.classList.toggle('is-near', rate >= 0.7 && rate < 1);
   el.normaChip.classList.toggle('is-done', rate >= 1);
+}
+
+/* =========================================================
+   11.5 チュートリアル(v3.3)
+
+   実際のゲーム画面をそのまま使い、決まった手札で6章を見せる。
+   カードは固定なので毎回まったく同じ展開になり、
+   HIT / STAND / DOUBLE / SURRENDER と
+   WIN / LOSE / BUST / PUSH / BLACKJACK を1回ずつ確実に体験できる。
+
+   プレイヤーは「次へ」を押すだけ(操作は自動)。
+   メダル・EXP・戦績・ランキングには一切影響しない。
+   ========================================================= */
+const TUTORIAL_BET = 100;
+
+/* カードの書き方: 'A♠' のように ランク+マーク */
+const C = (s) => {
+  const rank = s.length === 3 ? s.slice(0, 2) : s[0];
+  const mark = s.slice(-1);
+  const su = SUITS.find(x => x.mark === mark) || SUITS[0];
+  return { rank, mark: su.mark, red: su.red };
+};
+
+const TUTORIAL_CHAPTERS = [
+  /* ---------- 1章: HIT / STAND / WIN ---------- */
+  {
+    title: '基本の流れ',
+    you: [C('10♠'), C('7♦')],
+    dealer: [C('9♣'), C('K♥')],   // 2枚目は最初は裏向き
+    draws: [C('3♥')],             // HITで引く札
+    steps: [
+      { say: 'ブラックジャックへようこそ! まずは基本の流れを見てみましょう。' },
+      { say: 'ゲームはベットから始まります。今回は 100メダル を賭けた状態で進めます。', act: 'bet' },
+      { say: 'あなたに2枚、ディーラーにも2枚配られます。ディーラーの2枚目は伏せられています。', act: 'deal' },
+      { say: '目標は「21を超えずに、ディーラーより大きい数」を作ることです。絵札(J・Q・K)は10、Aは1か11として数えます。' },
+      { say: 'あなたの手札は 10 と 7 で <b>17</b>。もう1枚引くか、ここで止めるかを選びます。' },
+      { say: '<b>HIT</b> はもう1枚引くことです。押してみましょう。', act: 'hit', focus: 'hitBtn' },
+      { say: '3 を引いて <b>20</b> になりました! 21に近づきましたね。' },
+      { say: '<b>STAND</b> はこの手札で勝負することです。20なら十分強いので止めましょう。', act: 'stand', focus: 'standBtn' },
+      { say: 'あなたの番が終わると、ディーラーが伏せていたカードを開きます。', act: 'dealer' },
+      { say: 'ディーラーは 9 と K で <b>19</b>。あなたの 20 の方が大きいので…', act: 'settle' },
+      { say: '<b>WIN!</b> 勝つとベットが <b>2倍</b> になって戻ってきます(100 → 200メダル)。' }
+    ]
+  },
+
+  /* ---------- 2章: BUST ---------- */
+  {
+    title: '引きすぎに注意',
+    you: [C('9♠'), C('6♣')],
+    dealer: [C('8♦'), C('7♠')],
+    draws: [C('Q♥')],
+    steps: [
+      { say: '次は気をつけたいパターンです。引きすぎるとどうなるでしょう?', act: 'bet' },
+      { say: 'あなたの手札は 9 と 6 で <b>15</b>。少し物足りない数字です。', act: 'deal' },
+      { say: 'もう1枚引いてみましょう。', act: 'hit', focus: 'hitBtn' },
+      { say: 'Q(=10)を引いて <b>25</b>。21を超えてしまいました。', act: 'settle' },
+      { say: 'これが <b>BUST(バースト)</b> です。21を超えた時点で<b>その場で負け</b>となり、ベットしたメダルは戻ってきません。' },
+      { say: '「あと1枚引くか」の判断がこのゲームの一番の悩みどころです。' }
+    ]
+  },
+
+  /* ---------- 3章: PUSH ---------- */
+  {
+    title: '引き分け',
+    you: [C('10♥'), C('9♠')],
+    dealer: [C('J♣'), C('9♦')],
+    draws: [],
+    steps: [
+      { say: '3つ目は引き分けのパターンです。', act: 'bet' },
+      { say: 'あなたは 10 と 9 で <b>19</b>。良い手札なのでこのまま勝負しましょう。', act: 'deal' },
+      { say: '<b>STAND</b> で勝負します。', act: 'stand', focus: 'standBtn' },
+      { say: 'ディーラーのカードを開くと…', act: 'dealer' },
+      { say: 'ディーラーも J と 9 で <b>19</b>。まったく同じ数字です。', act: 'settle' },
+      { say: 'これが <b>PUSH(引き分け)</b> です。勝ちでも負けでもないので、<b>ベットしたメダルはそのまま戻ってきます</b>。' }
+    ]
+  },
+
+  /* ---------- 4章: DOUBLE / LOSE ---------- */
+  {
+    title: 'ダブルダウン',
+    you: [C('6♠'), C('5♦')],
+    dealer: [C('9♥'), C('K♠')],
+    draws: [C('4♣')],
+    steps: [
+      { say: 'ここからは少し進んだ選択肢です。', act: 'bet' },
+      { say: 'あなたは 6 と 5 で <b>11</b>。次に10や絵札を引けば21になる、絶好の場面です。', act: 'deal' },
+      { say: '<b>DOUBLE(ダブルダウン)</b> は、ベットを<b>倍</b>にして<b>1枚だけ</b>引く選択です。勝てば儲けも倍になります。', focus: 'doubleBtn' },
+      { say: 'ただし引けるのは1枚だけで、その後は自動的にSTANDになります。押してみましょう。', act: 'double', focus: 'doubleBtn' },
+      { say: 'ベットが 200メダル になり、4 を引いて <b>15</b>。少し弱い数字になってしまいました。', act: 'dealer' },
+      { say: 'ディーラーは 9 と K で <b>19</b>。あなたの 15 では届きません。', act: 'settle' },
+      { say: '<b>LOSE</b>。倍賭けしていたので、失う額も倍(200メダル)になります。ダブルダウンは強い場面を見極めて使いましょう。' }
+    ]
+  },
+
+  /* ---------- 5章: SURRENDER ---------- */
+  {
+    title: 'サレンダー',
+    you: [C('10♦'), C('6♥')],
+    dealer: [C('A♠'), C('Q♣')],
+    draws: [],
+    steps: [
+      { say: '最後の選択肢は「降りる」という手です。', act: 'bet' },
+      { say: 'あなたは 10 と 6 で <b>16</b>。引けばバーストしやすく、止めても勝ちにくい一番つらい数字です。', act: 'deal' },
+      { say: 'しかもディーラーの見えているカードは <b>A</b>。とても強い可能性が高い状況です。' },
+      { say: '<b>SURRENDER</b> は勝負を降りる代わりに、<b>ベットの半分だけ</b>戻ってくる選択です。', focus: 'surrenderBtn' },
+      { say: '勝ち目が薄いときは、損失を半分に抑えるのも立派な戦略です。押してみましょう。', act: 'surrender', focus: 'surrenderBtn' },
+      { say: '100メダルのうち <b>50メダルが戻り</b>、このラウンドは終了です。最初の2枚のときだけ選べます。', act: 'settle' }
+    ]
+  },
+
+  /* ---------- 6章: BLACKJACK ---------- */
+  {
+    title: 'ブラックジャック',
+    you: [C('A♠'), C('K♦')],
+    dealer: [C('10♣'), C('8♥')],
+    draws: [],
+    steps: [
+      { say: '最後は、このゲームで一番うれしい瞬間です。', act: 'bet' },
+      { say: '配られた2枚は A と K。Aは11として数えるので…', act: 'deal' },
+      { say: '<b>最初の2枚でちょうど21</b>! これが <b>BLACKJACK</b> です。', act: 'settle' },
+      { say: 'ブラックジャックの配当は <b>2.5倍</b>。100メダルが 250メダル になります(通常の勝ちは2倍)。' },
+      { say: 'なお、ディーラーもブラックジャックだった場合は引き分け(PUSH)になります。' },
+      { say: 'これで基本ルールはすべて完了です。おつかれさまでした!' }
+    ]
+  }
+];
+
+const tutorial = { chapter: 0, step: 0, busy: false, active: false };
+
+function startTutorial(){
+  view.mode = 'tutorial';
+  view.onlineMode = 'enjoy';
+  tutorial.active = true;
+  tutorial.chapter = 0;
+  tutorial.step = 0;
+  tutorial.busy = false;
+  shownCount.clear();
+  setStreak(0);
+
+  el.tutorialHead.hidden = false;
+  el.body.classList.add('is-tutorial');
+  showScreen('game');
+  beginTutorialChapter();
+}
+
+function endTutorial(){
+  tutorial.active = false;
+  tutorial.busy = false;
+  el.tutorialHead.hidden = true;
+  el.body.classList.remove('is-tutorial');
+  clearFocus();
+  view.mode = null;
+  view.seats = [];
+  view.dealer = { hand: [], hole: true };
+}
+
+/* 章のはじめ: 盤面を作り直す */
+function beginTutorialChapter(){
+  const ch = TUTORIAL_CHAPTERS[tutorial.chapter];
+  tutorial.step = 0;
+
+  el.tutorialChapter.textContent = (tutorial.chapter + 1) + ' / ' + TUTORIAL_CHAPTERS.length;
+  el.tutorialTitle.textContent = ch.title;
+
+  view.phase = 'bet';
+  view.dealer = { hand: [], hole: true };
+  view.seats = [{
+    name: account.user ? account.user.username : 'あなた',
+    level: account.user ? account.user.level : 1,
+    isYou: true, cpu: false,
+    medal: 1000, bet: 0, hand: [], result: null,
+    done: false, playing: true, active: true, surrendered: false, doubled: false
+  }];
+
+  renderTable();
+  renderMedal();
+  showPanel('tutorial');
+  el.tutorialSkipBtn.hidden = tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1;
+  runTutorialStep();
+}
+
+/* 今のステップの文言を出す(演出は「次へ」で進む) */
+function runTutorialStep(){
+  const ch = TUTORIAL_CHAPTERS[tutorial.chapter];
+  const st = ch.steps[tutorial.step];
+  if (!st) return;
+  el.tutorialText.innerHTML = st.say;
+  setFocus(st.focus);
+  el.tutorialNextBtn.textContent =
+    (tutorial.step >= ch.steps.length - 1)
+      ? (tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1 ? '完了 ▶' : '次の章へ ▶')
+      : '次へ ▶';
+}
+
+/* 「次へ」: 今のステップの演出を実行してから、次の文言に進む */
+async function tutorialNext(){
+  if (tutorial.busy) return;
+  const ch = TUTORIAL_CHAPTERS[tutorial.chapter];
+  const st = ch.steps[tutorial.step];
+  if (!st) return;
+
+  tutorial.busy = true;
+  el.tutorialNextBtn.disabled = true;
+  clearFocus();
+
+  try {
+    if (st.act) await runTutorialAct(st.act, ch);
+  } catch (e){ console.warn('[tutorial]', e); }
+
+  tutorial.busy = false;
+  el.tutorialNextBtn.disabled = false;
+
+  tutorial.step++;
+  if (tutorial.step < ch.steps.length){
+    runTutorialStep();
+    return;
+  }
+
+  /* 章が終わった */
+  if (tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1){
+    finishTutorial();
+  } else {
+    tutorial.chapter++;
+    beginTutorialChapter();
+  }
+}
+
+/* 各ステップに紐づく盤面の動き */
+async function runTutorialAct(act, ch){
+  const seat = view.seats[0];
+
+  if (act === 'bet'){
+    seat.bet = TUTORIAL_BET;
+    seat.medal = 1000 - TUTORIAL_BET;
+    renderTable();
+    audio.play('chip');
+    await sleep(REVEAL_MS * 0.5);
+    return;
+  }
+
+  if (act === 'deal'){
+    view.phase = 'deal';
+    /* 実際の配札と同じ順(自分→ディーラー→自分→ディーラー) */
+    for (let i = 0; i < 2; i++){
+      seat.hand.push(ch.you[i]);
+      audio.play('deal');
+      renderTable();
+      await sleep(DEAL_MS);
+      view.dealer.hand.push(ch.dealer[i]);
+      audio.play('deal');
+      renderTable();
+      await sleep(DEAL_MS);
+    }
+    view.phase = 'play';
+    renderTable();
+    return;
+  }
+
+  if (act === 'hit'){
+    seat.hand.push(ch.draws.shift());
+    audio.play('deal');
+    showFx('hit');
+    renderTable();
+    await sleep(DEAL_MS);
+    const v = handValue(seat.hand);
+    if (v.bust){
+      audio.play('bust');
+      showFx('bust');
+      setMessage('バースト! ' + v.total, 'alert');
+      await sleep(REVEAL_MS);
+    }
+    return;
+  }
+
+  if (act === 'stand'){
+    seat.done = true;
+    audio.play('button');
+    setMessage('スタンド (' + handValue(seat.hand).total + ')');
+    await sleep(REVEAL_MS * 0.7);
+    return;
+  }
+
+  if (act === 'double'){
+    seat.bet = TUTORIAL_BET * 2;
+    seat.medal = 1000 - seat.bet;
+    seat.doubled = true;
+    audio.play('chip');
+    showFx('double');
+    renderTable();
+    await sleep(REVEAL_MS * 0.7);
+    seat.hand.push(ch.draws.shift());
+    seat.done = true;
+    audio.play('deal');
+    renderTable();
+    await sleep(DEAL_MS);
+    return;
+  }
+
+  if (act === 'surrender'){
+    seat.surrendered = true;
+    seat.done = true;
+    audio.play('button');
+    showFx('surrender');
+    await sleep(REVEAL_MS * 0.7);
+    return;
+  }
+
+  if (act === 'dealer'){
+    view.phase = 'dealer';
+    view.dealer.hole = false;
+    audio.play('flip');
+    renderTable();
+    await sleep(REVEAL_MS);
+    return;
+  }
+
+  if (act === 'settle'){
+    view.phase = 'result';
+    view.dealer.hole = false;
+
+    if (seat.surrendered){
+      seat.result = { payout: Math.floor(seat.bet / 2), kind: 'surrender', label: 'SURRENDER' };
+    } else {
+      seat.result = judge(seat.hand, seat.bet, view.dealer.hand);
+      seat.result.doubled = !!seat.doubled;
+    }
+    seat.medal += seat.result.payout;
+
+    renderTable();
+    renderMedal();
+
+    const k = seat.result.kind;
+    if (k === 'bj'){ audio.play('bj'); showFx('blackjack'); }
+    else if (k === 'win'){ audio.play('win'); showFx('win'); }
+    else if (k === 'push'){ audio.play('push'); }
+    else if (!seat.surrendered) audio.play('lose');
+
+    await sleep(REVEAL_MS);
+    return;
+  }
+}
+
+/* 章を飛ばす */
+function skipTutorialChapter(){
+  if (tutorial.busy) return;
+  if (tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1) return;
+  audio.play('button');
+  tutorial.chapter++;
+  beginTutorialChapter();
+}
+
+function finishTutorial(){
+  clearFocus();
+  el.tutorialHead.hidden = true;
+  showPanel('tutorial-end');
+  audio.play('win');
+  showFx('clear');
+  setMessage('チュートリアル完了!', 'good');
+}
+
+/* 説明中のボタンを光らせる */
+let focusedEl = null;
+function setFocus(id){
+  clearFocus();
+  if (!id || !el[id]) return;
+  focusedEl = el[id];
+  focusedEl.classList.add('is-guided');
+}
+function clearFocus(){
+  if (focusedEl) focusedEl.classList.remove('is-guided');
+  focusedEl = null;
 }
 
 /* =========================================================
@@ -4188,6 +4591,14 @@ el.toSettingsBtn.addEventListener('click', () => { audio.play('button'); renderS
 
 el.brandBtn.addEventListener('click', () => {
   if (screen === 'title') return;
+  if (tutorial.active && screen === 'game'){
+    if (!confirm('チュートリアルを終了してタイトルに戻りますか?')) return;
+    endTutorial();
+    audio.play('button');
+    showScreen('title');
+    renderMedal();
+    return;
+  }
   if (screen === 'room' || (screen === 'game' && view.mode === 'online')){
     if (!confirm('部屋から退出してタイトルに戻りますか?')) return;
     if (online.socket) online.socket.emit('room:leave');
@@ -4257,6 +4668,27 @@ el.singleEndBackBtn.addEventListener('click', () => {
 });
 
 el.singleStartBtn.addEventListener('click', () => { audio.play('button'); startSingle(); });
+
+/* --- チュートリアル(v3.3) --- */
+el.toTutorialBtn.addEventListener('click', () => { audio.play('button'); startTutorial(); });
+el.tutorialNextBtn.addEventListener('click', tutorialNext);
+el.tutorialSkipBtn.addEventListener('click', skipTutorialChapter);
+el.tutorialExitBtn.addEventListener('click', () => {
+  if (!confirm('チュートリアルを終了してタイトルに戻りますか?')) return;
+  audio.play('button');
+  endTutorial();
+  showScreen('title');
+});
+el.tutorialEndBackBtn.addEventListener('click', () => {
+  audio.play('button');
+  endTutorial();
+  showScreen('title');
+});
+el.tutorialEndPlayBtn.addEventListener('click', () => {
+  audio.play('button');
+  endTutorial();
+  openSingleSetup();
+});
 el.changelogCloseBtn.addEventListener('click', () => closeOverlay(el.changelogOverlay));
 
 /* --- ロビー --- */

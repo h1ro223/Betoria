@@ -15,7 +15,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '3.2.0';
+const APP_VERSION = '3.3.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
