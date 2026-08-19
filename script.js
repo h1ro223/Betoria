@@ -987,6 +987,9 @@ function showPanel(name){
   el.singleEndPanel.hidden = name !== 'single-end';
   el.tutorialPanel.hidden = name !== 'tutorial';
   el.tutorialEndPanel.hidden = name !== 'tutorial-end';
+  /* チュートリアルでは、見せるだけの操作ボタンとガイドを同時に出す(v3.3)。
+     実際の表示可否は showTutorialButtons() が決める */
+  if (name === 'tutorial' && tutorial.active) el.actionPanel.hidden = true;
   el.controls.hidden    = (screen !== 'game') || name === 'none';
 }
 
@@ -2719,6 +2722,9 @@ function startTutorial(){
 function endTutorial(){
   tutorial.active = false;
   tutorial.busy = false;
+  /* 見せるためだけに無効化していたボタンを元に戻す(v3.3) */
+  [el.hitBtn, el.standBtn, el.doubleBtn, el.surrenderBtn, el.blackjackBtn]
+    .forEach(b => { b.disabled = false; });
   el.tutorialHead.hidden = true;
   el.body.classList.remove('is-tutorial');
   clearFocus();
@@ -2745,29 +2751,20 @@ function beginTutorialChapter(){
     done: false, playing: true, active: true, surrendered: false, doubled: false
   }];
 
+  setMessage('第' + (tutorial.chapter + 1) + '章  ' + ch.title);
   renderTable();
   renderMedal();
   showPanel('tutorial');
+  showTutorialButtons(ch);
   el.tutorialSkipBtn.hidden = tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1;
   runTutorialStep();
 }
 
-/* 今のステップの文言を出す(演出は「次へ」で進む) */
-function runTutorialStep(){
-  const ch = TUTORIAL_CHAPTERS[tutorial.chapter];
-  const st = ch.steps[tutorial.step];
-  if (!st) return;
-  el.tutorialText.innerHTML = st.say;
-  setFocus(st.focus);
-  el.tutorialNextBtn.textContent =
-    (tutorial.step >= ch.steps.length - 1)
-      ? (tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1 ? '完了 ▶' : '次の章へ ▶')
-      : '次へ ▶';
-}
-
-/* 「次へ」: 今のステップの演出を実行してから、次の文言に進む */
-async function tutorialNext(){
-  if (tutorial.busy) return;
+/* 今のステップを表示する。
+   v3.3 修正: 「先に盤面を動かしてから、その結果を説明する」順にする。
+   逆にすると『15になりました』と書いてあるのにまだカードが無い、
+   という食い違い(フライング)が起きる。 */
+async function runTutorialStep(){
   const ch = TUTORIAL_CHAPTERS[tutorial.chapter];
   const st = ch.steps[tutorial.step];
   if (!st) return;
@@ -2776,16 +2773,41 @@ async function tutorialNext(){
   el.tutorialNextBtn.disabled = true;
   clearFocus();
 
-  try {
-    if (st.act) await runTutorialAct(st.act, ch);
-  } catch (e){ console.warn('[tutorial]', e); }
+  /* このステップに動きがあるなら、説明文より先に見せる。
+     押した感じを出すため、対象ボタンを一瞬光らせてから動かす(v3.3) */
+  if (st.act){
+    el.tutorialText.innerHTML = '<span class="tutorial-wait">…</span>';
+    if (st.focus && el[st.focus] && !el[st.focus].hidden){
+      setFocus(st.focus);
+      el[st.focus].classList.add('is-pressed');
+      await sleep(420);
+      el[st.focus].classList.remove('is-pressed');
+      clearFocus();
+    }
+    try { await runTutorialAct(st.act, ch); }
+    catch (e){ console.warn('[tutorial]', e); }
+  }
+
+  el.tutorialText.innerHTML = st.say;
+  showTutorialButtons(ch);
+  setFocus(st.focus);
+  el.tutorialNextBtn.textContent =
+    (tutorial.step >= ch.steps.length - 1)
+      ? (tutorial.chapter >= TUTORIAL_CHAPTERS.length - 1 ? '完了 ▶' : '次の章へ ▶')
+      : '次へ ▶';
 
   tutorial.busy = false;
   el.tutorialNextBtn.disabled = false;
+}
+
+/* 「次へ」: 次のステップへ進む(動きはそのステップの中で再生される) */
+async function tutorialNext(){
+  if (tutorial.busy) return;
+  const ch = TUTORIAL_CHAPTERS[tutorial.chapter];
 
   tutorial.step++;
   if (tutorial.step < ch.steps.length){
-    runTutorialStep();
+    await runTutorialStep();
     return;
   }
 
@@ -2796,6 +2818,36 @@ async function tutorialNext(){
     tutorial.chapter++;
     beginTutorialChapter();
   }
+}
+
+/* チュートリアル中は、実際の操作ボタンを「見せるだけ」表示する。
+   押せないが、どのボタンの話をしているのかが分かるようにする(v3.3) */
+function showTutorialButtons(ch){
+  const seat = view.seats[0];
+  const hand = seat ? seat.hand : [];
+  const two = hand.length === 2;
+  const playing = view.phase === 'play' && !seat.done;
+
+  /* この章で使う選択肢に合わせて出し分ける */
+  const acts = ch.steps.map(s => s.act).filter(Boolean);
+  const useDouble = acts.includes('double');
+  const useSurrender = acts.includes('surrender');
+  const isBj = two && isBlackjack(hand);
+
+  el.hitBtn.hidden = !playing || isBj;
+  el.standBtn.hidden = !playing || isBj;
+  el.doubleBtn.hidden = !playing || !two || !useDouble;
+  el.surrenderBtn.hidden = !playing || !two || !useSurrender;
+  el.blackjackBtn.hidden = !playing || !isBj;
+
+  /* すべて押せないようにしておく(進行は「次へ」だけ) */
+  [el.hitBtn, el.standBtn, el.doubleBtn, el.surrenderBtn, el.blackjackBtn]
+    .forEach(b => { b.disabled = true; });
+
+  const anyVisible = !el.hitBtn.hidden || !el.standBtn.hidden
+                  || !el.doubleBtn.hidden || !el.surrenderBtn.hidden
+                  || !el.blackjackBtn.hidden;
+  el.actionPanel.hidden = !anyVisible;
 }
 
 /* 各ステップに紐づく盤面の動き */
