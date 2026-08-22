@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#08201B">
-<title>BLACKJACK 4 - 4人対戦ブラックジャック</title>
+<title>Betoria - 無料で遊べるオンラインカジノ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
@@ -12,7 +12,8 @@
 <link rel="apple-touch-icon" href="./icon/icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="BLACKJACK 4">
+<meta name="apple-mobile-web-app-title" content="Betoria">
+<meta name="description" content="Betoria(ベトリア)は、ブラックジャックやハイ&ローをみんなで遊べる無料のオンラインカジノです。">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="./style.css">
 </head>
@@ -22,7 +23,7 @@
 <header id="topbar">
   <button type="button" class="brand" id="brandBtn" title="タイトルへ戻る">
     <span class="brand-mark">♠</span>
-    <span class="brand-name">BLACKJACK<em>4</em></span>
+    <span class="brand-name">BETORIA</span>
   </button>
 
   <div class="topbar-right">
@@ -65,38 +66,24 @@
   <section class="screen" id="screenTitle">
     <div class="title-hero">
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
-      <h1 class="title-logo">BLACKJACK<em>4</em></h1>
-      <p class="title-sub">最大4人で遊べるオンライン・ブラックジャック</p>
-      <button type="button" class="version-badge" id="changelogBtn">v3.3 更新履歴</button>
+      <h1 class="title-logo">BETORIA</h1>
+      <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
+      <button type="button" class="version-badge" id="changelogBtn">v4.0 更新履歴</button>
     </div>
 
     <nav class="title-menu">
-      <button type="button" class="title-btn" id="toSingleBtn">
-        <span class="title-btn-icon">🂡</span>
+      <button type="button" class="title-btn is-primary" id="toGamesBtn">
+        <span class="title-btn-icon">🃏</span>
         <span class="title-btn-text">
-          <span class="title-btn-name">シングルプレイ</span>
-          <span class="title-btn-desc">CPUと一緒にオフラインで遊ぶ</span>
-        </span>
-      </button>
-      <button type="button" class="title-btn" id="toOnlineBtn">
-        <span class="title-btn-icon">🌐</span>
-        <span class="title-btn-text">
-          <span class="title-btn-name">オンラインプレイ</span>
-          <span class="title-btn-desc">部屋を作って友達と対戦</span>
+          <span class="title-btn-name">ゲームを選ぶ</span>
+          <span class="title-btn-desc">ブラックジャック / ハイ&amp;ロー</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRankingBtn">
         <span class="title-btn-icon">🏆</span>
         <span class="title-btn-text">
           <span class="title-btn-name">ランキング</span>
-          <span class="title-btn-desc">総獲得枚数・一撃獲得枚数を競う</span>
-        </span>
-      </button>
-      <button type="button" class="title-btn" id="toTutorialBtn">
-        <span class="title-btn-icon">🎓</span>
-        <span class="title-btn-text">
-          <span class="title-btn-name">チュートリアル</span>
-          <span class="title-btn-desc">遊び方を実際の画面で学ぶ</span>
+          <span class="title-btn-desc">ゲームごとに獲得枚数を競う</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRulesBtn">
@@ -111,6 +98,94 @@
         <span class="title-btn-text">
           <span class="title-btn-name">設定</span>
           <span class="title-btn-desc">BGM・効果音・人数</span>
+        </span>
+      </button>
+    </nav>
+  </section>
+
+  <!-- ---------- ゲーム選択(v4.0) ---------- -->
+  <section class="screen" id="screenGameSelect" hidden>
+    <div class="setup-head">
+      <button type="button" class="back-btn" id="gameSelectBackBtn">◀ もどる</button>
+      <h2>ゲームを選ぶ</h2>
+    </div>
+
+    <p class="screen-note">遊びたいゲームを選んでください。所持メダルはすべてのゲームで共通です。</p>
+
+    <div class="game-grid" id="gameGrid">
+      <button type="button" class="game-card" data-game="bj">
+        <span class="game-card-art is-bj"><span class="game-card-mark">A♠</span></span>
+        <span class="game-card-body">
+          <span class="game-card-name">BLACKJACK 4</span>
+          <span class="game-card-jp">ブラックジャック</span>
+          <span class="game-card-desc">21に近づけてディーラーに勝つ、カジノの王道。最大4人で対戦できます。</span>
+          <span class="game-card-tags">
+            <span class="game-tag">1〜4人</span>
+            <span class="game-tag">大会モードあり</span>
+            <span class="game-tag">チュートリアルあり</span>
+          </span>
+        </span>
+      </button>
+
+      <button type="button" class="game-card" data-game="hilo">
+        <span class="game-card-art is-hilo"><span class="game-card-mark">▲▼</span></span>
+        <span class="game-card-body">
+          <span class="game-card-name">HIGH &amp; LOW</span>
+          <span class="game-card-jp">ハイ&amp;ロー</span>
+          <span class="game-card-desc">次のカードが高いか低いかを当てるだけ。当てるほど倍率が伸びる、引き際が勝負のゲーム。</span>
+          <span class="game-card-tags">
+            <span class="game-tag is-new">NEW</span>
+            <span class="game-tag">1〜4人</span>
+            <span class="game-tag">最大7.5倍</span>
+          </span>
+        </span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ---------- ゲームごとのメニュー(v4.0) ---------- -->
+  <section class="screen" id="screenGameMenu" hidden>
+    <div class="setup-head">
+      <button type="button" class="back-btn" id="gameMenuBackBtn">◀ もどる</button>
+      <h2 id="gameMenuTitle">ゲーム</h2>
+    </div>
+
+    <p class="screen-note" id="gameMenuDesc">-</p>
+
+    <nav class="title-menu">
+      <button type="button" class="title-btn" id="gmSingleBtn">
+        <span class="title-btn-icon">🂡</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">シングルプレイ</span>
+          <span class="title-btn-desc" id="gmSingleDesc">練習用メダルでひとりで遊ぶ</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="gmOnlineBtn">
+        <span class="title-btn-icon">🌐</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">オンラインプレイ</span>
+          <span class="title-btn-desc">部屋を作って友達と対戦</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="gmTutorialBtn">
+        <span class="title-btn-icon">🎓</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">チュートリアル</span>
+          <span class="title-btn-desc">遊び方を実際の画面で学ぶ</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="gmRankingBtn">
+        <span class="title-btn-icon">🏆</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">ランキング</span>
+          <span class="title-btn-desc" id="gmRankingDesc">このゲームの獲得枚数ランキング</span>
+        </span>
+      </button>
+      <button type="button" class="title-btn" id="gmRulesBtn">
+        <span class="title-btn-icon">📖</span>
+        <span class="title-btn-text">
+          <span class="title-btn-name">ルール</span>
+          <span class="title-btn-desc">遊び方と配当を確認</span>
         </span>
       </button>
     </nav>
@@ -173,7 +248,7 @@
   <section class="screen" id="screenLobby" hidden>
     <div class="page-head">
       <button type="button" class="back-btn" id="lobbyBackBtn">← タイトル</button>
-      <h2 class="page-title">オンラインプレイ</h2>
+      <h2 class="page-title" id="lobbyTitle">オンラインプレイ</h2>
       <span class="conn-badge" id="connBadge">接続中…</span>
     </div>
 
@@ -183,7 +258,7 @@
         <h3 class="block-title">部屋を作成</h3>
         <p class="block-note">あなたがホストになります。ルームIDは自動で発行されます。</p>
 
-        <label class="field-label">モード</label>
+        <label class="field-label" id="createModeLabel">モード</label>
         <div class="seg seg-3" id="createModeSeg">
           <button type="button" class="seg-btn is-on" data-mode="enjoy">エンジョイ</button>
           <button type="button" class="seg-btn" data-mode="champion">チャンピオン</button>
@@ -226,6 +301,8 @@
           <p class="block-note">全員に大会専用メダル1000枚が配布されます(アカウントのメダルは減りません)。0枚になると脱落・観戦になります。</p>
         </div>
 
+        <p class="block-note" id="createHiloNote" hidden>ベットは1回100メダル固定です。全員が同時に予想し、当てた人だけが次に進みます。ラウンドは自動で進むので、参加したくないときは何も押さなければ見送りになります。</p>
+
         <button type="button" class="btn btn-primary btn-wide" id="createRoomBtn">部屋を作成</button>
       </div>
 
@@ -251,7 +328,7 @@
   <section class="screen" id="screenRoom" hidden>
     <div class="page-head">
       <button type="button" class="back-btn" id="roomLeaveBtn">← 退出</button>
-      <h2 class="page-title">待機ルーム</h2>
+      <h2 class="page-title" id="roomTitle">待機ルーム</h2>
       <span class="conn-badge" id="roomCountBadge">1/4</span>
     </div>
 
@@ -373,6 +450,57 @@
     </section>
   </section>
 
+  <!-- ---------- ハイ&ロー(v4.0) ---------- -->
+  <section class="screen" id="screenHilo" hidden>
+
+    <div class="hilo-top">
+      <button type="button" class="back-btn" id="hiloLeaveBtn">◀ もどる</button>
+      <div class="hilo-top-chips">
+        <div class="hilo-chip" id="hiloRoundChip" hidden>
+          <span class="hilo-chip-key">ラウンド</span>
+          <span class="hilo-chip-val led" id="hiloRoundNum">1</span>
+        </div>
+        <div class="hilo-chip" id="hiloDeckChip">
+          <span class="hilo-chip-key">山札</span>
+          <span class="hilo-chip-val led" id="hiloDeckLeft">52</span>
+        </div>
+        <div class="hilo-chip is-timer" id="hiloTimerChip" hidden>
+          <span class="hilo-chip-key">のこり</span>
+          <span class="hilo-chip-val led" id="hiloTimerNum">15</span>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="hiloRulesBtn" title="ルール">📖</button>
+    </div>
+
+    <div class="hilo-ladder" id="hiloLadder"></div>
+
+    <div class="hilo-board">
+      <div class="hilo-slot">
+        <span class="hilo-slot-cap">いまのカード</span>
+        <div class="hilo-card" id="hiloBaseCard"><span class="hilo-card-face">?</span></div>
+      </div>
+      <div class="hilo-vs" id="hiloVs">
+        <span class="hilo-vs-mark">▲<br>▼</span>
+      </div>
+      <div class="hilo-slot">
+        <span class="hilo-slot-cap">つぎのカード</span>
+        <div class="hilo-card is-back" id="hiloNextCard"><span class="hilo-card-face">?</span></div>
+      </div>
+    </div>
+
+    <div class="hilo-stake" id="hiloStake" hidden>
+      <span class="hilo-stake-cap">いまの獲得予定</span>
+      <span class="hilo-stake-val led" id="hiloStakeVal">0</span>
+      <span class="hilo-stake-unit">メダル</span>
+      <span class="hilo-stake-mult" id="hiloStakeMult">×1.5</span>
+    </div>
+
+    <div id="hiloMessageBar"><span id="hiloMessageText">HIGH か LOW を選んでください</span></div>
+
+    <div class="hilo-players" id="hiloPlayers"></div>
+
+  </section>
+
 </main>
 
 <!-- ============ 操作パネル ============ -->
@@ -451,6 +579,38 @@
     <div class="single-end-actions">
       <button type="button" class="btn btn-ghost" id="tutorialEndBackBtn">タイトルへ</button>
       <button type="button" class="btn btn-primary" id="tutorialEndPlayBtn">遊んでみる</button>
+    </div>
+  </div>
+
+  <!-- ハイ&ローの操作(v4.0) -->
+  <div class="panel" id="hiloPickPanel" hidden>
+    <div class="hilo-pick-row">
+      <button type="button" class="btn btn-hilo-high" id="hiloHighBtn">
+        <span class="btn-main">▲ HIGH</span>
+        <span class="btn-sub" id="hiloHighSub">次は高い</span>
+      </button>
+      <button type="button" class="btn btn-hilo-low" id="hiloLowBtn">
+        <span class="btn-main">▼ LOW</span>
+        <span class="btn-sub" id="hiloLowSub">次は低い</span>
+      </button>
+    </div>
+    <button type="button" class="btn btn-hilo-cash" id="hiloCashBtn" hidden>
+      <span class="btn-main">回収する</span>
+      <span class="btn-sub" id="hiloCashSub">0 メダルを確定</span>
+    </button>
+    <p class="hilo-hint" id="hiloHint">1回目の予想が「100メダルのベット」になります。</p>
+  </div>
+
+  <div class="panel" id="hiloWaitPanel" hidden>
+    <p class="wait-text" id="hiloWaitText">ほかのプレイヤーを待っています…</p>
+  </div>
+
+  <div class="panel" id="hiloEndPanel" hidden>
+    <p class="single-end-title" id="hiloEndTitle">ゲームオーバー</p>
+    <p class="single-end-text" id="hiloEndText">-</p>
+    <div class="single-end-actions">
+      <button type="button" class="btn btn-ghost" id="hiloEndBackBtn">タイトルへ</button>
+      <button type="button" class="btn btn-primary" id="hiloEndRetryBtn">もう一度あそぶ</button>
     </div>
   </div>
 
@@ -569,6 +729,18 @@
         </div>
 
         <div class="sheet-section">
+          <h3>戦績(ハイ&amp;ロー)</h3>
+          <div class="stat-grid">
+            <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="hlPlays">0</span></div>
+            <div class="stat"><span class="stat-key">回収</span><span class="stat-val led" id="hlWins">0</span></div>
+            <div class="stat"><span class="stat-key">失敗</span><span class="stat-val led" id="hlLosses">0</span></div>
+            <div class="stat"><span class="stat-key">回収率</span><span class="stat-val led" id="hlRate">0%</span></div>
+            <div class="stat"><span class="stat-key">総獲得</span><span class="stat-val led" id="hlTotalGain">0</span></div>
+            <div class="stat"><span class="stat-key">一撃</span><span class="stat-val led" id="hlBestGain">0</span></div>
+          </div>
+        </div>
+
+        <div class="sheet-section">
           <h3>戦績(チャンピオンモード)</h3>
           <div class="stat-grid">
             <div class="stat"><span class="stat-key">プレイ数</span><span class="stat-val led" id="champPlays">0</span></div>
@@ -641,6 +813,68 @@
       <button type="button" class="close-btn" id="rulesCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="seg seg-2" id="rulesGameTabs">
+        <button type="button" class="seg-btn is-on" data-ruleg="bj">♠ ブラックジャック</button>
+        <button type="button" class="seg-btn" data-ruleg="hilo">▲▼ ハイ&amp;ロー</button>
+      </div>
+      <p class="sheet-note">見たいゲームを選んでください。アカウント・メダル・フレンドはすべてのゲームで共通です。</p>
+
+      <div class="rules-group" id="rulesHilo" hidden>
+        <div class="sheet-section">
+          <h3>ハイ&amp;ローの基本</h3>
+          <ul class="rule-list">
+            <li>場に置かれたカードより、<b>次のカードが高いか低いか</b>を当てるゲームです。</li>
+            <li>強さは <b>A(いちばん弱い)→ 2 → 3 → … → Q → K(いちばん強い)</b> の順です。マークの違いは関係ありません。</li>
+            <li>ベットは<b>1回100メダル固定</b>です。<b>最初の予想を出すこと</b>が、そのままベットになります。</li>
+            <li><b>同じ数字が出た場合(ドロー)は負け扱い</b>で、ベットは没収されます。</li>
+            <li>カードは<b>1組52枚</b>を上から順に使います。使い切ると新しくシャッフルし直します(山札の残り枚数は画面上部に出ます)。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>配当(グリード方式)</h3>
+          <ul class="rule-list">
+            <li>当てるたびに倍率が <b>1.5倍ずつ</b> 積み上がります。</li>
+            <li>1回的中 <b>150</b> / 2回 <b>225</b> / 3回 <b>337</b> / 4回 <b>506</b> / 5回 <b>759</b> メダル(100メダルベット時)。</li>
+            <li>当てたあとは <b>「もう一度予想する」か「回収する」</b> を選べます。回収するとその時点の枚数が確定します。</li>
+            <li><b>1回でも外すと、積み上げた分はすべて没収</b>です。引き際が勝負です。</li>
+            <li><b>5回連続で的中すると上限</b>となり、自動的に回収(MAX WIN)になります。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>オンライン</h3>
+          <ul class="rule-list">
+            <li>全員が<b>同時に</b>予想を出し、当てた人だけが次に進みます。他の人の予想は画面に表示されます。</li>
+            <li>持ち時間は<b>15秒</b>です。時間切れになると、まだ参加していない人は<b>見送り</b>、勝ち残っている人は<b>自動で回収</b>されます。</li>
+            <li>全員の勝負がついたら、<b>自動で次のラウンド</b>が始まります。休みたいラウンドは何も押さなければ大丈夫です。</li>
+            <li>人のプレイヤーが<b>2人以上</b>必要です。3人以上の部屋では<b>CPUの自動補充</b>も使えます。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>シングルプレイ(練習モード)</h3>
+          <ul class="rule-list">
+            <li>開始のたびに<b>専用メダル1000枚</b>が配られます。<b>アカウントの所持メダルは増減しません</b>。</li>
+            <li>経験値・戦績・ランキングにも記録されません。ルールを覚えるための練習用です。</li>
+            <li>メダルが100枚を下回るとゲーム終了です。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>レベルと経験値</h3>
+          <ul class="rule-list">
+            <li>オンラインで1ラウンド遊ぶごとに <b>+10 EXP</b>。</li>
+            <li>さらに<b>的中1回につき +12 EXP</b>(5連続的中なら合計70EXP)。</li>
+            <li>外しても参加分のEXPは受け取れます。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>ランキング</h3>
+          <ul class="rule-list">
+            <li>ハイ&amp;ローのランキングは<b>ブラックジャックとは別</b>に集計されます。</li>
+            <li>対象は<b>オンライン</b>のみです。練習モードは含みません。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="rules-group" id="rulesBj">
       <div class="sheet-section">
         <h3>基本</h3>
         <ul class="rule-list">
@@ -736,6 +970,7 @@
           <li><b>総獲得枚数</b> … その日にラウンドで勝って得たメダルの合計です。</li>
           <li><b>一撃獲得枚数</b> … その日の中で、1ラウンドの勝利で得た最も多い枚数です。</li>
           <li>対象は<b>オンラインのエンジョイモード</b>です。ログインボーナス・広告・練習モード・大会メダルは含みません。</li>
+          <li>ランキングは<b>ゲームごとに別々</b>に集計されます(ブラックジャックとハイ&amp;ローは混ざりません)。</li>
           <li>集計は<b>0:00〜23:59</b>まで。結果は翌日の23:59まで「前日」で確認できます。一撃のみ<b>歴代</b>の記録も残ります。</li>
           <li>同じ枚数の場合は<b>同率順位</b>になります(1位・1位・3位のように表示)。</li>
           <li>前日のランキングに入賞していると、翌日<b>🔔通知</b>でお知らせが届きます。</li>
@@ -766,6 +1001,7 @@
           <li>ゲーム画面の上部に<b>👁</b>と観戦人数が表示されます。</li>
           <li>満員の部屋は<b>赤字の「満員」</b>と表示され、参加できません(試合が始まれば観戦できます)。</li>
         </ul>
+      </div>
       </div>
     </div>
   </div>
@@ -851,6 +1087,20 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v4.0</h3>
+        <ul class="rule-list">
+          <li><b>サイト名が「Betoria(ベトリア)」になりました。</b>ブラックジャックだけでなく、いろいろなトランプゲームで遊べる<b>無料オンラインカジノ</b>を目指していきます。</li>
+          <li>タイトル画面に<b>🃏 ゲームを選ぶ</b>を追加しました。ここから遊ぶゲームを選びます。</li>
+          <li><b>▲▼ HIGH &amp; LOW(ハイ&amp;ロー)</b>を追加しました! 次のカードが高いか低いかを当てるだけのシンプルなゲームです。</li>
+          <li>ハイ&amp;ローは<b>1回100メダル固定</b>。当てるたびに倍率が<b>1.5倍ずつ</b>積み上がり、<b>5連続的中で最大759メダル</b>になります。</li>
+          <li>当てたあとは<b>「もう一度予想する」か「回収する」</b>を選べます。外すと積み上げた分はすべて没収なので、引き際が勝負です。</li>
+          <li>同じ数字が出た場合(ドロー)は<b>負け扱い</b>です。カードは<b>1組52枚</b>を順番に使い、尽きたらシャッフルし直します。</li>
+          <li>オンラインは全員が<b>同時に予想</b>し、当てた人だけが次に進みます。ラウンドは<b>自動で進行</b>するので、休みたいときは何も押さなければ見送りになります。</li>
+          <li><b>ランキングをゲームごとに分けました。</b>ブラックジャックとハイ&amp;ローの記録は混ざりません。これまでのブラックジャックの記録はそのまま残っています。</li>
+          <li>マイページにハイ&amp;ローの戦績を追加しました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v3.3</h3>
         <ul class="rule-list">
@@ -1146,6 +1396,11 @@
       <button type="button" class="close-btn" id="rankCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="seg seg-2" id="rankGameTabs">
+        <button type="button" class="seg-btn is-on" data-rgame="bj">♠ ブラックジャック</button>
+        <button type="button" class="seg-btn" data-rgame="hilo">▲▼ ハイ&amp;ロー</button>
+      </div>
+
       <div class="seg seg-2" id="rankKindTabs">
         <button type="button" class="seg-btn is-on" data-kind="total">総獲得枚数</button>
         <button type="button" class="seg-btn" data-kind="best">一撃獲得枚数</button>

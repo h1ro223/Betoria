@@ -1,7 +1,9 @@
 /* =========================================================
-   BLACKJACK 4 - script.js
-   made by hiro / ヒロ   https://github.com/h1ro223
-   タイトル / シングル / オンライン(ルーム式) / アカウント・Lv / BGM・SE
+   Betoria - script.js  (v4.0)
+   made by hiro/ヒロ   https://github.com/h1ro223
+   無料で遊べるオンラインカジノ
+     ・BLACKJACK 4(ブラックジャック)
+     ・HIGH & LOW(ハイ&ロー)  ← v4.0 で追加
    ========================================================= */
 'use strict';
 
@@ -377,6 +379,74 @@ const el = {
   leaveBtn: $('leaveBtn'),
   gameRulesBtn: $('gameRulesBtn'),
 
+  /* ---- v4.0 ゲーム選択 ---- */
+  screenGameSelect: $('screenGameSelect'),
+  gameGrid: $('gameGrid'),
+  gameSelectBackBtn: $('gameSelectBackBtn'),
+  screenGameMenu: $('screenGameMenu'),
+  gameMenuBackBtn: $('gameMenuBackBtn'),
+  gameMenuTitle: $('gameMenuTitle'),
+  gameMenuDesc: $('gameMenuDesc'),
+  toGamesBtn: $('toGamesBtn'),
+  gmSingleBtn: $('gmSingleBtn'),
+  gmSingleDesc: $('gmSingleDesc'),
+  gmOnlineBtn: $('gmOnlineBtn'),
+  gmTutorialBtn: $('gmTutorialBtn'),
+  gmRankingBtn: $('gmRankingBtn'),
+  gmRankingDesc: $('gmRankingDesc'),
+  gmRulesBtn: $('gmRulesBtn'),
+
+  /* ---- v4.0 ハイ&ロー ---- */
+  screenHilo: $('screenHilo'),
+  hiloLeaveBtn: $('hiloLeaveBtn'),
+  hiloRulesBtn: $('hiloRulesBtn'),
+  hiloRoundChip: $('hiloRoundChip'),
+  hiloRoundNum: $('hiloRoundNum'),
+  hiloDeckChip: $('hiloDeckChip'),
+  hiloDeckLeft: $('hiloDeckLeft'),
+  hiloTimerChip: $('hiloTimerChip'),
+  hiloTimerNum: $('hiloTimerNum'),
+  hiloLadder: $('hiloLadder'),
+  hiloBaseCard: $('hiloBaseCard'),
+  hiloNextCard: $('hiloNextCard'),
+  hiloVs: $('hiloVs'),
+  hiloStake: $('hiloStake'),
+  hiloStakeVal: $('hiloStakeVal'),
+  hiloStakeMult: $('hiloStakeMult'),
+  hiloMessageText: $('hiloMessageText'),
+  hiloPlayers: $('hiloPlayers'),
+  hiloPickPanel: $('hiloPickPanel'),
+  hiloHighBtn: $('hiloHighBtn'),
+  hiloHighSub: $('hiloHighSub'),
+  hiloLowBtn: $('hiloLowBtn'),
+  hiloLowSub: $('hiloLowSub'),
+  hiloCashBtn: $('hiloCashBtn'),
+  hiloCashSub: $('hiloCashSub'),
+  hiloHint: $('hiloHint'),
+  hiloWaitPanel: $('hiloWaitPanel'),
+  hiloWaitText: $('hiloWaitText'),
+  hiloEndPanel: $('hiloEndPanel'),
+  hiloEndTitle: $('hiloEndTitle'),
+  hiloEndText: $('hiloEndText'),
+  hiloEndBackBtn: $('hiloEndBackBtn'),
+  hiloEndRetryBtn: $('hiloEndRetryBtn'),
+
+  /* ---- v4.0 ロビー / ランキング / ルール ---- */
+  lobbyTitle: $('lobbyTitle'),
+  roomTitle: $('roomTitle'),
+  createModeLabel: $('createModeLabel'),
+  createHiloNote: $('createHiloNote'),
+  rankGameTabs: $('rankGameTabs'),
+  rulesGameTabs: $('rulesGameTabs'),
+  rulesBj: $('rulesBj'),
+  rulesHilo: $('rulesHilo'),
+  hlPlays: $('hlPlays'),
+  hlWins: $('hlWins'),
+  hlLosses: $('hlLosses'),
+  hlRate: $('hlRate'),
+  hlTotalGain: $('hlTotalGain'),
+  hlBestGain: $('hlBestGain'),
+
   roundChip: $('roundChip'),
   roundNow: $('roundNow'),
   roundMax: $('roundMax'),
@@ -399,7 +469,6 @@ const el = {
   normaGoal: $('normaGoal'),
   singleEndPanel: $('singleEndPanel'),
 
-  toTutorialBtn: $('toTutorialBtn'),
   tutorialHead: $('tutorialHead'),
   tutorialExitBtn: $('tutorialExitBtn'),
   tutorialChapter: $('tutorialChapter'),
@@ -508,8 +577,6 @@ const el = {
   standingsTitle: $('standingsTitle'),
   screenGame: $('screenGame'),
 
-  toSingleBtn: $('toSingleBtn'),
-  toOnlineBtn: $('toOnlineBtn'),
   toRulesBtn: $('toRulesBtn'),
   toSettingsBtn: $('toSettingsBtn'),
   changelogBtn: $('changelogBtn'),
@@ -688,6 +755,7 @@ const el = {
    5. 共通状態
    ========================================================= */
 const view = {
+  game: 'bj',            // bj | hilo(いま選んでいるゲーム)(v4.0)
   mode: 'single',        // single | online
   onlineMode: 'enjoy',   // enjoy | champion (online時のみ有効)
   phase: 'bet',
@@ -919,7 +987,7 @@ function myMedal(){
 
 /* 画面に出す持ち分。シングル中は専用メダルを使う(v3.2) */
 function activeMedal(){
-  if (isSingleGame()) return single.medal;
+  if (isSingleGame()) return screen === 'hilo' ? hiloSingle.medal : single.medal;
   if (view.mode === 'online' && view.onlineMode !== 'enjoy' && !view.spectating){
     const me = view.seats.find(s => s.isYou);
     return me ? me.medal : 0;
@@ -943,7 +1011,7 @@ function renderMedal(){
   }
 
   if (isSingleGame()){
-    el.medalCount.textContent = single.medal;
+    el.medalCount.textContent = screen === 'hilo' ? hiloSingle.medal : single.medal;
     if (el.medalLabel) el.medalLabel.textContent = '練習メダル';
   } else if (tourney){
     const me = view.seats.find(s => s.isYou);
@@ -987,10 +1055,15 @@ function showPanel(name){
   el.singleEndPanel.hidden = name !== 'single-end';
   el.tutorialPanel.hidden = name !== 'tutorial';
   el.tutorialEndPanel.hidden = name !== 'tutorial-end';
+  /* ハイ&ロー(v4.0) */
+  el.hiloPickPanel.hidden = name !== 'hilo-pick';
+  el.hiloWaitPanel.hidden = name !== 'hilo-wait';
+  el.hiloEndPanel.hidden  = name !== 'hilo-end';
   /* チュートリアルでは、見せるだけの操作ボタンとガイドを同時に出す(v3.3)。
      実際の表示可否は showTutorialButtons() が決める */
   if (name === 'tutorial' && tutorial.active) el.actionPanel.hidden = true;
-  el.controls.hidden    = (screen !== 'game') || name === 'none';
+  /* 操作パネルはゲーム画面とハイ&ロー画面の両方で使う(v4.0) */
+  el.controls.hidden    = (screen !== 'game' && screen !== 'hilo') || name === 'none';
 }
 
 /* =========================================================
@@ -1000,24 +1073,28 @@ function showScreen(name){
   screen = name;
   el.body.dataset.screen = name;
   el.screenTitle.hidden = name !== 'title';
+  el.screenGameSelect.hidden = name !== 'gameSelect';   // v4.0
+  el.screenGameMenu.hidden = name !== 'gameMenu';       // v4.0
   el.screenSingleSetup.hidden = name !== 'singleSetup';
   el.screenLobby.hidden = name !== 'lobby';
   el.screenRoom.hidden  = name !== 'room';
   el.screenCountdown.hidden = name !== 'countdown';
   el.screenChampionEnd.hidden = name !== 'championEnd';
   el.screenGame.hidden  = name !== 'game';
+  el.screenHilo.hidden  = name !== 'hilo';              // v4.0
 
-  el.controls.hidden = name !== 'game';
+  el.controls.hidden = (name !== 'game' && name !== 'hilo');
   /* v3.2: シングルは専用メダルで完結するので広告は出さない。
-     大会系(チャンピオン/早抜け)と観戦中も対象外 */
-  el.adBtn.hidden = !(name === 'game' && view.mode === 'online'
+     大会系(チャンピオン/早抜け)と観戦中も対象外。
+     v4.0: ハイ&ローのオンラインでも広告でメダルを増やせる */
+  el.adBtn.hidden = !((name === 'game' || name === 'hilo') && view.mode === 'online'
                       && !view.spectating && view.onlineMode === 'enjoy');
   /* チュートリアル中はヘッダーの各種ボタンを触らせない(v3.3) */
   if (view.mode === 'tutorial'){
     el.adBtn.hidden = true;
     el.roundChip.hidden = true;
   }
-  el.medalReadout.hidden = !(name === 'game' || account.user);
+  el.medalReadout.hidden = !(name === 'game' || name === 'hilo' || account.user);
   el.brandBtn.disabled = name === 'title';
 
   updateRoundChip();
@@ -1073,6 +1150,53 @@ function updateRoundChip(){
 }
 
 /* =========================================================
+   9.5 ゲーム選択(v4.0)
+   Betoria は複数のトランプゲームを扱うので、
+   「いまどのゲームを見ているか」を view.game で持ち回す。
+   ========================================================= */
+const GAME_INFO = {
+  bj: {
+    name: 'BLACKJACK 4',
+    jp: 'ブラックジャック',
+    desc: '手札の合計を21に近づけてディーラーに勝つ、カジノの王道ゲームです。最大4人で対戦できます。',
+    singleDesc: '練習メダル1000枚でCPUと遊ぶ',
+    tutorial: true
+  },
+  hilo: {
+    name: 'HIGH & LOW',
+    jp: 'ハイ&ロー',
+    desc: '次のカードが高いか低いかを当てるだけ。当てるほど倍率が伸びるので、引き際が勝負です。ベットは100メダル固定。',
+    singleDesc: '練習メダル1000枚でひとりで遊ぶ',
+    tutorial: false
+  }
+};
+
+function gameInfo(g){ return GAME_INFO[g] || GAME_INFO.bj; }
+
+function openGameSelect(){
+  showScreen('gameSelect');
+}
+
+function openGameMenu(g){
+  view.game = GAME_INFO[g] ? g : 'bj';
+  const info = gameInfo(view.game);
+  el.gameMenuTitle.textContent = info.name;
+  el.gameMenuDesc.textContent = info.desc;
+  el.gmSingleDesc.textContent = info.singleDesc;
+  el.gmRankingDesc.textContent = info.jp + 'の獲得枚数ランキング';
+  /* チュートリアルがあるのはブラックジャックだけ */
+  el.gmTutorialBtn.hidden = !info.tutorial;
+  showScreen('gameMenu');
+}
+
+/* 選んでいるゲームのシングルプレイを始める */
+function startSelectedSingle(){
+  if (view.game === 'hilo') return startHiloSingle();
+  view.game = 'bj';
+  openSingleSetup();
+}
+
+/* =========================================================
    10. アカウント
    ========================================================= */
 function apiBase(){
@@ -1125,7 +1249,7 @@ function renderAccountUi(){
     delete el.accountAvatar.dataset.iconColor;
     el.accountLv.hidden = true;
   }
-  el.medalReadout.hidden = !(screen === 'game' || u);
+  el.medalReadout.hidden = !(screen === 'game' || screen === 'hilo' || u);
   updateFriendBadge();
   updateNoticeBadge();
   updateBonusBtn();
@@ -1172,6 +1296,16 @@ function renderProfile(){
   el.champDraws.textContent = cd;
   const champDecided = cw + cl;
   el.champRate.textContent = champDecided ? Math.round((cw / champDecided) * 100) + '%' : '0%';
+
+  /* ハイ&ローの戦績(v4.0) */
+  const hp = u.hlRounds || 0, hw = u.hlWins || 0, hl = u.hlLosses || 0;
+  el.hlPlays.textContent = hp;
+  el.hlWins.textContent = hw;
+  el.hlLosses.textContent = hl;
+  const hlDecided = hw + hl;
+  el.hlRate.textContent = hlDecided ? Math.round((hw / hlDecided) * 100) + '%' : '0%';
+  el.hlTotalGain.textContent = Number(u.hlTotalGain || 0).toLocaleString();
+  el.hlBestGain.textContent = Number(u.hlBestGain || 0).toLocaleString();
 
   /* メダル記録・ログイン記録(v3.2) */
   el.statTotalGain.textContent = Number(u.totalGain || 0).toLocaleString();
@@ -1538,13 +1672,22 @@ async function openNoticePanel(){
 /* =========================================================
    10.47 ランキング(v3.2)
    ========================================================= */
-const ranking = { kind: 'total', day: 'today', data: null, loading: false };
+const ranking = { game: 'bj', kind: 'total', day: 'today', data: null, loading: false };
 
 const RANK_NOTES = {
   total: 'その日にラウンドで勝って得たメダルの合計です(ログインボーナス・広告は含みません)。',
   best: 'その日の中で、1ラウンドの勝利で得た最も多いメダル枚数です。',
   alltime: 'サービス開始からの一撃獲得枚数の記録です。記録した日も表示されます。'
 };
+
+/* v4.0: ランキングはゲームごとに完全に分かれている */
+function setRankGame(g){
+  const next = GAME_INFO[g] ? g : 'bj';
+  if (ranking.game === next) return;
+  ranking.game = next;
+  syncRankTabs();
+  loadRanking();
+}
 
 function setRankKind(kind){
   ranking.kind = kind;
@@ -1562,6 +1705,8 @@ function setRankDay(day){
 }
 
 function syncRankTabs(){
+  el.rankGameTabs.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.rgame === ranking.game));
   el.rankKindTabs.querySelectorAll('.seg-btn').forEach(b =>
     b.classList.toggle('is-on', b.dataset.kind === ranking.kind));
   el.rankDayTabs.querySelectorAll('.seg-btn').forEach(b =>
@@ -1578,7 +1723,8 @@ async function loadRanking(){
   el.rankList.innerHTML = '<p class="empty-note">読み込み中…</p>';
   el.rankSelf.hidden = true;
   try {
-    const d = await api('/api/ranking?day=' + encodeURIComponent(ranking.day));
+    const d = await api('/api/ranking?day=' + encodeURIComponent(ranking.day) +
+                       '&game=' + encodeURIComponent(ranking.game));
     ranking.data = d;
     if (d.label && ranking.day === 'yesterday'){
       el.rankYesterdayBtn.textContent = '前日(' + d.label + ')';
@@ -1598,7 +1744,9 @@ function renderRankList(){
              : (ranking.kind === 'total' ? (d.total || []) : (d.best || []));
 
   if (!rows.length){
-    el.rankList.innerHTML = '<p class="empty-note">まだ記録がありません。<br>オンラインのエンジョイモードで勝つと記録されます。</p>';
+    el.rankList.innerHTML = '<p class="empty-note">' +
+      esc(gameInfo(ranking.game).name) + ' の記録はまだありません。<br>' +
+      'オンラインで勝つと記録されます。</p>';
     return;
   }
 
@@ -1642,7 +1790,8 @@ function renderRankSelf(rows){
   if (rows.some(r => r.username === u.username)){ el.rankSelf.hidden = true; return; }
 
   /* 圏外のときは自分の記録だけ表示する(順位は出せないので「-」) */
-  const val = ranking.day === 'alltime' ? u.bestGain : null;
+  const val = ranking.day === 'alltime'
+    ? (ranking.game === 'hilo' ? u.hlBestGain : u.bestGain) : null;
   if (ranking.day !== 'alltime'){ el.rankSelf.hidden = true; return; }
   el.rankSelf.hidden = false;
   el.rankSelf.innerHTML =
@@ -1657,10 +1806,27 @@ function renderRankSelf(rows){
     '</div>';
 }
 
-function openRankPanel(){
+function openRankPanel(game){
+  /* ゲームメニューから開いたときは、そのゲームのランキングを最初に出す(v4.0) */
+  if (game && GAME_INFO[game]) ranking.game = game;
   syncRankTabs();
   openOverlay(el.rankOverlay);
   loadRanking();
+}
+
+/* ルールシートの表示をゲームごとに切り替える(v4.0) */
+function setRulesGame(g){
+  const next = GAME_INFO[g] ? g : 'bj';
+  el.rulesGameTabs.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.ruleg === next));
+  el.rulesBj.hidden = next !== 'bj';
+  el.rulesHilo.hidden = next !== 'hilo';
+}
+
+/* ルールを開く。指定が無ければ、いま選んでいるゲームを出す */
+function openRules(game){
+  setRulesGame(game || view.game || 'bj');
+  openOverlay(el.rulesOverlay);
 }
 
 /* =========================================================
@@ -1683,7 +1849,7 @@ function onDayChanged(){
   currentDay = now;
 
   /* 対戦中に強制的に飛ばすと迷惑なので、ゲーム中は終わってから案内する */
-  const inGame = screen === 'game' || screen === 'room' || screen === 'countdown';
+  const inGame = screen === 'game' || screen === 'hilo' || screen === 'room' || screen === 'countdown';
   if (inGame && view.mode === 'online'){
     toast('日付が変わりました。ゲーム終了後にタイトルへ戻ります');
     dayChanging = false;
@@ -2019,7 +2185,8 @@ const single = {
 
 /* シングル中は専用メダル、それ以外はアカウント(またはゲスト)のメダルを見る */
 function isSingleGame(){
-  return view.mode === 'single' && screen === 'game';
+  /* v4.0: ハイ&ローのシングルも「練習メダル」で動く */
+  return view.mode === 'single' && (screen === 'game' || screen === 'hilo');
 }
 
 function makeSingleSeats(count){
@@ -3026,12 +3193,35 @@ function setConn(state, text){
   el.connBadge.textContent = text;
 }
 
+/* ロビーの表示を、選んでいるゲームに合わせて整える(v4.0)
+   ハイ&ローにはチャンピオン/早抜けが無いので、モード選択ごと隠す */
+function syncLobbyForGame(){
+  const hilo = view.game === 'hilo';
+  const info = gameInfo(view.game);
+  el.lobbyTitle.textContent = info.name + ' - オンライン';
+  el.roomTitle.textContent = info.name + ' 待機ルーム';
+  el.createModeLabel.hidden = hilo;
+  el.createModeSeg.hidden = hilo;
+  el.createModeDesc.hidden = hilo;
+  el.createHiloNote.hidden = !hilo;
+  if (hilo){
+    /* ハイ&ローはエンジョイ相当のみ。関連する設定行も畳んでおく */
+    online.createMode = 'enjoy';
+    el.createChampRow.hidden = true;
+    el.createSprintRow.hidden = true;
+    el.createModeSeg.querySelectorAll('.seg-btn').forEach(x =>
+      x.classList.toggle('is-on', x.dataset.mode === 'enjoy'));
+    updateCreateCpuRow();
+  }
+}
+
 async function enterOnline(){
   if (!account.user){
     toast('オンラインプレイにはログインが必要です');
     openOverlay(el.accountOverlay);
     return;
   }
+  syncLobbyForGame();
   showScreen('lobby');
   if (online.socket && online.socket.connected){
     setConn('on', '接続中');
@@ -3082,8 +3272,9 @@ function connectSocket(){
   sock.on('disconnect', () => {
     setConn('off', '切断されました');
     updateChatVisibility();
-    if (screen === 'room' || screen === 'game'){
+    if (screen === 'room' || screen === 'game' || screen === 'hilo'){
       toast('サーバーとの接続が切れました');
+      stopHiloTimer();
       showScreen('lobby');
     }
   });
@@ -3144,7 +3335,7 @@ function connectSocket(){
   sock.on('room:invited', (data) => {
     /* 自分がすでに同じ部屋にいる/ゲーム中なら出さない */
     if (online.roomId === data.roomId) return;
-    if (screen === 'game') return toast(data.from + ' さんから招待が届いています');
+    if (screen === 'game' || screen === 'hilo') return toast(data.from + ' さんから招待が届いています');
     showInvited(data);
   });
   sock.on('room:inviteSent', ({ username }) => {
@@ -3185,12 +3376,24 @@ function showCountdown(n){
 }
 
 function renderRoomList(list){
-  if (!Array.isArray(list) || list.length === 0){
-    el.roomList.innerHTML = '<p class="empty-note">参加できる部屋がありません。<br>部屋を作って友達を誘いましょう。</p>';
+  /* v4.0: いま選んでいるゲームの部屋だけを出す。
+     ほかのゲームの部屋が混ざると、入ってから違うゲームだったという事故になる */
+  const all = Array.isArray(list) ? list : [];
+  const rooms = all.filter(r => (r.game || 'bj') === view.game);
+  const others = all.length - rooms.length;
+
+  if (rooms.length === 0){
+    el.roomList.innerHTML =
+      '<p class="empty-note">' + esc(gameInfo(view.game).name) +
+      ' の部屋がありません。<br>部屋を作って友達を誘いましょう。' +
+      (others > 0 ? '<br><span class="field-hint">(ほかのゲームの部屋が ' + others + ' 件あります)</span>' : '') +
+      '</p>';
     return;
   }
-  el.roomList.innerHTML = list.map(r => {
-    const modeTag = r.mode === 'champion'
+  el.roomList.innerHTML = rooms.map(r => {
+    const modeTag = (r.game === 'hilo')
+      ? '<span class="room-row-tag">ハイ&ロー</span>'
+      : r.mode === 'champion'
       ? '<span class="room-row-tag is-champ">🏆 ' + r.championRounds + 'R</span>'
       : r.mode === 'sprint'
         ? '<span class="room-row-tag is-sprint">⚡ ' + Number(r.sprintGoal || 0).toLocaleString() + '超え</span>'
@@ -3261,11 +3464,23 @@ function onRoomState(state){
   online.roomId = state.id;
   view.mode = 'online';
   view.onlineMode = state.mode;
+  view.game = state.game || 'bj';
 
   /* ロビー・カウントダウン・大会結果は演出を打ち切ってすぐ反映する */
   if (state.phase === 'lobby' || state.phase === 'countdown' || state.phase === 'champion_end'){
     cancelOnlineAnim();
     return applyRoomState(state);
+  }
+
+  /* ハイ&ローは専用の画面で描く(v4.0)。
+     ブラックジャックの配札演出とは無関係なので、ここで分岐して抜ける */
+  if (state.game === 'hilo'){
+    cancelOnlineAnim();
+    view.spectating = !!state.isSpectator;
+    view.spectators = state.spectatorCount || 0;
+    el.body.classList.toggle('is-spectating', view.spectating);
+    updateChatVisibility();
+    return applyHiloState(state);
   }
 
   if (onlineAnim.busy){ onlineAnim.pending = state; return; }
@@ -3395,6 +3610,10 @@ function applyRoomState(state){
     online.dealtRound = -1;
     online.dealerRound = -1;
     online.cardTotal = 0;
+    /* ハイ&ローの持ち越しをここで消す(v4.0) */
+    hiloOnline.shownStep = -1;
+    hiloOnline.shownRound = -1;
+    stopHiloTimer();
     stopTurnTimer();
     setStreak(0);
     showScreen('room');
@@ -3672,7 +3891,7 @@ function chatAvailable(){
   if (view.spectating) return false;
   return view.mode === 'online'
       && online.socket && online.socket.connected
-      && (screen === 'room' || screen === 'game');
+      && (screen === 'room' || screen === 'game' || screen === 'hilo');
 }
 
 function updateChatVisibility(){
@@ -3869,7 +4088,7 @@ function restoreChatFabPos(){
    ユーザーがドラッグで動かした後は、その位置を優先する */
 function anchorFabAboveControls(){
   if (loadChatFabPos()) return;
-  const ctlH = (screen === 'game' && !el.controls.hidden)
+  const ctlH = ((screen === 'game' || screen === 'hilo') && !el.controls.hidden)
     ? Math.round(el.controls.getBoundingClientRect().height) : 0;
   const { right, bottom } = clampFabPos(12, ctlH + 22);
   applyFabPos(right, bottom);
@@ -4027,7 +4246,7 @@ function joinRoomById(id, via){
 /* 観戦人数の表示 */
 function renderSpectateChip(){
   const n = view.spectators || 0;
-  const show = screen === 'game' && view.mode === 'online' && n > 0;
+  const show = (screen === 'game' || screen === 'hilo') && view.mode === 'online' && n > 0;
   el.spectateChip.hidden = !show;
   if (show) el.spectateNum.textContent = n;
 }
@@ -4120,6 +4339,547 @@ function leaveOnlineRoom(){
   showScreen('lobby');
   renderMedal();
   if (online.socket) online.socket.emit('room:list');
+}
+
+/* =========================================================
+   12.8 ハイ&ロー(v4.0)
+
+   シングルとオンラインで同じ画面(screenHilo)を使い回す。
+   ・シングル … このファイルの中で完結する。練習メダル1000枚。
+   ・オンライン … サーバーが判定した結果(state.hilo)をそのまま描くだけ。
+
+   ベットは100枚固定で、最初の予想を出すことがベットになる。
+   当てるたびに1.5倍ずつ積み上がり、5連続で上限。外すと全部失う。
+   ========================================================= */
+const HILO_BET       = 100;
+const HILO_RATE      = 1.5;
+const HILO_MAX_STEPS = 5;
+const HILO_START_MEDAL = 1000;   // シングルの練習メダル
+const HILO_SINGLE_REVEAL_MS = 900;
+const HILO_SINGLE_NEXT_MS   = 1300;
+
+/* n回的中したときの払い戻し(ベット込み)。サーバーと必ず同じ式にすること */
+function hiloPayout(steps){
+  const n = Math.max(0, Math.min(Number(steps) || 0, HILO_MAX_STEPS));
+  return n <= 0 ? 0 : Math.floor(HILO_BET * Math.pow(HILO_RATE, n));
+}
+
+/* A=0 … K=12 */
+function hiloRankIndex(rank){ return RANKS.indexOf(rank); }
+
+/* シングル用の状態 */
+const hiloSingle = {
+  active: false,
+  medal: HILO_START_MEDAL,
+  deck: [],
+  base: null,
+  next: null,
+  steps: 0,
+  stake: 0,
+  round: 0,
+  busy: false,
+  bestWin: 0,
+  totalWin: 0
+};
+
+/* 画面に出す共通の見た目の状態。オンライン/シングルの差をここで吸収する */
+const hiloView = {
+  base: null,
+  next: null,
+  steps: 0,
+  stake: 0,
+  deckLeft: 52,
+  round: 0,
+  canPick: false,     // HIGH / LOW を押せるか
+  canCash: false,     // 回収を押せるか
+  myPick: null,       // 自分がいま出している予想
+  players: []         // オンラインのときだけ使う
+};
+
+let hiloTimerId = null;
+
+/* ---------------------------------------------------------
+   デッキ(シングル)。52枚を順に消費し、尽きたら作り直す
+   --------------------------------------------------------- */
+function buildHiloDeck(){
+  const d = [];
+  for (const su of SUITS)
+    for (const r of RANKS)
+      d.push({ rank: r, mark: su.mark, red: su.red });
+  for (let i = d.length - 1; i > 0; i--){
+    const j = randInt(i + 1);
+    [d[i], d[j]] = [d[j], d[i]];
+  }
+  return d;
+}
+
+function hiloDrawSingle(){
+  if (hiloSingle.deck.length < 2) hiloSingle.deck = buildHiloDeck();
+  return hiloSingle.deck.pop();
+}
+
+/* ---------------------------------------------------------
+   描画
+   --------------------------------------------------------- */
+function renderHiloCard(node, card, back){
+  const face = node.querySelector('.hilo-card-face');
+  if (back || !card){
+    node.classList.add('is-back');
+    node.classList.remove('is-red');
+    face.textContent = '?';
+    return;
+  }
+  node.classList.remove('is-back');
+  node.classList.toggle('is-red', !!card.red);
+  face.textContent = card.rank + card.mark;
+}
+
+function flashHiloCard(node, cls){
+  node.classList.remove('is-hit', 'is-miss', 'is-flip');
+  void node.offsetWidth;
+  node.classList.add('is-flip');
+  if (cls) node.classList.add(cls);
+}
+
+function renderHiloLadder(){
+  const cur = hiloView.steps || 0;
+  let html = '';
+  for (let i = 1; i <= HILO_MAX_STEPS; i++){
+    const cls = i <= cur ? ' is-done'
+              : (i === cur + 1 ? ' is-now' : '')
+              + (i === HILO_MAX_STEPS ? ' is-max' : '');
+    html +=
+      '<div class="hilo-rung' + cls + '">' +
+        '<span class="hilo-rung-step">' + i + '回' + (i === HILO_MAX_STEPS ? ' MAX' : '') + '</span>' +
+        '<span class="hilo-rung-pay">' + hiloPayout(i).toLocaleString() + '</span>' +
+      '</div>';
+  }
+  el.hiloLadder.innerHTML = html;
+}
+
+function renderHiloStake(){
+  const n = hiloView.steps || 0;
+  if (n <= 0){ el.hiloStake.hidden = true; return; }
+  el.hiloStake.hidden = false;
+  el.hiloStakeVal.textContent = Number(hiloView.stake || 0).toLocaleString();
+  el.hiloStakeMult.textContent = '×' + Math.pow(HILO_RATE, n).toFixed(2).replace(/0$/, '');
+  ledTick(el.hiloStakeVal);
+}
+
+function setHiloMessage(text, tone){
+  el.hiloMessageText.textContent = text;
+  el.hiloMessageText.className = tone || '';
+}
+
+function renderHiloBoard(){
+  renderHiloCard(el.hiloBaseCard, hiloView.base, false);
+  renderHiloCard(el.hiloNextCard, hiloView.next, !hiloView.next);
+  el.hiloDeckLeft.textContent = hiloView.deckLeft;
+  el.hiloRoundChip.hidden = !(view.mode === 'online');
+  el.hiloRoundNum.textContent = Math.max(1, hiloView.round || 1);
+  el.hiloVs.classList.toggle('is-high', hiloView.myPick === 'high');
+  el.hiloVs.classList.toggle('is-low',  hiloView.myPick === 'low');
+  renderHiloLadder();
+  renderHiloStake();
+}
+
+/* 自分の予想と場のカードから、押せる/押せないを整える */
+function renderHiloPanel(){
+  const canPick = !!hiloView.canPick;
+  const picked = hiloView.myPick;
+
+  el.hiloHighBtn.disabled = !canPick || !!picked;
+  el.hiloLowBtn.disabled  = !canPick || !!picked;
+  el.hiloHighBtn.classList.toggle('is-picked', picked === 'high');
+  el.hiloLowBtn.classList.toggle('is-picked', picked === 'low');
+
+  el.hiloCashBtn.hidden = !hiloView.canCash;
+  el.hiloCashBtn.disabled = !hiloView.canCash || !!picked;
+  el.hiloCashSub.textContent = Number(hiloView.stake || 0).toLocaleString() + ' メダルを確定';
+
+  /* 場のカードから見た有利/不利をそっと添える(勝率の目安) */
+  const b = hiloView.base;
+  if (b){
+    const a = hiloRankIndex(b.rank);
+    el.hiloHighSub.textContent = a >= 12 ? '不可能に近い' : (b.rank + ' より上');
+    el.hiloLowSub.textContent  = a <= 0  ? '不可能に近い' : (b.rank + ' より下');
+  } else {
+    el.hiloHighSub.textContent = '次は高い';
+    el.hiloLowSub.textContent  = '次は低い';
+  }
+
+  if (hiloView.steps > 0){
+    el.hiloHint.textContent = '外すと ' + Number(hiloView.stake).toLocaleString() +
+      ' メダルはすべて失います。回収するなら今です。';
+  } else {
+    el.hiloHint.textContent = '1回目の予想が「' + HILO_BET + 'メダルのベット」になります。';
+  }
+}
+
+/* オンラインの参加者一覧 */
+function renderHiloPlayers(){
+  if (view.mode !== 'online'){ el.hiloPlayers.innerHTML = ''; return; }
+  const list = hiloView.players || [];
+  if (!list.length){ el.hiloPlayers.innerHTML = ''; return; }
+
+  el.hiloPlayers.innerHTML = list.map(p => {
+    let cls = '', state = '待機中', stateCls = '';
+    if (p.hlStatus === 'alive'){
+      cls = ' is-alive';
+      state = p.hlSteps > 0 ? p.hlSteps + '連続 / ' + Number(p.hlStake).toLocaleString() : '参加中';
+      stateCls = ' is-hit';
+    } else if (p.hlStatus === 'bust'){
+      cls = ' is-bust'; state = 'はずれ'; stateCls = ' is-miss';
+    } else if (p.hlStatus === 'cashed'){
+      cls = ' is-cashed';
+      state = '回収 ' + Number(p.result ? p.result.payout : 0).toLocaleString();
+      stateCls = ' is-cash';
+    } else if (p.hlStatus === 'skip'){
+      cls = ' is-bust'; state = '見送り';
+    }
+    const pickCls = p.hlPick === 'high' ? ' is-high' : (p.hlPick === 'low' ? ' is-low' : '');
+    const pickTxt = p.hlPick === 'high' ? '▲' : (p.hlPick === 'low' ? '▼' : '');
+
+    return '' +
+      '<div class="hilo-player' + cls + (p.isYou ? ' is-you' : '') + '">' +
+        '<span class="hilo-player-avatar" data-icon-color="' + iconColorOf(p.iconColor) + '">' +
+          esc(String(p.name).charAt(0).toUpperCase()) + '</span>' +
+        '<span class="hilo-player-body">' +
+          '<span class="hilo-player-name">' + esc(p.name) + (p.cpu ? ' 🤖' : '') + '</span>' +
+          '<span class="hilo-player-state' + stateCls + '">' + esc(state) + '</span>' +
+        '</span>' +
+        '<span class="hilo-player-pick' + pickCls + '">' + pickTxt + '</span>' +
+      '</div>';
+  }).join('');
+}
+
+function renderHilo(){
+  renderHiloBoard();
+  renderHiloPanel();
+  renderHiloPlayers();
+  renderMedal();
+}
+
+/* ---------------------------------------------------------
+   制限時間の表示(オンラインのみ)
+   --------------------------------------------------------- */
+function startHiloTimer(deadline){
+  stopHiloTimer();
+  if (!deadline) return;
+  el.hiloTimerChip.hidden = false;
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    el.hiloTimerNum.textContent = left;
+    el.hiloTimerChip.classList.toggle('is-urgent', left <= 5);
+    if (left <= 0) stopHiloTimer(true);
+  };
+  tick();
+  hiloTimerId = setInterval(tick, 250);
+}
+
+function stopHiloTimer(keepVisible){
+  if (hiloTimerId){ clearInterval(hiloTimerId); hiloTimerId = null; }
+  if (!keepVisible){
+    el.hiloTimerChip.hidden = true;
+    el.hiloTimerChip.classList.remove('is-urgent');
+  }
+}
+
+/* =========================================================
+   シングルプレイ(このファイルの中で完結する)
+   ========================================================= */
+function startHiloSingle(){
+  view.game = 'hilo';
+  view.mode = 'single';
+  view.onlineMode = 'enjoy';
+  view.spectating = false;
+
+  hiloSingle.active = true;
+  hiloSingle.medal = HILO_START_MEDAL;
+  hiloSingle.deck = buildHiloDeck();
+  hiloSingle.steps = 0;
+  hiloSingle.stake = 0;
+  hiloSingle.round = 0;
+  hiloSingle.busy = false;
+  hiloSingle.bestWin = 0;
+  hiloSingle.totalWin = 0;
+
+  showScreen('hilo');
+  hiloSingleNewRound();
+}
+
+function hiloSingleNewRound(){
+  if (hiloSingle.medal < HILO_BET) return hiloSingleGameOver();
+
+  hiloSingle.round++;
+  hiloSingle.steps = 0;
+  hiloSingle.stake = 0;
+  hiloSingle.busy = false;
+  hiloSingle.base = hiloDrawSingle();
+  hiloSingle.next = null;
+
+  hiloView.base = hiloSingle.base;
+  hiloView.next = null;
+  hiloView.steps = 0;
+  hiloView.stake = 0;
+  hiloView.deckLeft = hiloSingle.deck.length;
+  hiloView.round = hiloSingle.round;
+  hiloView.myPick = null;
+  hiloView.canPick = true;
+  hiloView.canCash = false;
+  hiloView.players = [];
+
+  setHiloMessage('次のカードは HIGH? LOW?');
+  showPanel('hilo-pick');
+  flashHiloCard(el.hiloBaseCard, null);
+  renderHilo();
+  audio.play('deal');
+}
+
+async function hiloSinglePick(pick){
+  if (!hiloSingle.active || hiloSingle.busy || !hiloView.canPick) return;
+
+  /* 1回目の予想でベットが成立する */
+  if (hiloSingle.steps === 0){
+    if (hiloSingle.medal < HILO_BET){
+      toast('練習メダルが足りません');
+      return hiloSingleGameOver();
+    }
+    hiloSingle.medal -= HILO_BET;
+  }
+
+  hiloSingle.busy = true;
+  hiloView.myPick = pick;
+  hiloView.canPick = false;
+  hiloView.canCash = false;
+  renderHilo();
+  renderHiloPanel();
+  audio.play('chip');
+
+  setHiloMessage('めくります…');
+  await sleep(320);
+  if (!hiloSingle.active) return;
+
+  const next = hiloDrawSingle();
+  hiloSingle.next = next;
+  hiloView.next = next;
+  hiloView.deckLeft = hiloSingle.deck.length;
+
+  const a = hiloRankIndex(hiloSingle.base.rank);
+  const b = hiloRankIndex(next.rank);
+  const draw = a === b;
+  const hit = !draw && (pick === 'high' ? b > a : b < a);
+
+  flashHiloCard(el.hiloNextCard, hit ? 'is-hit' : 'is-miss');
+  renderHiloCard(el.hiloNextCard, next, false);
+  audio.play('flip');
+
+  if (hit){
+    hiloSingle.steps++;
+    hiloSingle.stake = hiloPayout(hiloSingle.steps);
+    hiloView.steps = hiloSingle.steps;
+    hiloView.stake = hiloSingle.stake;
+    setHiloMessage('的中! ' + hiloSingle.stake.toLocaleString() + ' メダル', 'good');
+    audio.play('win');
+  } else {
+    setHiloMessage(draw ? '同じ数字…ドローははずれです' : 'はずれ…', 'bad');
+    audio.play('lose');
+  }
+
+  renderHiloLadder();
+  renderHiloStake();
+  renderMedal();
+
+  await sleep(HILO_SINGLE_REVEAL_MS);
+  if (!hiloSingle.active) return;
+
+  if (!hit){
+    hiloSingle.steps = 0;
+    hiloSingle.stake = 0;
+    hiloView.steps = 0;
+    hiloView.stake = 0;
+    await sleep(320);
+    if (!hiloSingle.active) return;
+    return hiloSingleNewRound();
+  }
+
+  /* 上限に達したら自動で確定 */
+  if (hiloSingle.steps >= HILO_MAX_STEPS){
+    setHiloMessage('MAX WIN! ' + hiloSingle.stake.toLocaleString() + ' メダル獲得!', 'gold');
+    return hiloSingleCash(true);
+  }
+
+  /* めくったカードが次の場のカードになる */
+  hiloSingle.base = next;
+  hiloSingle.next = null;
+  hiloView.base = next;
+  hiloView.next = null;
+  hiloView.myPick = null;
+  hiloView.canPick = true;
+  hiloView.canCash = true;
+  hiloSingle.busy = false;
+
+  setHiloMessage('続ける? それとも回収する?');
+  flashHiloCard(el.hiloBaseCard, null);
+  renderHilo();
+}
+
+async function hiloSingleCash(auto){
+  if (!hiloSingle.active) return;
+  if (!auto && (!hiloView.canCash || hiloSingle.busy)) return;
+
+  const gain = hiloSingle.stake;
+  hiloSingle.busy = true;
+  hiloSingle.medal += gain;
+  hiloSingle.totalWin += gain - HILO_BET;
+  if (gain > hiloSingle.bestWin) hiloSingle.bestWin = gain;
+
+  hiloView.canPick = false;
+  hiloView.canCash = false;
+  if (!auto) setHiloMessage(gain.toLocaleString() + ' メダルを回収しました!', 'gold');
+  audio.play('win');
+  renderMedal();
+  renderHiloPanel();
+
+  await sleep(HILO_SINGLE_NEXT_MS);
+  if (!hiloSingle.active) return;
+  hiloSingleNewRound();
+}
+
+function hiloSingleGameOver(){
+  hiloSingle.active = false;
+  hiloView.canPick = false;
+  hiloView.canCash = false;
+  stopHiloTimer();
+  setHiloMessage('練習メダルがなくなりました', 'bad');
+  el.hiloEndTitle.textContent = 'ゲームオーバー';
+  el.hiloEndTitle.className = 'single-end-title';
+  el.hiloEndText.innerHTML =
+    '練習メダルが ' + HILO_BET + ' 枚を下回りました。<br>' +
+    '最高記録: <b>' + hiloSingle.bestWin.toLocaleString() + '</b> メダル / ' +
+    'ラウンド数: <b>' + hiloSingle.round + '</b>';
+  showPanel('hilo-end');
+  renderHilo();
+  audio.play('lose');
+}
+
+function endHiloSingle(){
+  hiloSingle.active = false;
+  hiloSingle.busy = false;
+  stopHiloTimer();
+}
+
+/* =========================================================
+   オンライン
+   サーバーが判定した結果をそのまま描く。演出は「めくり」だけ。
+   ========================================================= */
+const hiloOnline = { shownStep: -1, shownRound: -1 };
+
+function applyHiloState(state){
+  const h = state.hilo;
+  if (!h) return;
+
+  view.game = 'hilo';
+  view.mode = 'online';
+  view.onlineMode = 'enjoy';
+
+  if (screen !== 'hilo') showScreen('hilo');
+
+  const me = state.players.find(p => p.isYou) || null;
+
+  hiloView.base = h.base;
+  hiloView.next = h.next;
+  hiloView.deckLeft = h.deckLeft;
+  hiloView.round = state.round;
+  hiloView.players = state.players;
+  hiloView.steps = me ? me.hlSteps : 0;
+  hiloView.stake = me ? me.hlStake : 0;
+  hiloView.myPick = me ? me.hlPick : null;
+
+  const spect = !!state.isSpectator;
+  const alive = me && me.hlStatus === 'alive';
+  const idle  = me && me.hlStatus === 'idle';
+
+  if (state.phase === 'pick' && !spect && me){
+    hiloView.canPick = (idle || alive) && !me.hlPick;
+    hiloView.canCash = alive && !me.hlPick && me.hlSteps > 0;
+    showPanel('hilo-pick');
+    startHiloTimer(h.deadline);
+  } else {
+    hiloView.canPick = false;
+    hiloView.canCash = false;
+    stopHiloTimer();
+    if (spect) showPanel('spectate');
+    else showPanel('hilo-wait');
+  }
+
+  /* めくりの演出は、同じラウンド・同じ段では1回だけ */
+  if (state.phase === 'reveal' && h.next
+      && (hiloOnline.shownRound !== state.round || hiloOnline.shownStep !== h.step)){
+    hiloOnline.shownRound = state.round;
+    hiloOnline.shownStep = h.step;
+    const hit = me && me.hlHit === true;
+    flashHiloCard(el.hiloNextCard, me && me.hlLastPick ? (hit ? 'is-hit' : 'is-miss') : null);
+    audio.play('flip');
+    if (me && me.hlLastPick) audio.play(hit ? 'win' : 'lose');
+  }
+  if (state.phase === 'pick'){
+    hiloOnline.shownStep = -1;
+    el.hiloNextCard.classList.remove('is-hit', 'is-miss');
+  }
+
+  if (state.phase === 'result' && me && me.result){
+    const r = me.result;
+    if (r.kind === 'cash'){
+      setHiloMessage((r.label === 'MAX WIN' ? 'MAX WIN! ' : '') +
+        Number(r.payout).toLocaleString() + ' メダル獲得' + (r.auto ? '(自動回収)' : ''), 'gold');
+    } else {
+      setHiloMessage('はずれ… ' + HILO_BET + ' メダル没収', 'bad');
+    }
+    el.hiloWaitText.textContent = 'まもなく次のラウンドが始まります…';
+  } else if (state.phase === 'result'){
+    setHiloMessage(state.message || 'ラウンド終了');
+    el.hiloWaitText.textContent = 'まもなく次のラウンドが始まります…';
+  } else {
+    setHiloMessage(state.message || '');
+    el.hiloWaitText.textContent = 'ほかのプレイヤーを待っています…';
+  }
+
+  /* メダルが足りずに参加できないときは、はっきり伝える */
+  if (state.phase === 'pick' && idle && !spect && myMedal() < HILO_BET){
+    hiloView.canPick = false;
+    setHiloMessage('メダルが足りません(' + HILO_BET + '枚必要)', 'bad');
+  }
+
+  renderHilo();
+}
+
+function hiloOnlinePick(pick){
+  if (!hiloView.canPick || !online.socket) return;
+  hiloView.canPick = false;
+  hiloView.myPick = pick;
+  renderHiloPanel();
+  audio.play('chip');
+  online.socket.emit('hilo:pick', { pick });
+}
+
+function hiloOnlineCash(){
+  if (!hiloView.canCash || !online.socket) return;
+  hiloView.canCash = false;
+  hiloView.canPick = false;
+  renderHiloPanel();
+  audio.play('button');
+  online.socket.emit('hilo:cash');
+}
+
+/* 画面のボタンから呼ぶ共通の入口 */
+function hiloPick(pick){
+  if (view.mode === 'single') hiloSinglePick(pick);
+  else hiloOnlinePick(pick);
+}
+function hiloCash(){
+  if (view.mode === 'single') hiloSingleCash(false);
+  else hiloOnlineCash();
 }
 
 /* =========================================================
@@ -4635,10 +5395,26 @@ function closeA2HS(){
 ['pointerdown', 'keydown'].forEach(ev =>
   window.addEventListener(ev, () => audio.unlock(), { once: true }));
 
-/* --- タイトル --- */
-el.toSingleBtn.addEventListener('click', () => { audio.play('button'); openSingleSetup(); });
-el.toOnlineBtn.addEventListener('click', () => { audio.play('button'); enterOnline(); });
-el.toRulesBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.rulesOverlay); });
+/* --- タイトル(v4.0) --- */
+el.toGamesBtn.addEventListener('click', () => { audio.play('button'); openGameSelect(); });
+el.toRulesBtn.addEventListener('click', () => { audio.play('button'); openRules(); });
+
+/* --- ゲーム選択(v4.0) --- */
+el.gameSelectBackBtn.addEventListener('click', () => { audio.play('button'); showScreen('title'); });
+el.gameGrid.addEventListener('click', (e) => {
+  const card = e.target.closest('.game-card');
+  if (!card) return;
+  audio.play('button');
+  openGameMenu(card.dataset.game);
+});
+
+/* --- ゲームごとのメニュー(v4.0) --- */
+el.gameMenuBackBtn.addEventListener('click', () => { audio.play('button'); openGameSelect(); });
+el.gmSingleBtn.addEventListener('click', () => { audio.play('button'); startSelectedSingle(); });
+el.gmOnlineBtn.addEventListener('click', () => { audio.play('button'); enterOnline(); });
+el.gmTutorialBtn.addEventListener('click', () => { audio.play('button'); startTutorial(); });
+el.gmRankingBtn.addEventListener('click', () => { audio.play('button'); openRankPanel(view.game); });
+el.gmRulesBtn.addEventListener('click', () => { audio.play('button'); openRules(view.game); });
 el.toSettingsBtn.addEventListener('click', () => { audio.play('button'); renderSettings(); openOverlay(el.settingsOverlay); });
 
 el.brandBtn.addEventListener('click', () => {
@@ -4651,11 +5427,14 @@ el.brandBtn.addEventListener('click', () => {
     renderMedal();
     return;
   }
-  if (screen === 'room' || (screen === 'game' && view.mode === 'online')){
+  if (screen === 'room' || ((screen === 'game' || screen === 'hilo') && view.mode === 'online')){
     if (!confirm('部屋から退出してタイトルに戻りますか?')) return;
     if (online.socket) online.socket.emit('room:leave');
     resetOnlineRoomView();
   }
+  /* ハイ&ローのシングルは進行を止めてから戻る(v4.0) */
+  if (screen === 'hilo' && view.mode === 'single') endHiloSingle();
+  stopHiloTimer();
   audio.play('button');
   showScreen('title');
   renderMedal();
@@ -4663,8 +5442,9 @@ el.brandBtn.addEventListener('click', () => {
 
 el.leaveBtn.addEventListener('click', () => {
   audio.play('button');
-  if (view.mode === 'online' && (screen === 'room' || screen === 'game')){
+  if (view.mode === 'online' && (screen === 'room' || screen === 'game' || screen === 'hilo')){
     if (!confirm('部屋から退出しますか?')) return;
+    stopHiloTimer();
     leaveOnlineRoom();
     showScreen('title');
   } else if (screen === 'game'){
@@ -4673,7 +5453,7 @@ el.leaveBtn.addEventListener('click', () => {
   }
 });
 
-el.gameRulesBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.rulesOverlay); });
+el.gameRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('bj'); });
 
 el.changelogBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.changelogOverlay); });
 
@@ -4722,7 +5502,6 @@ el.singleEndBackBtn.addEventListener('click', () => {
 el.singleStartBtn.addEventListener('click', () => { audio.play('button'); startSingle(); });
 
 /* --- チュートリアル(v3.3) --- */
-el.toTutorialBtn.addEventListener('click', () => { audio.play('button'); startTutorial(); });
 el.tutorialNextBtn.addEventListener('click', tutorialNext);
 el.tutorialSkipBtn.addEventListener('click', skipTutorialChapter);
 el.tutorialExitBtn.addEventListener('click', () => {
@@ -4837,6 +5616,7 @@ el.createRoomBtn.addEventListener('click', () => {
   if (!online.socket || !online.socket.connected) return toast('サーバーに接続していません');
   audio.play('button');
   online.socket.emit('room:create', {
+    game: view.game,
     maxPlayers: online.createMax,
     mode: online.createMode,
     cpuFill: online.createCpuFill,
@@ -4896,6 +5676,20 @@ el.noticeClearBtn.addEventListener('click', async () => {
 
 el.toRankingBtn.addEventListener('click', () => { audio.play('button'); openRankPanel(); });
 el.rankCloseBtn.addEventListener('click', () => closeOverlay(el.rankOverlay));
+/* ランキングのゲーム切り替え(v4.0) */
+el.rankGameTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  audio.play('chip');
+  setRankGame(b.dataset.rgame);
+});
+/* ルールのゲーム切り替え(v4.0) */
+el.rulesGameTabs.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  audio.play('chip');
+  setRulesGame(b.dataset.ruleg);
+});
 el.rankKindTabs.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn');
   if (!b) return;
@@ -4907,6 +5701,35 @@ el.rankDayTabs.addEventListener('click', (e) => {
   if (!b || b.disabled) return;
   audio.play('chip');
   setRankDay(b.dataset.day);
+});
+
+/* --- ハイ&ロー(v4.0) --- */
+el.hiloHighBtn.addEventListener('click', () => hiloPick('high'));
+el.hiloLowBtn.addEventListener('click', () => hiloPick('low'));
+el.hiloCashBtn.addEventListener('click', () => hiloCash());
+el.hiloRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('hilo'); });
+el.hiloEndBackBtn.addEventListener('click', () => {
+  audio.play('button');
+  endHiloSingle();
+  showScreen('title');
+});
+el.hiloEndRetryBtn.addEventListener('click', () => {
+  audio.play('button');
+  startHiloSingle();
+});
+el.hiloLeaveBtn.addEventListener('click', () => {
+  audio.play('button');
+  if (view.mode === 'online'){
+    if (!confirm('部屋から退出しますか?')) return;
+    stopHiloTimer();
+    leaveOnlineRoom();
+    showScreen('title');
+    return;
+  }
+  /* シングルは進行中でも気軽に抜けられる(練習メダルなので影響がない) */
+  endHiloSingle();
+  showScreen('title');
+  renderMedal();
 });
 
 /* --- フレンド(v3.0) --- */
