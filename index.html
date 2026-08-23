@@ -68,7 +68,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.0 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v4.1 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -76,7 +76,7 @@
         <span class="title-btn-icon">🃏</span>
         <span class="title-btn-text">
           <span class="title-btn-name">ゲームを選ぶ</span>
-          <span class="title-btn-desc">ブラックジャック / ハイ&amp;ロー</span>
+          <span class="title-btn-desc">ブラックジャック / ハイ&amp;ロー / マーブルレース</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRankingBtn">
@@ -123,6 +123,20 @@
             <span class="game-tag">1〜4人</span>
             <span class="game-tag">大会モードあり</span>
             <span class="game-tag">チュートリアルあり</span>
+          </span>
+        </span>
+      </button>
+
+      <button type="button" class="game-card" data-game="marble">
+        <span class="game-card-art is-marble"><span class="game-card-mark">◉</span></span>
+        <span class="game-card-body">
+          <span class="game-card-name">MARBLE RACE</span>
+          <span class="game-card-jp">マーブルレース</span>
+          <span class="game-card-desc">8つのボールが競い合うレースに投票。単勝・複勝・馬連の3種類で、オッズ次第では大穴も狙えます。</span>
+          <span class="game-card-tags">
+            <span class="game-tag is-new">NEW</span>
+            <span class="game-tag">常時開催</span>
+            <span class="game-tag">1人でもOK</span>
           </span>
         </span>
       </button>
@@ -501,6 +515,64 @@
 
   </section>
 
+  <!-- ---------- マーブルレース(v4.1) ---------- -->
+  <section class="screen" id="screenMarble" hidden>
+
+    <div class="mr-top">
+      <button type="button" class="back-btn" id="mrLeaveBtn">◀ もどる</button>
+      <div class="mr-top-chips">
+        <div class="mr-chip">
+          <span class="mr-chip-key">RACE</span>
+          <span class="mr-chip-val led" id="mrRaceNo">1</span>
+        </div>
+        <div class="mr-chip is-phase" id="mrPhaseChip">
+          <span class="mr-chip-val" id="mrPhaseText">投票受付中</span>
+        </div>
+        <div class="mr-chip is-timer" id="mrTimerChip">
+          <span class="mr-chip-key">のこり</span>
+          <span class="mr-chip-val led" id="mrTimerNum">35</span>
+        </div>
+      </div>
+      <button type="button" class="icon-btn" id="mrRulesBtn" title="ルール">📖</button>
+    </div>
+
+    <!-- コース -->
+    <div class="mr-track" id="mrTrack">
+      <div class="mr-goal-line"><span>GOAL</span></div>
+      <div class="mr-lanes" id="mrLanes"></div>
+    </div>
+
+    <div id="mrMessageBar"><span id="mrMessageText">まもなくレースが始まります</span></div>
+
+    <!-- 結果 -->
+    <div class="mr-result" id="mrResult" hidden>
+      <div class="mr-podium" id="mrPodium"></div>
+      <div class="mr-payout" id="mrPayout"></div>
+    </div>
+
+    <!-- 出走表(オッズ) -->
+    <div class="mr-board" id="mrBoard">
+      <div class="mr-board-head">
+        <h3 class="block-title">出走表</h3>
+        <span class="mr-board-note" id="mrBoardNote">タップして投票</span>
+      </div>
+      <div class="mr-entries" id="mrEntries"></div>
+    </div>
+
+    <!-- 購入した投票券 -->
+    <div class="mr-tickets" id="mrTickets" hidden>
+      <div class="mr-board-head">
+        <h3 class="block-title">投票券</h3>
+        <span class="mr-board-note" id="mrInvestNote">合計 0 メダル</span>
+      </div>
+      <div class="mr-ticket-list" id="mrTicketList"></div>
+    </div>
+
+    <!-- 会場にいる人 -->
+    <div class="mr-watchers" id="mrWatchers"></div>
+
+  </section>
+
 </main>
 
 <!-- ============ 操作パネル ============ -->
@@ -580,6 +652,48 @@
       <button type="button" class="btn btn-ghost" id="tutorialEndBackBtn">タイトルへ</button>
       <button type="button" class="btn btn-primary" id="tutorialEndPlayBtn">遊んでみる</button>
     </div>
+  </div>
+
+  <!-- マーブルレースの投票(v4.1) -->
+  <div class="panel" id="mrBetPanel" hidden>
+    <div class="seg seg-3" id="mrTypeSeg">
+      <button type="button" class="seg-btn is-on" data-mrtype="win">単勝<span class="seg-sub">1着を当てる</span></button>
+      <button type="button" class="seg-btn" data-mrtype="place">複勝<span class="seg-sub">3着以内</span></button>
+      <button type="button" class="seg-btn" data-mrtype="quinella">馬連<span class="seg-sub">1・2着の組</span></button>
+    </div>
+
+    <p class="mr-pick-note" id="mrPickNote">ボールを1つ選んでください</p>
+    <div class="mr-pick-row" id="mrPickRow"></div>
+
+    <div class="mr-bet-row">
+      <div class="mr-bet-amount">
+        <span class="mr-bet-cap">投票額</span>
+        <span class="mr-bet-val led" id="mrBetValue">0</span>
+      </div>
+      <div class="mr-bet-odds" id="mrBetOdds" hidden>
+        <span class="mr-bet-cap">オッズ</span>
+        <span class="mr-bet-oddsval" id="mrBetOddsVal">-</span>
+        <span class="mr-bet-cap">払戻予定</span>
+        <span class="mr-bet-ret led" id="mrBetReturn">-</span>
+      </div>
+    </div>
+
+    <div class="chip-row" id="mrChipRow">
+      <button type="button" class="chip" data-mrchip="10">10</button>
+      <button type="button" class="chip" data-mrchip="50">50</button>
+      <button type="button" class="chip" data-mrchip="100">100</button>
+      <button type="button" class="chip" data-mrchip="500">500</button>
+      <button type="button" class="chip" data-mrchip="1000">1000</button>
+    </div>
+
+    <div class="mr-bet-actions">
+      <button type="button" class="btn btn-ghost" id="mrClearBtn">クリア</button>
+      <button type="button" class="btn btn-primary" id="mrBuyBtn">投票する</button>
+    </div>
+  </div>
+
+  <div class="panel" id="mrWaitPanel" hidden>
+    <p class="wait-text" id="mrWaitText">レース中です…</p>
   </div>
 
   <!-- ハイ&ローの操作(v4.0) -->
@@ -729,6 +843,18 @@
         </div>
 
         <div class="sheet-section">
+          <h3>戦績(マーブルレース)</h3>
+          <div class="stat-grid">
+            <div class="stat"><span class="stat-key">レース</span><span class="stat-val led" id="mrRaces">0</span></div>
+            <div class="stat"><span class="stat-key">的中</span><span class="stat-val led" id="mrHits">0</span></div>
+            <div class="stat"><span class="stat-key">はずれ</span><span class="stat-val led" id="mrMisses">0</span></div>
+            <div class="stat"><span class="stat-key">的中率</span><span class="stat-val led" id="mrRate">0%</span></div>
+            <div class="stat"><span class="stat-key">総獲得</span><span class="stat-val led" id="mrTotalGain">0</span></div>
+            <div class="stat"><span class="stat-key">一撃</span><span class="stat-val led" id="mrBestGain">0</span></div>
+          </div>
+        </div>
+
+        <div class="sheet-section">
           <h3>戦績(ハイ&amp;ロー)</h3>
           <div class="stat-grid">
             <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="hlPlays">0</span></div>
@@ -813,11 +939,57 @@
       <button type="button" class="close-btn" id="rulesCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
-      <div class="seg seg-2" id="rulesGameTabs">
-        <button type="button" class="seg-btn is-on" data-ruleg="bj">♠ ブラックジャック</button>
+      <div class="seg seg-3" id="rulesGameTabs">
+        <button type="button" class="seg-btn is-on" data-ruleg="bj">♠ BJ</button>
         <button type="button" class="seg-btn" data-ruleg="hilo">▲▼ ハイ&amp;ロー</button>
+        <button type="button" class="seg-btn" data-ruleg="marble">◉ レース</button>
       </div>
       <p class="sheet-note">見たいゲームを選んでください。アカウント・メダル・フレンドはすべてのゲームで共通です。</p>
+
+      <div class="rules-group" id="rulesMarble" hidden>
+        <div class="sheet-section">
+          <h3>マーブルレースの基本</h3>
+          <ul class="rule-list">
+            <li><b>8つのボール</b>が走るレースで、どれが上位に入るかを当てるゲームです。競馬と同じ仕組みだと思ってください。</li>
+            <li>会場は<b>常時開催</b>です。部屋を作る必要はなく、入ればすぐ次のレースに参加できます。<b>1人でも遊べます</b>。</li>
+            <li>1レースはおよそ1分です。<b>投票35秒 → レース15秒 → 払い戻し10秒</b>で、そのまま次のレースが始まります。</li>
+            <li>出走する8つのボールは固定ですが、<b>強さは毎レース変わります</b>。オッズもそれに合わせて毎回変化します。</li>
+            <li>投票しなかったレースは、ただ見ているだけでもかまいません。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>買い目(3種類)</h3>
+          <ul class="rule-list">
+            <li><b>単勝</b> … <b>1着</b>になるボールを1つ選びます。当てるのは難しいぶん配当が高くなります。</li>
+            <li><b>複勝</b> … 選んだボールが<b>3着以内</b>に入れば的中です。当たりやすいぶん配当は低めです。</li>
+            <li><b>馬連</b> … <b>1着と2着</b>になる2つの組み合わせを当てます。順番は問いません(1-2でも2-1でも同じ)。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>オッズと払い戻し</h3>
+          <ul class="rule-list">
+            <li>オッズは<b>ボールの強さから自動で計算</b>されます。強いボールほど低配当、弱いボールほど高配当です。</li>
+            <li>払い戻しは <b>投票額 × オッズ</b> です(端数は切り捨て)。オッズには投票額そのものが含まれます。</li>
+            <li>オッズは<b>投票した瞬間の値で固定</b>されます。あとから変動することはありません。</li>
+            <li>投票は<b>10メダルから</b>、1回あたり100,000メダルまで。1レースで<b>最大12枚</b>まで買えます。</li>
+            <li>単勝と複勝を同時に買う、複数のボールに分けて買う、といった買い方もできます。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>レベルと経験値</h3>
+          <ul class="rule-list">
+            <li>投票したレースが終わるごとに <b>+15 EXP</b>。</li>
+            <li>1つでも的中していれば、さらに <b>+25 EXP</b>。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>ランキング</h3>
+          <ul class="rule-list">
+            <li>マーブルレースのランキングは<b>ほかのゲームとは別</b>に集計されます。</li>
+            <li>1レースの払い戻し合計から投票額を引いた分が記録されます。</li>
+          </ul>
+        </div>
+      </div>
 
       <div class="rules-group" id="rulesHilo" hidden>
         <div class="sheet-section">
@@ -1087,6 +1259,19 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v4.1</h3>
+        <ul class="rule-list">
+          <li><b>◉ MARBLE RACE(マーブルレース)</b>を追加しました! 8つのボールが競い合うレースに投票する、競馬のようなゲームです。</li>
+          <li>会場は<b>常時開催</b>。部屋を作る必要はなく、入ればすぐ参加できます。<b>1人でも遊べます</b>。</li>
+          <li>1レースは約1分。<b>投票35秒 → レース15秒 → 払い戻し10秒</b>のサイクルで自動的に回り続けます。</li>
+          <li>買い目は<b>単勝・複勝・馬連</b>の3種類。1レースで最大12枚まで、10メダルから投票できます。</li>
+          <li>ボールの強さは<b>毎レース変化</b>し、オッズもそれに合わせて変わります。大穴を当てれば一撃も狙えます。</li>
+          <li>投票したオッズは<b>その瞬間の値で固定</b>されるので、あとから下がることはありません。</li>
+          <li>ランキングにマーブルレースを追加しました(ほかのゲームとは別集計です)。</li>
+          <li>マイページにマーブルレースの戦績を追加しました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v4.0</h3>
         <ul class="rule-list">
@@ -1396,9 +1581,10 @@
       <button type="button" class="close-btn" id="rankCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
-      <div class="seg seg-2" id="rankGameTabs">
-        <button type="button" class="seg-btn is-on" data-rgame="bj">♠ ブラックジャック</button>
+      <div class="seg seg-3" id="rankGameTabs">
+        <button type="button" class="seg-btn is-on" data-rgame="bj">♠ BJ</button>
         <button type="button" class="seg-btn" data-rgame="hilo">▲▼ ハイ&amp;ロー</button>
+        <button type="button" class="seg-btn" data-rgame="marble">◉ レース</button>
       </div>
 
       <div class="seg seg-2" id="rankKindTabs">

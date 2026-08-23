@@ -1,9 +1,10 @@
 /* =========================================================
-   Betoria - script.js  (v4.0)
+   Betoria - script.js  (v4.1)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
-     ・HIGH & LOW(ハイ&ロー)  ← v4.0 で追加
+     ・HIGH & LOW(ハイ&ロー)
+     ・MARBLE RACE(マーブルレース)  ← v4.1 で追加
    ========================================================= */
 'use strict';
 
@@ -395,6 +396,49 @@ const el = {
   gmRankingBtn: $('gmRankingBtn'),
   gmRankingDesc: $('gmRankingDesc'),
   gmRulesBtn: $('gmRulesBtn'),
+
+  /* ---- v4.1 マーブルレース ---- */
+  screenMarble: $('screenMarble'),
+  mrLeaveBtn: $('mrLeaveBtn'),
+  mrRulesBtn: $('mrRulesBtn'),
+  mrRaceNo: $('mrRaceNo'),
+  mrPhaseChip: $('mrPhaseChip'),
+  mrPhaseText: $('mrPhaseText'),
+  mrTimerChip: $('mrTimerChip'),
+  mrTimerNum: $('mrTimerNum'),
+  mrTrack: $('mrTrack'),
+  mrLanes: $('mrLanes'),
+  mrMessageText: $('mrMessageText'),
+  mrResult: $('mrResult'),
+  mrPodium: $('mrPodium'),
+  mrPayout: $('mrPayout'),
+  mrBoard: $('mrBoard'),
+  mrBoardNote: $('mrBoardNote'),
+  mrEntries: $('mrEntries'),
+  mrTickets: $('mrTickets'),
+  mrInvestNote: $('mrInvestNote'),
+  mrTicketList: $('mrTicketList'),
+  mrWatchers: $('mrWatchers'),
+  mrBetPanel: $('mrBetPanel'),
+  mrTypeSeg: $('mrTypeSeg'),
+  mrPickNote: $('mrPickNote'),
+  mrPickRow: $('mrPickRow'),
+  mrBetValue: $('mrBetValue'),
+  mrBetOdds: $('mrBetOdds'),
+  mrBetOddsVal: $('mrBetOddsVal'),
+  mrBetReturn: $('mrBetReturn'),
+  mrChipRow: $('mrChipRow'),
+  mrClearBtn: $('mrClearBtn'),
+  mrBuyBtn: $('mrBuyBtn'),
+  mrWaitPanel: $('mrWaitPanel'),
+  mrWaitText: $('mrWaitText'),
+  mrRaces: $('mrRaces'),
+  mrHits: $('mrHits'),
+  mrMisses: $('mrMisses'),
+  mrRate: $('mrRate'),
+  mrTotalGain: $('mrTotalGain'),
+  mrBestGain: $('mrBestGain'),
+  rulesMarble: $('rulesMarble'),
 
   /* ---- v4.0 ハイ&ロー ---- */
   screenHilo: $('screenHilo'),
@@ -1059,11 +1103,15 @@ function showPanel(name){
   el.hiloPickPanel.hidden = name !== 'hilo-pick';
   el.hiloWaitPanel.hidden = name !== 'hilo-wait';
   el.hiloEndPanel.hidden  = name !== 'hilo-end';
+  /* マーブルレース(v4.1) */
+  el.mrBetPanel.hidden  = name !== 'mr-bet';
+  el.mrWaitPanel.hidden = name !== 'mr-wait';
   /* チュートリアルでは、見せるだけの操作ボタンとガイドを同時に出す(v3.3)。
      実際の表示可否は showTutorialButtons() が決める */
   if (name === 'tutorial' && tutorial.active) el.actionPanel.hidden = true;
   /* 操作パネルはゲーム画面とハイ&ロー画面の両方で使う(v4.0) */
-  el.controls.hidden    = (screen !== 'game' && screen !== 'hilo') || name === 'none';
+  el.controls.hidden    = (screen !== 'game' && screen !== 'hilo' && screen !== 'marble')
+                          || name === 'none';
 }
 
 /* =========================================================
@@ -1082,19 +1130,21 @@ function showScreen(name){
   el.screenChampionEnd.hidden = name !== 'championEnd';
   el.screenGame.hidden  = name !== 'game';
   el.screenHilo.hidden  = name !== 'hilo';              // v4.0
+  el.screenMarble.hidden = name !== 'marble';          // v4.1
 
-  el.controls.hidden = (name !== 'game' && name !== 'hilo');
+  el.controls.hidden = (name !== 'game' && name !== 'hilo' && name !== 'marble');
   /* v3.2: シングルは専用メダルで完結するので広告は出さない。
      大会系(チャンピオン/早抜け)と観戦中も対象外。
      v4.0: ハイ&ローのオンラインでも広告でメダルを増やせる */
-  el.adBtn.hidden = !((name === 'game' || name === 'hilo') && view.mode === 'online'
+  el.adBtn.hidden = !((name === 'game' || name === 'hilo' || name === 'marble')
+                      && view.mode === 'online'
                       && !view.spectating && view.onlineMode === 'enjoy');
   /* チュートリアル中はヘッダーの各種ボタンを触らせない(v3.3) */
   if (view.mode === 'tutorial'){
     el.adBtn.hidden = true;
     el.roundChip.hidden = true;
   }
-  el.medalReadout.hidden = !(name === 'game' || name === 'hilo' || account.user);
+  el.medalReadout.hidden = !(name === 'game' || name === 'hilo' || name === 'marble' || account.user);
   el.brandBtn.disabled = name === 'title';
 
   updateRoundChip();
@@ -1168,6 +1218,15 @@ const GAME_INFO = {
     desc: '次のカードが高いか低いかを当てるだけ。当てるほど倍率が伸びるので、引き際が勝負です。ベットは100メダル固定。',
     singleDesc: '練習メダル1000枚でひとりで遊ぶ',
     tutorial: false
+  },
+  marble: {
+    name: 'MARBLE RACE',
+    jp: 'マーブルレース',
+    desc: '8つのボールが競い合うレースに投票します。単勝・複勝・馬連の3種類。会場は常時開催なので、1人でもすぐ遊べます。',
+    singleDesc: '',
+    tutorial: false,
+    /* 部屋を作らず、常時開催の会場に入るだけ(v4.1) */
+    hall: true
   }
 };
 
@@ -1186,6 +1245,17 @@ function openGameMenu(g){
   el.gmRankingDesc.textContent = info.jp + 'の獲得枚数ランキング';
   /* チュートリアルがあるのはブラックジャックだけ */
   el.gmTutorialBtn.hidden = !info.tutorial;
+
+  /* マーブルレースは部屋を作らないので、
+     シングルを隠してオンラインのボタンを「レース会場へ」にする(v4.1) */
+  const hall = !!info.hall;
+  el.gmSingleBtn.hidden = hall;
+  el.gmOnlineBtn.querySelector('.title-btn-name').textContent =
+    hall ? 'レース会場へ' : 'オンラインプレイ';
+  el.gmOnlineBtn.querySelector('.title-btn-desc').textContent =
+    hall ? '常時開催。1人でもすぐ遊べます' : '部屋を作って友達と対戦';
+  el.gmOnlineBtn.querySelector('.title-btn-icon').textContent = hall ? '🏁' : '🌐';
+
   showScreen('gameMenu');
 }
 
@@ -1249,7 +1319,7 @@ function renderAccountUi(){
     delete el.accountAvatar.dataset.iconColor;
     el.accountLv.hidden = true;
   }
-  el.medalReadout.hidden = !(screen === 'game' || screen === 'hilo' || u);
+  el.medalReadout.hidden = !(screen === 'game' || screen === 'hilo' || screen === 'marble' || u);
   updateFriendBadge();
   updateNoticeBadge();
   updateBonusBtn();
@@ -1306,6 +1376,16 @@ function renderProfile(){
   el.hlRate.textContent = hlDecided ? Math.round((hw / hlDecided) * 100) + '%' : '0%';
   el.hlTotalGain.textContent = Number(u.hlTotalGain || 0).toLocaleString();
   el.hlBestGain.textContent = Number(u.hlBestGain || 0).toLocaleString();
+
+  /* マーブルレースの戦績(v4.1) */
+  const mp = u.mrRaces || 0, mh = u.mrHits || 0, mm = u.mrMisses || 0;
+  el.mrRaces.textContent = mp;
+  el.mrHits.textContent = mh;
+  el.mrMisses.textContent = mm;
+  const mrDecided = mh + mm;
+  el.mrRate.textContent = mrDecided ? Math.round((mh / mrDecided) * 100) + '%' : '0%';
+  el.mrTotalGain.textContent = Number(u.mrTotalGain || 0).toLocaleString();
+  el.mrBestGain.textContent = Number(u.mrBestGain || 0).toLocaleString();
 
   /* メダル記録・ログイン記録(v3.2) */
   el.statTotalGain.textContent = Number(u.totalGain || 0).toLocaleString();
@@ -1791,7 +1871,8 @@ function renderRankSelf(rows){
 
   /* 圏外のときは自分の記録だけ表示する(順位は出せないので「-」) */
   const val = ranking.day === 'alltime'
-    ? (ranking.game === 'hilo' ? u.hlBestGain : u.bestGain) : null;
+    ? (ranking.game === 'hilo' ? u.hlBestGain
+      : ranking.game === 'marble' ? u.mrBestGain : u.bestGain) : null;
   if (ranking.day !== 'alltime'){ el.rankSelf.hidden = true; return; }
   el.rankSelf.hidden = false;
   el.rankSelf.innerHTML =
@@ -1821,6 +1902,7 @@ function setRulesGame(g){
     b.classList.toggle('is-on', b.dataset.ruleg === next));
   el.rulesBj.hidden = next !== 'bj';
   el.rulesHilo.hidden = next !== 'hilo';
+  el.rulesMarble.hidden = next !== 'marble';
 }
 
 /* ルールを開く。指定が無ければ、いま選んでいるゲームを出す */
@@ -1849,7 +1931,8 @@ function onDayChanged(){
   currentDay = now;
 
   /* 対戦中に強制的に飛ばすと迷惑なので、ゲーム中は終わってから案内する */
-  const inGame = screen === 'game' || screen === 'hilo' || screen === 'room' || screen === 'countdown';
+  const inGame = screen === 'game' || screen === 'hilo' || screen === 'marble'
+              || screen === 'room' || screen === 'countdown';
   if (inGame && view.mode === 'online'){
     toast('日付が変わりました。ゲーム終了後にタイトルへ戻ります');
     dayChanging = false;
@@ -3216,6 +3299,8 @@ function syncLobbyForGame(){
 }
 
 async function enterOnline(){
+  /* マーブルレースはロビーを経由せず、直接会場に入る(v4.1) */
+  if (view.game === 'marble') return enterMarble();
   if (!account.user){
     toast('オンラインプレイにはログインが必要です');
     openOverlay(el.accountOverlay);
@@ -3255,6 +3340,8 @@ function connectSocket(){
     updateChatVisibility();
     loadFriends(true);
     loadNotices(true);
+    /* マーブルレースの会場にいたなら入り直す(v4.1) */
+    if (marble.joined && screen === 'marble') sock.emit('marble:join');
     /* 招待URL・招待通知からの参加待ちがあれば実行する(v3.0) */
     const pend = online.pendingJoin;
     if (pend){
@@ -3272,6 +3359,15 @@ function connectSocket(){
   sock.on('disconnect', () => {
     setConn('off', '切断されました');
     updateChatVisibility();
+    if (screen === 'marble'){
+      /* 会場は入り直せばよいので、タイトルに戻さず待たせる(v4.1) */
+      toast('サーバーとの接続が切れました');
+      stopMarbleRace();
+      stopMrTimer();
+      showPanel('mr-wait');
+      el.mrWaitText.textContent = '再接続しています…';
+      return;
+    }
     if (screen === 'room' || screen === 'game' || screen === 'hilo'){
       toast('サーバーとの接続が切れました');
       stopHiloTimer();
@@ -3287,6 +3383,13 @@ function connectSocket(){
     audio.play('join');
   });
   sock.on('room:state', onRoomState);
+
+  /* マーブルレース(v4.1) */
+  sock.on('marble:state', onMarbleState);
+  sock.on('marble:bought', (t) => {
+    toast(t.label + ' ' + t.picks.join('-') + ' に ' +
+          Number(t.amount).toLocaleString() + ' メダル投票しました');
+  });
   sock.on('room:countdown', ({ n }) => showCountdown(n));
   sock.on('chat:new', onChatMessage);
 
@@ -3335,7 +3438,8 @@ function connectSocket(){
   sock.on('room:invited', (data) => {
     /* 自分がすでに同じ部屋にいる/ゲーム中なら出さない */
     if (online.roomId === data.roomId) return;
-    if (screen === 'game' || screen === 'hilo') return toast(data.from + ' さんから招待が届いています');
+    if (screen === 'game' || screen === 'hilo' || screen === 'marble')
+      return toast(data.from + ' さんから招待が届いています');
     showInvited(data);
   });
   sock.on('room:inviteSent', ({ username }) => {
@@ -4088,7 +4192,7 @@ function restoreChatFabPos(){
    ユーザーがドラッグで動かした後は、その位置を優先する */
 function anchorFabAboveControls(){
   if (loadChatFabPos()) return;
-  const ctlH = ((screen === 'game' || screen === 'hilo') && !el.controls.hidden)
+  const ctlH = ((screen === 'game' || screen === 'hilo' || screen === 'marble') && !el.controls.hidden)
     ? Math.round(el.controls.getBoundingClientRect().height) : 0;
   const { right, bottom } = clampFabPos(12, ctlH + 22);
   applyFabPos(right, bottom);
@@ -4883,6 +4987,529 @@ function hiloCash(){
 }
 
 /* =========================================================
+   12.9 マーブルレース(v4.1)
+
+   競馬をそのままボールのレースにしたゲーム。
+   ほかの2つと違って部屋を作らず、サーバーに1つだけある会場に
+   出入りする形なので、1人でもそのまま遊べる。
+
+   画面はサーバーから届く state をそのまま描くだけ。
+   レースの動きも、サーバーが用意した位置データ(track)を
+   なめらかに補間して見せているだけなので、
+   全員がまったく同じレースを見ることになる。
+   ========================================================= */
+const MR_TYPE_INFO = {
+  win:      { label: '単勝', picks: 1, note: '1着になるボールを1つ選んでください' },
+  place:    { label: '複勝', picks: 1, note: '3着以内に入るボールを1つ選んでください' },
+  quinella: { label: '馬連', picks: 2, note: '1着と2着になる2つを選んでください(順不同)' }
+};
+
+const marble = {
+  joined: false,
+  state: null,
+  type: 'win',
+  picks: [],
+  amount: 0,
+  /* レース演出 */
+  raf: null,
+  raceStart: 0,
+  lastRank: '',
+  shownRace: -1,
+  timerId: null
+};
+
+/* ---------------------------------------------------------
+   会場への出入り
+   --------------------------------------------------------- */
+function enterMarble(){
+  if (!account.user){
+    toast('マーブルレースにはログインが必要です');
+    openOverlay(el.accountOverlay);
+    return;
+  }
+  if (!online.socket || !online.socket.connected){
+    connectSocket();
+    toast('サーバーに接続しています…');
+  }
+  view.game = 'marble';
+  view.mode = 'online';
+  view.onlineMode = 'enjoy';
+  view.spectating = false;
+
+  marble.joined = true;
+  marble.state = null;
+  marble.type = 'win';
+  marble.picks = [];
+  marble.amount = 0;
+  marble.shownRace = -1;
+
+  showScreen('marble');
+  showPanel('mr-wait');
+  el.mrWaitText.textContent = '会場に入っています…';
+  setMrMessage('まもなくレースが始まります');
+  renderMarble();
+
+  if (online.socket) online.socket.emit('marble:join');
+}
+
+function leaveMarble(){
+  marble.joined = false;
+  stopMarbleRace();
+  stopMrTimer();
+  if (online.socket && online.socket.connected) online.socket.emit('marble:leave');
+}
+
+/* ---------------------------------------------------------
+   受信
+   --------------------------------------------------------- */
+function onMarbleState(state){
+  if (!marble.joined) return;
+  marble.state = state;
+  if (screen !== 'marble') showScreen('marble');
+
+  /* 新しいレースになったら選択をリセットする */
+  if (state.phase === 'bet' && marble.shownRace !== state.raceNo){
+    marble.shownRace = state.raceNo;
+    marble.picks = [];
+    marble.amount = 0;
+    stopMarbleRace();
+    resetMarbleBalls();
+  }
+
+  if (state.phase === 'bet'){
+    showPanel('mr-bet');
+    setMrMessage('投票を受け付けています');
+  } else if (state.phase === 'race'){
+    showPanel('mr-wait');
+    el.mrWaitText.textContent = 'レース中です…';
+    startMarbleRace(state);
+  } else if (state.phase === 'result'){
+    showPanel('mr-wait');
+    el.mrWaitText.textContent = 'まもなく次のレースが始まります…';
+    showMarbleResult(state);
+  } else {
+    showPanel('mr-wait');
+    el.mrWaitText.textContent = 'まもなくレースが始まります…';
+  }
+
+  startMrTimer(state.deadline);
+  renderMarble();
+}
+
+/* ---------------------------------------------------------
+   残り時間
+   --------------------------------------------------------- */
+function startMrTimer(deadline){
+  stopMrTimer();
+  if (!deadline) return;
+  const tick = () => {
+    const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+    el.mrTimerNum.textContent = left;
+    el.mrTimerChip.classList.toggle('is-urgent',
+      left <= 5 && marble.state && marble.state.phase === 'bet');
+    if (left <= 0) stopMrTimer(true);
+  };
+  tick();
+  marble.timerId = setInterval(tick, 250);
+}
+function stopMrTimer(keep){
+  if (marble.timerId){ clearInterval(marble.timerId); marble.timerId = null; }
+  if (!keep) el.mrTimerChip.classList.remove('is-urgent');
+}
+
+/* ---------------------------------------------------------
+   コースの描画
+   --------------------------------------------------------- */
+function renderMarbleLanes(){
+  const st = marble.state;
+  if (!st || !st.balls.length){ el.mrLanes.innerHTML = ''; return; }
+
+  /* 自分が買っているボールに印を付ける */
+  const mine = new Set();
+  for (const t of (st.myTickets || [])) for (const n of t.picks) mine.add(n);
+
+  el.mrLanes.innerHTML = st.balls.map(b =>
+    '<div class="mr-lane' + (mine.has(b.no) ? ' is-mine' : '') + '" data-lane="' + b.no + '">' +
+      '<span class="mr-lane-no">' + b.no + '</span>' +
+      '<span class="mr-lane-road">' +
+        '<span class="mr-ball" data-ball="' + b.no + '" ' +
+          'style="background:' + b.color + ';color:' + b.ink + '">' + b.no + '</span>' +
+      '</span>' +
+      '<span class="mr-lane-rank" data-rank="' + b.no + '"></span>' +
+    '</div>').join('');
+  resetMarbleBalls();
+}
+
+/* ボールをスタート位置に戻す */
+function resetMarbleBalls(){
+  el.mrLanes.querySelectorAll('.mr-ball').forEach(n => {
+    n.style.transform = 'translateX(0) rotate(0deg)';
+    n.classList.remove('is-leader');
+  });
+  el.mrLanes.querySelectorAll('.mr-lane-rank').forEach(n => { n.textContent = ''; });
+}
+
+/* 位置データ(0〜1が MR_TICKS+1 個)を、いまの時刻で線形に補間する */
+function marbleProgressAt(pts, x){
+  const n = pts.length - 1;
+  const t = Math.max(0, Math.min(1, x)) * n;
+  const i = Math.min(n - 1, Math.floor(t));
+  const f = t - i;
+  return pts[i] + (pts[i + 1] - pts[i]) * f;
+}
+
+function startMarbleRace(state){
+  if (!state.track || !state.track.length) return;
+  /* すでに走っているなら二重に始めない */
+  if (marble.raf) return;
+
+  /* 途中から入ってきた人でも、残り時間から今の位置に合わせる */
+  const elapsed = state.deadline ? (state.raceMs - (state.deadline - Date.now())) : 0;
+  marble.raceStart = Date.now() - Math.max(0, elapsed);
+  marble.lastRank = '';
+
+  const road = el.mrLanes.querySelector('.mr-lane-road');
+  let roadW = road ? road.clientWidth : 300;
+
+  const step = () => {
+    const st = marble.state;
+    if (!st || !st.track || screen !== 'marble'){ marble.raf = null; return; }
+
+    const x = Math.min(1, (Date.now() - marble.raceStart) / st.raceMs);
+    const r2 = el.mrLanes.querySelector('.mr-lane-road');
+    if (r2 && r2.clientWidth) roadW = r2.clientWidth;
+
+    /* 現在位置から順位を出す */
+    const now = st.track.map(t => ({ no: t.no, p: marbleProgressAt(t.pts, x) }));
+    now.sort((a, b) => b.p - a.p);
+
+    now.forEach((item, idx) => {
+      const ball = el.mrLanes.querySelector('.mr-ball[data-ball="' + item.no + '"]');
+      if (ball){
+        /* 端で見切れないよう、ボール1個ぶん内側に収める */
+        const px = item.p * (roadW - 22) + 11;
+        ball.style.transform = 'translateX(' + px.toFixed(1) + 'px) rotate(' +
+          (item.p * roadW * 1.9).toFixed(0) + 'deg)';
+        ball.classList.toggle('is-leader', idx === 0);
+      }
+      const rank = el.mrLanes.querySelector('.mr-lane-rank[data-rank="' + item.no + '"]');
+      if (rank) rank.textContent = (idx + 1);
+    });
+
+    /* 先頭が入れ替わった瞬間だけ音を鳴らす(鳴りすぎないように) */
+    const lead = now[0] ? String(now[0].no) : '';
+    if (lead && lead !== marble.lastRank && x < 0.97){
+      marble.lastRank = lead;
+      if (x > 0.05) audio.play('chip');
+    }
+
+    if (x >= 1){ marble.raf = null; return; }
+    marble.raf = requestAnimationFrame(step);
+  };
+  marble.raf = requestAnimationFrame(step);
+  audio.play('deal');
+}
+
+function stopMarbleRace(){
+  if (marble.raf){ cancelAnimationFrame(marble.raf); marble.raf = null; }
+}
+
+/* ---------------------------------------------------------
+   結果表示
+   --------------------------------------------------------- */
+function showMarbleResult(state){
+  const st = state;
+  if (!st.order || !st.order.length){ el.mrResult.hidden = true; return; }
+  stopMarbleRace();
+
+  /* 最終位置に揃えておく(演出の途中で結果に入っても破綻しないように) */
+  const road = el.mrLanes.querySelector('.mr-lane-road');
+  const roadW = road ? road.clientWidth : 300;
+  st.order.forEach((no, idx) => {
+    const ball = el.mrLanes.querySelector('.mr-ball[data-ball="' + no + '"]');
+    if (ball){
+      ball.style.transform = 'translateX(' + (roadW - 11).toFixed(1) + 'px) rotate(720deg)';
+      ball.classList.toggle('is-leader', idx === 0);
+    }
+    const rank = el.mrLanes.querySelector('.mr-lane-rank[data-rank="' + no + '"]');
+    if (rank) rank.textContent = (idx + 1);
+  });
+
+  const byNo = new Map(st.balls.map(b => [b.no, b]));
+  el.mrResult.hidden = false;
+  el.mrPodium.innerHTML = st.order.slice(0, 3).map((no, i) => {
+    const b = byNo.get(no) || { name: '?', color: '#888', ink: '#fff' };
+    return '<div class="mr-podium-item' + (i === 0 ? ' is-1st' : '') + '">' +
+      '<span class="mr-podium-rank">' + (i + 1) + '着</span>' +
+      '<span class="mr-podium-ball" style="background:' + b.color + ';color:' + b.ink + '">' + no + '</span>' +
+      '<span class="mr-podium-name">' + esc(b.name) + '</span>' +
+    '</div>';
+  }).join('');
+
+  const r = st.result;
+  if (!r || !r.invest){
+    el.mrPayout.innerHTML = '<p class="mr-payout-line">このレースは投票していません</p>';
+    setMrMessage('レース終了');
+    return;
+  }
+  if (r.payout > 0){
+    const net = r.payout - r.invest;
+    el.mrPayout.innerHTML =
+      '<div class="mr-payout-total">+' + Number(r.payout).toLocaleString() + '</div>' +
+      '<p class="mr-payout-line">' + r.hits.length + '点的中 / 投票 ' +
+        Number(r.invest).toLocaleString() + ' メダル / 収支 ' +
+        (net >= 0 ? '+' : '') + Number(net).toLocaleString() + '</p>';
+    setMrMessage('的中! ' + Number(r.payout).toLocaleString() + ' メダル獲得', 'gold');
+    audio.play('win');
+  } else {
+    el.mrPayout.innerHTML =
+      '<p class="mr-payout-miss">はずれ… ' + Number(r.invest).toLocaleString() + ' メダル</p>';
+    setMrMessage('はずれ…', 'bad');
+    audio.play('lose');
+  }
+}
+
+function setMrMessage(text, tone){
+  el.mrMessageText.textContent = text;
+  el.mrMessageText.className = tone || '';
+}
+
+/* ---------------------------------------------------------
+   出走表・投票券・観客
+   --------------------------------------------------------- */
+function renderMarbleEntries(){
+  const st = marble.state;
+  if (!st || !st.balls.length){ el.mrEntries.innerHTML = ''; return; }
+  const betting = st.phase === 'bet';
+  const showQuinella = marble.type === 'quinella';
+
+  /* 人気順を出すため、単勝オッズの低い順に順位を付ける */
+  const sorted = st.balls.map((b, i) => ({ i, o: st.odds ? st.odds.win[i] : 99 }))
+                         .sort((a, b) => a.o - b.o);
+  const favRank = new Map();
+  sorted.forEach((x, idx) => favRank.set(x.i, idx));
+
+  el.mrEntries.innerHTML = st.balls.map((b, i) => {
+    const win = st.odds ? st.odds.win[i] : 0;
+    const place = st.odds ? st.odds.place[i] : 0;
+    const picked = marble.picks.includes(b.no);
+    const rank = favRank.get(i);
+    const cls = (picked ? ' is-picked' : '') +
+                (rank === 0 ? ' is-fav' : '') +
+                (rank >= 6 ? ' is-long' : '');
+    /* 馬連を選んでいるときは、単勝オッズだけ出しても意味が薄いので表記を変える */
+    const oddsHtml = showQuinella
+      ? '単勝 <b>' + win.toFixed(1) + '</b>'
+      : (marble.type === 'place'
+          ? '複勝 <b>' + place.toFixed(1) + '</b>'
+          : '単勝 <b>' + win.toFixed(1) + '</b>');
+
+    return '<button type="button" class="mr-entry' + cls + '" data-entry="' + b.no + '"' +
+      (betting ? '' : ' disabled') + '>' +
+      '<span class="mr-entry-ball" style="background:' + b.color + ';color:' + b.ink + '">' + b.no + '</span>' +
+      '<span class="mr-entry-body">' +
+        '<span class="mr-entry-name">' + esc(b.name) + '</span>' +
+        '<span class="mr-entry-odds">' + oddsHtml + '</span>' +
+      '</span>' +
+    '</button>';
+  }).join('');
+
+  el.mrBoardNote.textContent = betting
+    ? (MR_TYPE_INFO[marble.type].label + 'のオッズ')
+    : '締め切りました';
+}
+
+function renderMarbleTickets(){
+  const st = marble.state;
+  const list = st ? (st.myTickets || []) : [];
+  if (!list.length){ el.mrTickets.hidden = true; return; }
+  el.mrTickets.hidden = false;
+
+  const byNo = new Map((st.balls || []).map(b => [b.no, b]));
+  const order = (st.phase === 'result' && st.order) ? st.order : null;
+  const hitPicks = new Set();
+  if (st.result) for (const h of (st.result.hits || [])) hitPicks.add(h.type + ':' + h.picks.join('-'));
+
+  el.mrTicketList.innerHTML = list.map(t => {
+    const key = t.type + ':' + t.picks.join('-');
+    const hit = order ? hitPicks.has(key) : null;
+    const cls = hit === null ? '' : (hit ? ' is-hit' : ' is-miss');
+    const balls = t.picks.map(n => {
+      const b = byNo.get(n) || { color: '#888', ink: '#fff' };
+      return '<span class="mr-ticket-ball" style="background:' + b.color + ';color:' + b.ink + '">' + n + '</span>';
+    }).join('');
+    const pay = hit ? '<span class="mr-ticket-pay">+' +
+      Math.floor(t.amount * t.odds).toLocaleString() + '</span>' : '';
+    return '<div class="mr-ticket' + cls + '">' +
+      '<span class="mr-ticket-type">' + esc(t.label || MR_TYPE_INFO[t.type].label) + '</span>' +
+      '<span class="mr-ticket-picks">' + balls + '</span>' +
+      '<span class="mr-ticket-amt">' + Number(t.amount).toLocaleString() +
+        ' × ' + t.odds.toFixed(1) + '</span>' + pay +
+    '</div>';
+  }).join('');
+
+  el.mrInvestNote.textContent = '合計 ' + Number(st.myInvest || 0).toLocaleString() +
+    ' メダル(' + list.length + '/' + st.maxTickets + '枚)';
+}
+
+function renderMarbleWatchers(){
+  const st = marble.state;
+  const list = st ? (st.watchers || []) : [];
+  if (!list.length){ el.mrWatchers.innerHTML = ''; return; }
+  el.mrWatchers.innerHTML = list.map(w =>
+    '<span class="mr-watcher">' +
+      '<span class="mr-watcher-avatar" data-icon-color="' + iconColorOf(w.iconColor) + '">' +
+        esc(String(w.name).charAt(0).toUpperCase()) + '</span>' +
+      esc(w.name) +
+      (w.invest > 0 ? '<span class="mr-watcher-invest">' +
+        Number(w.invest).toLocaleString() + '</span>' : '') +
+    '</span>').join('');
+}
+
+/* ---------------------------------------------------------
+   投票の操作
+   --------------------------------------------------------- */
+function currentMarbleOdds(){
+  const st = marble.state;
+  if (!st || !st.odds) return null;
+  const need = MR_TYPE_INFO[marble.type].picks;
+  if (marble.picks.length !== need) return null;
+
+  if (marble.type === 'quinella'){
+    const a = Math.min(marble.picks[0], marble.picks[1]);
+    const b = Math.max(marble.picks[0], marble.picks[1]);
+    return st.odds.quinella[a + '-' + b] || null;
+  }
+  const idx = st.balls.findIndex(x => x.no === marble.picks[0]);
+  if (idx < 0) return null;
+  return marble.type === 'win' ? st.odds.win[idx] : st.odds.place[idx];
+}
+
+function renderMarblePickRow(){
+  const st = marble.state;
+  if (!st || !st.balls.length){ el.mrPickRow.innerHTML = ''; return; }
+  el.mrPickRow.innerHTML = st.balls.map(b =>
+    '<button type="button" class="mr-pick-ball' +
+      (marble.picks.includes(b.no) ? ' is-on' : '') + '" data-pick="' + b.no + '" ' +
+      'style="background:' + b.color + ';color:' + b.ink + '">' + b.no + '</button>').join('');
+
+  const info = MR_TYPE_INFO[marble.type];
+  el.mrPickNote.textContent = marble.picks.length === info.picks
+    ? '選択中: ' + marble.picks.join(' - ')
+    : info.note;
+}
+
+function renderMarbleBetPanel(){
+  const st = marble.state;
+  const odds = currentMarbleOdds();
+  const medal = myMedal();
+
+  el.mrBetValue.textContent = marble.amount.toLocaleString();
+
+  if (odds){
+    el.mrBetOdds.hidden = false;
+    el.mrBetOddsVal.textContent = odds.toFixed(1) + '倍';
+    el.mrBetReturn.textContent = marble.amount > 0
+      ? Math.floor(marble.amount * odds).toLocaleString() : '-';
+  } else {
+    el.mrBetOdds.hidden = true;
+  }
+
+  const min = st ? st.minBet : 10;
+  const full = st && (st.myTickets || []).length >= st.maxTickets;
+  el.mrBuyBtn.disabled = !st || st.phase !== 'bet' || !odds ||
+                         marble.amount < min || marble.amount > medal || full;
+  el.mrClearBtn.disabled = marble.amount === 0 && marble.picks.length === 0;
+
+  /* 持っているメダルを超えるチップは押せないようにする */
+  el.mrChipRow.querySelectorAll('.chip').forEach(c => {
+    c.disabled = Number(c.dataset.mrchip) > medal - marble.amount;
+  });
+
+  el.mrTypeSeg.querySelectorAll('.seg-btn').forEach(b =>
+    b.classList.toggle('is-on', b.dataset.mrtype === marble.type));
+}
+
+function renderMarble(){
+  const st = marble.state;
+  if (st){
+    el.mrRaceNo.textContent = st.raceNo;
+    const label = { bet: '投票受付中', race: 'レース中', result: '払い戻し', idle: '準備中' }[st.phase] || '';
+    el.mrPhaseText.textContent = label;
+    el.mrPhaseChip.className = 'mr-chip is-phase is-' + st.phase;
+    el.mrResult.hidden = st.phase !== 'result';
+
+    /* 出走表が変わったらコースを作り直す */
+    if (el.mrLanes.childElementCount !== st.balls.length) renderMarbleLanes();
+  }
+  renderMarbleEntries();
+  renderMarblePickRow();
+  renderMarbleBetPanel();
+  renderMarbleTickets();
+  renderMarbleWatchers();
+  renderMedal();
+}
+
+/* ボールを選ぶ。買い目の種類ごとに選べる数が違う */
+function marbleTogglePick(no){
+  const st = marble.state;
+  if (!st || st.phase !== 'bet') return;
+  const need = MR_TYPE_INFO[marble.type].picks;
+  const i = marble.picks.indexOf(no);
+
+  if (i >= 0) marble.picks.splice(i, 1);
+  else {
+    /* 上限まで選んでいたら、古いほうを押し出す */
+    if (marble.picks.length >= need) marble.picks.shift();
+    marble.picks.push(no);
+  }
+  audio.play('chip');
+  renderMarble();
+}
+
+function marbleSetType(type){
+  if (!MR_TYPE_INFO[type] || marble.type === type) return;
+  marble.type = type;
+  marble.picks = [];
+  audio.play('chip');
+  renderMarble();
+}
+
+function marbleAddChip(v){
+  const st = marble.state;
+  if (!st || st.phase !== 'bet') return;
+  const max = Math.min(myMedal(), st.maxBet);
+  marble.amount = Math.min(max, marble.amount + v);
+  audio.play('chip');
+  renderMarbleBetPanel();
+}
+
+function marbleClear(){
+  marble.amount = 0;
+  marble.picks = [];
+  audio.play('button');
+  renderMarble();
+}
+
+function marbleBuy(){
+  const st = marble.state;
+  const odds = currentMarbleOdds();
+  if (!st || st.phase !== 'bet' || !odds) return;
+  if (marble.amount < st.minBet) return toast('最低' + st.minBet + 'メダルから投票できます');
+  if (marble.amount > myMedal()) return toast('メダルが足りません');
+
+  audio.play('button');
+  online.socket.emit('marble:bet', {
+    type: marble.type,
+    picks: marble.picks.slice(),
+    amount: marble.amount
+  });
+  /* 連続で買いやすいよう、金額だけ残して選択を消す */
+  marble.picks = [];
+  renderMarble();
+}
+
+/* =========================================================
    13. ベット操作
    ========================================================= */
 function addBet(amount){
@@ -5434,6 +6061,7 @@ el.brandBtn.addEventListener('click', () => {
   }
   /* ハイ&ローのシングルは進行を止めてから戻る(v4.0) */
   if (screen === 'hilo' && view.mode === 'single') endHiloSingle();
+  if (screen === 'marble') leaveMarble();   // v4.1
   stopHiloTimer();
   audio.play('button');
   showScreen('title');
@@ -5701,6 +6329,38 @@ el.rankDayTabs.addEventListener('click', (e) => {
   if (!b || b.disabled) return;
   audio.play('chip');
   setRankDay(b.dataset.day);
+});
+
+/* --- マーブルレース(v4.1) --- */
+el.mrTypeSeg.addEventListener('click', (e) => {
+  const b = e.target.closest('.seg-btn');
+  if (!b) return;
+  marbleSetType(b.dataset.mrtype);
+});
+el.mrPickRow.addEventListener('click', (e) => {
+  const b = e.target.closest('.mr-pick-ball');
+  if (!b) return;
+  marbleTogglePick(Number(b.dataset.pick));
+});
+/* 出走表からも直接選べるようにしておく(タップの往復を減らす) */
+el.mrEntries.addEventListener('click', (e) => {
+  const b = e.target.closest('.mr-entry');
+  if (!b || b.disabled) return;
+  marbleTogglePick(Number(b.dataset.entry));
+});
+el.mrChipRow.addEventListener('click', (e) => {
+  const c = e.target.closest('.chip');
+  if (!c || c.disabled) return;
+  marbleAddChip(Number(c.dataset.mrchip));
+});
+el.mrClearBtn.addEventListener('click', () => marbleClear());
+el.mrBuyBtn.addEventListener('click', () => marbleBuy());
+el.mrRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('marble'); });
+el.mrLeaveBtn.addEventListener('click', () => {
+  audio.play('button');
+  leaveMarble();
+  showScreen('title');
+  renderMedal();
 });
 
 /* --- ハイ&ロー(v4.0) --- */

@@ -1,9 +1,10 @@
 /* =========================================================
-   Betoria - server.js  (v4.0)
+   Betoria - server.js  (v4.1)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
-     ・HIGH & LOW(ハイ&ロー)  ← v4.0 で追加
+     ・HIGH & LOW(ハイ&ロー)
+     ・MARBLE RACE(マーブルレース)  ← v4.1 で追加
    Render(無料枠)向け  Express + Socket.io + PostgreSQL
    DATABASE_URL が無い場合はメモリ保存で動作します(ローカル検証用)
    ========================================================= */
@@ -18,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.0.0';
+const APP_VERSION = '4.1.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -63,7 +64,7 @@ function shortDate(key){
    「どのゲームの記録か」を必ず持ち歩く。
    ランキングはゲームごとに完全に分ける(本人の希望)。
    ========================================================= */
-const GAMES = ['bj', 'hilo'];
+const GAMES = ['bj', 'hilo', 'marble'];
 const DEFAULT_GAME = 'bj';
 function normGame(g){ return GAMES.includes(g) ? g : DEFAULT_GAME; }
 
@@ -78,9 +79,15 @@ const RANK_FIELDS = {
   hilo: {
     total: 'hl_total_gain', best: 'hl_best_gain', bestAt: 'hl_best_gain_at',
     dayKey: 'hl_day_key', dayGain: 'hl_day_gain', dayBest: 'hl_day_best'
+  },
+  marble: {
+    total: 'mr_total_gain', best: 'mr_best_gain', bestAt: 'mr_best_gain_at',
+    dayKey: 'mr_day_key', dayGain: 'mr_day_gain', dayBest: 'mr_day_best'
   }
 };
-const GAME_LABEL = { bj: 'ブラックジャック', hilo: 'ハイ&ロー' };
+const GAME_LABEL = {
+  bj: 'ブラックジャック', hilo: 'ハイ&ロー', marble: 'マーブルレース'
+};
 
 /* アカウントアイコンの色(v3.0)。クライアントの ICON_COLORS と必ず揃えること */
 const ICON_COLORS = [
@@ -253,7 +260,10 @@ const db = (() => {
                'bonus_date, bonus_ad_date, login_streak, login_days, created_at, ' +
                /* ハイ&ロー(v4.0) */
                'hl_total_gain, hl_best_gain, hl_best_gain_at, hl_day_key, hl_day_gain, hl_day_best, ' +
-               'hl_rounds, hl_wins, hl_losses';
+               'hl_rounds, hl_wins, hl_losses, ' +
+               /* マーブルレース(v4.1) */
+               'mr_total_gain, mr_best_gain, mr_best_gain_at, mr_day_key, mr_day_gain, mr_day_best, ' +
+               'mr_races, mr_hits, mr_misses';
 
   return {
     kind: 'postgres',
@@ -322,6 +332,17 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_rounds       INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_wins         INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_losses       INTEGER NOT NULL DEFAULT 0`);
+
+      /* マーブルレース用の列(v4.1) */
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_total_gain   BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_best_gain    BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_best_gain_at TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_day_key      TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_day_gain     BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_day_best     BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_races        INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_hits         INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_misses       INTEGER NOT NULL DEFAULT 0`);
 
       /* 通知(v3.2) */
       await pool.query(`
@@ -397,7 +418,8 @@ const db = (() => {
       await pool.query(
         `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
           $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
-          $28,$29,$30,$31,$32,$33,$34,$35,$36)`,
+          $28,$29,$30,$31,$32,$33,$34,$35,$36,
+          $37,$38,$39,$40,$41,$42,$43,$44,$45)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
          row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
@@ -410,7 +432,11 @@ const db = (() => {
          /* ハイ&ロー(v4.0) */
          row.hl_total_gain || 0, row.hl_best_gain || 0, row.hl_best_gain_at || null,
          row.hl_day_key || null, row.hl_day_gain || 0, row.hl_day_best || 0,
-         row.hl_rounds || 0, row.hl_wins || 0, row.hl_losses || 0]);
+         row.hl_rounds || 0, row.hl_wins || 0, row.hl_losses || 0,
+         /* マーブルレース(v4.1) */
+         row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
+         row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
+         row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0]);
       return row;
     },
     async saveUser(row){
@@ -424,7 +450,10 @@ const db = (() => {
          bonus_date=$22, bonus_ad_date=$23, login_streak=$24, login_days=$25,
          hl_total_gain=$26, hl_best_gain=$27, hl_best_gain_at=$28,
          hl_day_key=$29, hl_day_gain=$30, hl_day_best=$31,
-         hl_rounds=$32, hl_wins=$33, hl_losses=$34
+         hl_rounds=$32, hl_wins=$33, hl_losses=$34,
+         mr_total_gain=$35, mr_best_gain=$36, mr_best_gain_at=$37,
+         mr_day_key=$38, mr_day_gain=$39, mr_day_best=$40,
+         mr_races=$41, mr_hits=$42, mr_misses=$43
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
@@ -437,7 +466,11 @@ const db = (() => {
          /* ハイ&ロー(v4.0) */
          row.hl_total_gain || 0, row.hl_best_gain || 0, row.hl_best_gain_at || null,
          row.hl_day_key || null, row.hl_day_gain || 0, row.hl_day_best || 0,
-         row.hl_rounds || 0, row.hl_wins || 0, row.hl_losses || 0]);
+         row.hl_rounds || 0, row.hl_wins || 0, row.hl_losses || 0,
+         /* マーブルレース(v4.1) */
+         row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
+         row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
+         row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0]);
       return row;
     },
     async deleteUser(name){
@@ -730,7 +763,14 @@ function publicUser(u){
     hlLosses: Number(u.hl_losses || 0),
     hlTotalGain: Number(u.hl_total_gain || 0),
     hlBestGain: Number(u.hl_best_gain || 0),
-    hlBestGainAt: u.hl_best_gain_at || null
+    hlBestGainAt: u.hl_best_gain_at || null,
+    /* マーブルレース(v4.1) */
+    mrRaces: Number(u.mr_races || 0),
+    mrHits: Number(u.mr_hits || 0),
+    mrMisses: Number(u.mr_misses || 0),
+    mrTotalGain: Number(u.mr_total_gain || 0),
+    mrBestGain: Number(u.mr_best_gain || 0),
+    mrBestGainAt: u.mr_best_gain_at || null
   };
 }
 
@@ -1133,6 +1173,398 @@ function hiloState(room){
 }
 
 /* =========================================================
+   4.6 マーブルレース エンジン(v4.1)
+
+   競馬をそのままボールのレースに置き換えたゲーム。
+   ほかの2ゲームと違い「部屋」を作らない。会場はサーバーに1つだけで、
+   ログインしている人なら誰でも自由に出入りできる常時開催のレースにした。
+   そのため1人しかいなくても普通に遊べる(シングル専用モードは無い)。
+
+   1レースの流れ(およそ1分):
+     bet(投票 35秒)→ race(レース 15秒)→ result(払い戻し 10秒)→ 次のレースへ
+
+   着順の決め方:
+     各ボールに「強さ w」を毎レース割り当て、
+     1着は w に比例した確率で選び、選ばれたボールを除いて2着を選ぶ…
+     というのを8回繰り返して着順を決める(プラケット・ルースモデル)。
+     オッズはこの確率から逆算するので、強いボールほど低配当になる。
+   ========================================================= */
+const MR_BALLS       = 8;
+const MR_BET_MS      = 35000;   // 投票受付
+const MR_RACE_MS     = 15000;   // レース本番
+const MR_RESULT_MS   = 10000;   // 払い戻しの確認
+const MR_PAYOUT_RATE = 0.85;    // 払戻率(控除率15%)。上げるとメダルが増えやすくなる
+const MR_MIN_BET     = 10;
+const MR_MAX_BET     = 100000;
+const MR_MAX_TICKETS = 12;      // 1レースで買える投票券の枚数
+const MR_TICKS       = 24;      // 演出用に送る位置データの数
+const MR_MIN_ODDS    = 1.1;
+const MR_ROOM        = 'marble-hall';
+
+/* 8つのボール。枠番の色は競馬の枠順に寄せてある */
+const MR_BALL_DEFS = [
+  { no: 1, name: 'スノー',     color: '#F2F2F2', ink: '#1A1A1A' },
+  { no: 2, name: 'シャドウ',   color: '#2E2E38', ink: '#F2F2F2' },
+  { no: 3, name: 'フレイム',   color: '#E24B3C', ink: '#FFF3F1' },
+  { no: 4, name: 'オーシャン', color: '#3D7BE0', ink: '#F0F6FF' },
+  { no: 5, name: 'サンダー',   color: '#E8C33A', ink: '#221C05' },
+  { no: 6, name: 'リーフ',     color: '#3FAE66', ink: '#F0FFF7' },
+  { no: 7, name: 'アンバー',   color: '#E88A32', ink: '#2A1603' },
+  { no: 8, name: 'ブロッサム', color: '#E27BB0', ink: '#2E0A1D' }
+];
+
+/* 0以上1未満の乱数。cryptoで作って予測できないようにする */
+function mrRandom(){ return crypto.randomInt(1000000) / 1000000; }
+
+/* 買い目の種類 */
+const MR_BET_TYPES = {
+  win:      { key: 'win',      label: '単勝', picks: 1, ordered: false },
+  place:    { key: 'place',    label: '複勝', picks: 1, ordered: false },
+  quinella: { key: 'quinella', label: '馬連', picks: 2, ordered: false }
+};
+
+/* 会場はサーバーに1つだけ */
+const marble = {
+  phase: 'idle',          // idle | bet | race | result
+  raceNo: 0,
+  balls: [],
+  order: [],              // 着順(ボール番号の配列)
+  track: [],              // 演出用の位置データ
+  tickets: new Map(),     // username -> [ticket]
+  watchers: new Map(),    // username -> { sid, name, level, iconColor }
+  deadline: 0,
+  timer: null,
+  odds: null,
+  lastResult: null
+};
+
+/* ---------------------------------------------------------
+   出走表を作る。強さは毎レースばらつかせる
+   --------------------------------------------------------- */
+function makeMarbleBalls(){
+  return MR_BALL_DEFS.map(def => {
+    /* 1.32^0〜1.32^9 で、人気と大穴の差が競馬らしくなる幅にした */
+    const grade = crypto.randomInt(10);
+    const w = Math.pow(1.32, grade) * (0.85 + mrRandom() * 0.3);
+    return { ...def, w };
+  });
+}
+
+/* 1着になる確率。強さをそのまま正規化したもの */
+function mrWinProbs(balls){
+  const W = balls.reduce((a, b) => a + b.w, 0);
+  return balls.map(b => b.w / W);
+}
+
+/* 3着以内に入る確率を厳密に求める。
+   8頭なので O(n^3) でも十分に軽い */
+function mrPlaceProbs(balls){
+  const n = balls.length;
+  const w = balls.map(b => b.w);
+  const W = w.reduce((a, b) => a + b, 0);
+  const out = new Array(n).fill(0);
+
+  for (let i = 0; i < n; i++){
+    /* 1着 */
+    let p = w[i] / W;
+
+    /* 2着(誰かが1着になった残りから選ばれる) */
+    for (let j = 0; j < n; j++){
+      if (j === i) continue;
+      p += (w[j] / W) * (w[i] / (W - w[j]));
+    }
+
+    /* 3着 */
+    for (let j = 0; j < n; j++){
+      if (j === i) continue;
+      const w1 = W - w[j];
+      for (let k = 0; k < n; k++){
+        if (k === i || k === j) continue;
+        p += (w[j] / W) * (w[k] / w1) * (w[i] / (w1 - w[k]));
+      }
+    }
+    out[i] = p;
+  }
+  return out;
+}
+
+/* 馬連(1着と2着の組み合わせ)の確率 */
+function mrQuinellaProb(balls, ia, ib){
+  const w = balls.map(b => b.w);
+  const W = w.reduce((a, b) => a + b, 0);
+  return (w[ia] / W) * (w[ib] / (W - w[ia])) +
+         (w[ib] / W) * (w[ia] / (W - w[ib]));
+}
+
+/* 確率からオッズへ。控除率を引いて、小数第1位に丸める */
+function mrToOdds(p){
+  if (!(p > 0)) return 999.9;
+  const o = MR_PAYOUT_RATE / p;
+  return Math.max(MR_MIN_ODDS, Math.round(o * 10) / 10);
+}
+
+/* 出走表からオッズ表をまとめて作る */
+function makeMarbleOdds(balls){
+  const win = mrWinProbs(balls).map(mrToOdds);
+  const place = mrPlaceProbs(balls).map(mrToOdds);
+
+  /* 馬連は「1-2」のような文字列をキーにする(小さい番号が先) */
+  const quinella = {};
+  for (let i = 0; i < balls.length; i++){
+    for (let j = i + 1; j < balls.length; j++){
+      const key = balls[i].no + '-' + balls[j].no;
+      quinella[key] = mrToOdds(mrQuinellaProb(balls, i, j));
+    }
+  }
+  return { win, place, quinella };
+}
+
+/* 買い目からオッズを引く。存在しない買い目なら null */
+function mrOddsOf(type, picks){
+  const o = marble.odds;
+  if (!o) return null;
+  if (type === 'win' || type === 'place'){
+    const idx = marble.balls.findIndex(b => b.no === picks[0]);
+    if (idx < 0) return null;
+    return type === 'win' ? o.win[idx] : o.place[idx];
+  }
+  if (type === 'quinella'){
+    const key = mrPairKey(picks);
+    return o.quinella[key] || null;
+  }
+  return null;
+}
+
+function mrPairKey(picks){
+  const a = Math.min(picks[0], picks[1]);
+  const b = Math.max(picks[0], picks[1]);
+  return a + '-' + b;
+}
+
+/* ---------------------------------------------------------
+   着順を決める(プラケット・ルース)
+   --------------------------------------------------------- */
+function drawMarbleOrder(balls){
+  const pool = balls.map((b, i) => ({ no: b.no, w: b.w, i }));
+  const order = [];
+  while (pool.length){
+    const W = pool.reduce((a, b) => a + b.w, 0);
+    let r = mrRandom() * W;
+    let idx = 0;
+    for (; idx < pool.length - 1; idx++){
+      r -= pool[idx].w;
+      if (r <= 0) break;
+    }
+    order.push(pool[idx].no);
+    pool.splice(idx, 1);
+  }
+  return order;
+}
+
+/* ---------------------------------------------------------
+   レースの見た目を作る。
+   着順は先に決まっているので、その順にゴールしつつ
+   途中は抜きつ抜かれつに見えるような位置データを用意する。
+   クライアントはこの数字を補間して描くだけでよい。
+   --------------------------------------------------------- */
+function makeMarbleTrack(balls, order){
+  /* 着順ごとのゴール時刻。1着ほど早く、少しばらつかせる */
+  const finish = {};
+  order.forEach((no, rank) => {
+    const base = 0.90 + rank * 0.012;
+    finish[no] = Math.min(0.995, base + mrRandom() * 0.008);
+  });
+
+  return balls.map(b => {
+    /* ボールごとに揺らぎの波を3つ持たせる(抜きつ抜かれつの表現) */
+    const waves = [];
+    for (let k = 0; k < 3; k++){
+      waves.push({
+        amp: 0.03 + mrRandom() * 0.05,
+        freq: 1.2 + mrRandom() * 2.6,
+        phase: mrRandom() * Math.PI * 2
+      });
+    }
+    const pts = [];
+    let prev = 0;
+    for (let t = 0; t <= MR_TICKS; t++){
+      const x = t / MR_TICKS;
+      let p = x / finish[b.no];
+
+      /* 揺らぎはスタートとゴールで0になるよう、中央でだけ効かせる。
+         こうすると最終的な着順は必ず order のとおりになる */
+      const damp = Math.sin(Math.PI * x) * (1 - x) * 1.15;
+      let noise = 0;
+      for (const w of waves) noise += Math.sin(x * w.freq * Math.PI * 2 + w.phase) * w.amp;
+      p += noise * damp;
+
+      p = Math.max(prev, Math.min(1, p));   // 逆走はしない
+      prev = p;
+      pts.push(Math.round(p * 1000) / 1000);
+    }
+    pts[MR_TICKS] = 1;
+    return { no: b.no, pts };
+  });
+}
+
+/* ---------------------------------------------------------
+   投票券の判定
+   --------------------------------------------------------- */
+function mrTicketHit(ticket, order){
+  const top3 = order.slice(0, 3);
+  if (ticket.type === 'win')   return order[0] === ticket.picks[0];
+  if (ticket.type === 'place') return top3.includes(ticket.picks[0]);
+  if (ticket.type === 'quinella'){
+    const top2 = order.slice(0, 2);
+    return ticket.picks.every(n => top2.includes(n));
+  }
+  return false;
+}
+
+/* ---------------------------------------------------------
+   会場の状態をクライアントに送る形にする
+   --------------------------------------------------------- */
+function marbleState(forName){
+  const tickets = marble.tickets.get(forName) || [];
+  const invest = tickets.reduce((a, t) => a + t.amount, 0);
+
+  /* 会場にいる人の一覧(名前とアイコンだけ。投票内容は伏せる) */
+  const watchers = [...marble.watchers.values()].map(w => ({
+    name: w.name, level: w.level, iconColor: w.iconColor,
+    invest: (marble.tickets.get(w.name) || []).reduce((a, t) => a + t.amount, 0)
+  }));
+
+  const st = {
+    phase: marble.phase,
+    raceNo: marble.raceNo,
+    balls: marble.balls.map(b => ({ no: b.no, name: b.name, color: b.color, ink: b.ink })),
+    odds: marble.odds,
+    deadline: marble.deadline || null,
+    betMs: MR_BET_MS,
+    raceMs: MR_RACE_MS,
+    resultMs: MR_RESULT_MS,
+    minBet: MR_MIN_BET,
+    maxBet: MR_MAX_BET,
+    maxTickets: MR_MAX_TICKETS,
+    payoutRate: MR_PAYOUT_RATE,
+    ticks: MR_TICKS,
+    watchers,
+    myTickets: tickets,
+    myInvest: invest
+  };
+
+  if (marble.phase === 'race' || marble.phase === 'result'){
+    st.track = marble.track;
+    st.order = marble.order;
+  }
+  if (marble.phase === 'result' && marble.lastResult){
+    st.result = marble.lastResult.perUser.get(forName) || { payout: 0, hits: [], invest: 0 };
+    st.order = marble.lastResult.order;
+  }
+  return st;
+}
+
+function broadcastMarble(io){
+  for (const w of marble.watchers.values()){
+    if (!w.sid) continue;
+    io.to(w.sid).emit('marble:state', marbleState(w.name));
+  }
+}
+
+/* ---------------------------------------------------------
+   進行
+   --------------------------------------------------------- */
+function marbleClearTimer(){
+  if (marble.timer){ clearTimeout(marble.timer); marble.timer = null; }
+}
+
+/* 投票受付の開始。会場に誰もいなければ止めておく(無駄に動かさない) */
+function startMarbleBetting(io){
+  marbleClearTimer();
+  if (marble.watchers.size === 0){
+    marble.phase = 'idle';
+    return;
+  }
+  marble.raceNo++;
+  marble.phase = 'bet';
+  marble.balls = makeMarbleBalls();
+  marble.odds = makeMarbleOdds(marble.balls);
+  marble.order = [];
+  marble.track = [];
+  marble.lastResult = null;
+  marble.tickets = new Map();
+  marble.deadline = Date.now() + MR_BET_MS;
+
+  broadcastMarble(io);
+  marble.timer = setTimeout(() => startMarbleRace(io), MR_BET_MS);
+}
+
+/* レース本番。着順はこの瞬間に確定させ、演出データと一緒に配る */
+function startMarbleRace(io){
+  marbleClearTimer();
+  marble.phase = 'race';
+  marble.order = drawMarbleOrder(marble.balls);
+  marble.track = makeMarbleTrack(marble.balls, marble.order);
+  marble.deadline = Date.now() + MR_RACE_MS;
+
+  broadcastMarble(io);
+  marble.timer = setTimeout(() => finishMarbleRace(io), MR_RACE_MS);
+}
+
+/* 払い戻し */
+async function finishMarbleRace(io){
+  marbleClearTimer();
+  marble.phase = 'result';
+  marble.deadline = Date.now() + MR_RESULT_MS;
+
+  const order = marble.order;
+  const perUser = new Map();
+
+  for (const [name, tickets] of marble.tickets){
+    if (!tickets.length) continue;
+    let payout = 0;
+    const hits = [];
+    let invest = 0;
+
+    for (const t of tickets){
+      invest += t.amount;
+      if (mrTicketHit(t, order)){
+        const pay = Math.floor(t.amount * t.odds);
+        payout += pay;
+        hits.push({ type: t.type, picks: t.picks, odds: t.odds, amount: t.amount, payout: pay });
+      }
+    }
+    perUser.set(name, { payout, hits, invest });
+
+    try {
+      const u = await db.findUser(name);
+      if (!u) continue;
+      u.medal += payout;
+      /* ランキングはマーブルレース単独で集計する */
+      recordGain(u, payout - invest, 'marble');
+      const up = applyMarbleResult(u, hits.length > 0);
+      await db.saveUser(u);
+      const w = marble.watchers.get(name);
+      if (w && w.sid) io.to(w.sid).emit('account:update', { user: publicUser(u), levelUp: up });
+    } catch (e){ console.error('[marble]', e.message); }
+  }
+
+  marble.lastResult = { order, perUser };
+  broadcastMarble(io);
+  marble.timer = setTimeout(() => startMarbleBetting(io), MR_RESULT_MS);
+}
+
+/* レース参加時のEXP。的中したらもう少し多めに */
+const MR_EXP_RACE = 15;
+const MR_EXP_HIT  = 25;
+function applyMarbleResult(user, hit){
+  user.mr_races = Number(user.mr_races || 0) + 1;
+  if (hit) user.mr_hits = Number(user.mr_hits || 0) + 1;
+  else user.mr_misses = Number(user.mr_misses || 0) + 1;
+  return addExp(user, MR_EXP_RACE + (hit ? MR_EXP_HIT : 0));
+}
+
+/* =========================================================
    5. ルーム管理
    ========================================================= */
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字は除外
@@ -1150,10 +1582,16 @@ function makeRoomId(){
 /* 大会用メダルを使うモード(チャンピオン / 早抜け)かどうか */
 function isTourney(mode){ return mode === 'champion' || mode === 'sprint'; }
 
+/* 部屋を作れるゲーム。マーブルレースは部屋を使わず
+   常時開催の会場で遊ぶので、ここには含めない(v4.1) */
+const ROOM_GAMES = ['bj', 'hilo'];
+
 function createRoom(opts){
   /* v4.0: ハイ&ローの部屋はエンジョイ相当の1モードだけ。
-     チャンピオン/早抜けはブラックジャック専用のまま */
-  const game = normGame(opts.game);
+     チャンピオン/早抜けはブラックジャック専用のまま。
+     v4.1: 部屋を持たないゲームが指定されたらブラックジャックとして扱う */
+  const asked = normGame(opts.game);
+  const game = ROOM_GAMES.includes(asked) ? asked : DEFAULT_GAME;
   const mode = (game === 'bj' && ['champion', 'sprint'].includes(opts.mode)) ? opts.mode : 'enjoy';
   const room = {
     id: makeRoomId(),
@@ -1939,7 +2377,11 @@ function blankUserRow(username, pass_hash){
     /* ハイ&ロー(v4.0) */
     hl_total_gain: 0, hl_best_gain: 0, hl_best_gain_at: null,
     hl_day_key: null, hl_day_gain: 0, hl_day_best: 0,
-    hl_rounds: 0, hl_wins: 0, hl_losses: 0
+    hl_rounds: 0, hl_wins: 0, hl_losses: 0,
+    /* マーブルレース(v4.1) */
+    mr_total_gain: 0, mr_best_gain: 0, mr_best_gain_at: null,
+    mr_day_key: null, mr_day_gain: 0, mr_day_best: 0,
+    mr_races: 0, mr_hits: 0, mr_misses: 0
   };
 }
 
@@ -3036,6 +3478,90 @@ io.on('connection', (socket) => {
     if (hiloEveryonePicked(room)) hiloReveal(io, room);
   });
 
+  /* =========================================================
+     マーブルレース(v4.1)
+     会場はサーバーに1つだけ。部屋を作らず、入ったらすぐ参加できる。
+     ========================================================= */
+  socket.on('marble:join', async () => {
+    /* ほかのゲームの部屋にいるなら、そちらから抜けてもらう */
+    if (findAnyRoom(socket.id)) leaveRoom(socket);
+    await refreshSocketUser(socket);
+
+    const wasEmpty = marble.watchers.size === 0;
+    marble.watchers.set(name, {
+      sid: socket.id, name,
+      level: socket.data.level,
+      iconColor: socket.data.iconColor || DEFAULT_ICON_COLOR
+    });
+    socket.join(MR_ROOM);
+
+    /* 誰もいなくて止まっていたら、ここで会場を動かし始める。
+       すでに動いているときは、観客一覧を全員に配り直す
+       (自分にも届くので、これだけで入室した本人の画面も揃う) */
+    if (wasEmpty || marble.phase === 'idle') startMarbleBetting(io);
+    else broadcastMarble(io);
+  });
+
+  socket.on('marble:leave', () => {
+    if (!marble.watchers.has(name)) return;
+    marble.watchers.delete(name);
+    marble.tickets.delete(name);
+    socket.leave(MR_ROOM);
+    /* 誰もいなくなったら、次のレースは始まらない(タイマーが自然に止まる) */
+    broadcastMarble(io);
+  });
+
+  socket.on('marble:bet', async ({ type, picks, amount } = {}) => {
+    if (!marble.watchers.has(name)) return;
+    if (marble.phase !== 'bet') return socket.emit('room:error', 'いまは投票を受け付けていません');
+
+    const def = MR_BET_TYPES[type];
+    if (!def) return socket.emit('room:error', '不明な買い目です');
+
+    /* 選んだ番号を検証する。重複や存在しない番号は弾く */
+    const list = Array.isArray(picks) ? picks.map(n => Math.floor(Number(n))) : [];
+    if (list.length !== def.picks) return socket.emit('room:error', '選ぶ数が正しくありません');
+    if (list.some(n => !Number.isInteger(n) || n < 1 || n > MR_BALLS))
+      return socket.emit('room:error', '存在しない番号です');
+    if (new Set(list).size !== list.length)
+      return socket.emit('room:error', '同じ番号は選べません');
+
+    const amt = Math.floor(Number(amount) || 0);
+    if (!Number.isFinite(amt) || amt < MR_MIN_BET)
+      return socket.emit('room:error', '最低' + MR_MIN_BET + 'メダルから投票できます');
+    if (amt > MR_MAX_BET)
+      return socket.emit('room:error', '1回の投票は' + MR_MAX_BET.toLocaleString() + 'メダルまでです');
+
+    const mine = marble.tickets.get(name) || [];
+    if (mine.length >= MR_MAX_TICKETS)
+      return socket.emit('room:error', '1レースで買えるのは' + MR_MAX_TICKETS + '枚までです');
+
+    /* オッズは投票した瞬間の値で固定する(あとで変動しない) */
+    const odds = mrOddsOf(def.key, list);
+    if (!odds) return socket.emit('room:error', 'オッズを取得できませんでした');
+
+    let u;
+    try { u = await db.findUser(name); }
+    catch (e){ console.error('[marble:bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
+    if (!u) return socket.emit('room:error', 'アカウントが見つかりません');
+    if (u.medal < amt) return socket.emit('room:error', 'メダルが足りません');
+
+    /* 待っている間に締め切られていたら買わない */
+    if (marble.phase !== 'bet') return socket.emit('room:error', '締め切られました');
+
+    u.medal -= amt;
+    try { await db.saveUser(u); }
+    catch (e){ console.error('[marble:bet]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
+
+    const sorted = def.picks > 1 ? [...list].sort((a, b) => a - b) : list;
+    mine.push({ type: def.key, label: def.label, picks: sorted, amount: amt, odds });
+    marble.tickets.set(name, mine);
+
+    socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+    socket.emit('marble:bought', { type: def.key, label: def.label, picks: sorted, amount: amt, odds });
+    broadcastMarble(io);
+  });
+
   socket.on('room:leaveChampionship', () => leaveRoom(socket));
 
   /* ---- フレンド招待(v3.0) ---- */
@@ -3122,6 +3648,14 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', async () => {
     leaveRoom(socket);
+    /* マーブルレースの会場からも抜ける(v4.1)。
+       別端末で入り直している場合があるので、sidが一致するときだけ消す */
+    const w = marble.watchers.get(name);
+    if (w && w.sid === socket.id){
+      marble.watchers.delete(name);
+      marble.tickets.delete(name);
+      broadcastMarble(io);
+    }
     /* 切断した瞬間を最終ログインとして残す(次に見たとき「◯分前」が正しくなる) */
     try {
       const u = await db.findUser(name);

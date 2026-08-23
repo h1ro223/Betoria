@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - style.css  (v4.0)
+   Betoria - style.css  (v4.1)
    made by hiro/ヒロ   https://github.com/h1ro223
    ========================================================= */
 
@@ -4335,3 +4335,537 @@ body.is-tutorial #actionPanel .btn.is-pressed{
 
 /* ルールシートのゲーム別ブロック(v4.0) */
 .rules-group{ display: block; }
+
+/* =========================================================
+   v4.1 マーブルレース
+   ========================================================= */
+
+/* ゲーム選択のカード */
+.game-card-art.is-marble{
+  background: linear-gradient(160deg, #4A2A12, #1A0E05);
+  border-color: rgba(232,138,50,.45);
+}
+.game-card-art.is-marble .game-card-mark{
+  font-size: 30px;
+  color: #F0A85A;
+  text-shadow: 0 0 14px rgba(240,168,90,.55);
+}
+
+/* ---------- 画面 ---------- */
+#screenMarble{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.mr-top{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  max-width: 620px;
+}
+.mr-top-chips{
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mr-chip{
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(0,0,0,.24);
+}
+.mr-chip-key{
+  font-size: 10px;
+  letter-spacing: .08em;
+  color: var(--smoke);
+}
+.mr-chip-val{ font-size: 14px; }
+.mr-chip.is-phase .mr-chip-val{
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  color: var(--ivory);
+}
+.mr-chip.is-phase.is-bet{ border-color: rgba(63,191,143,.55); }
+.mr-chip.is-phase.is-bet .mr-chip-val{ color: var(--jade); }
+.mr-chip.is-phase.is-race{ border-color: rgba(232,138,50,.65); }
+.mr-chip.is-phase.is-race .mr-chip-val{ color: #F0A85A; }
+.mr-chip.is-phase.is-result{ border-color: rgba(201,162,39,.65); }
+.mr-chip.is-phase.is-result .mr-chip-val{ color: var(--led); }
+.mr-chip.is-timer.is-urgent{
+  border-color: rgba(196,52,46,.75);
+  animation: mrUrgent .8s ease-in-out infinite;
+}
+.mr-chip.is-timer.is-urgent .mr-chip-val{ color: #FF8A80; }
+@keyframes mrUrgent{
+  0%, 100%{ opacity: 1; }
+  50%{      opacity: .5; }
+}
+
+/* ---------- コース ---------- */
+.mr-track{
+  position: relative;
+  width: 100%;
+  max-width: 620px;
+  padding: 10px 10px 10px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background:
+    linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.18));
+  overflow: hidden;
+}
+/* ゴールライン(右端の市松模様) */
+.mr-goal-line{
+  position: absolute;
+  top: 0;
+  right: 10px;
+  width: 12px;
+  height: 100%;
+  background:
+    repeating-conic-gradient(#F3EEE2 0% 25%, #1A1A1A 0% 50%) 0 0 / 8px 8px;
+  opacity: .55;
+  z-index: 2;
+  pointer-events: none;
+}
+.mr-goal-line span{
+  position: absolute;
+  top: 2px; left: 50%;
+  transform: translateX(-50%) rotate(90deg);
+  transform-origin: center;
+  font-family: var(--font-display);
+  font-size: 9px;
+  letter-spacing: .1em;
+  color: var(--ivory);
+  white-space: nowrap;
+  display: none;
+}
+
+.mr-lanes{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mr-lane{
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+}
+/* 走路 */
+.mr-lane-road{
+  position: relative;
+  flex: 1 1 auto;
+  height: 100%;
+  min-width: 0;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(90deg,
+      rgba(243,238,226,.05) 0 14px, transparent 14px 28px),
+    rgba(0,0,0,.24);
+}
+.mr-lane-no{
+  flex: 0 0 auto;
+  width: 20px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--smoke);
+}
+.mr-lane-rank{
+  flex: 0 0 auto;
+  width: 22px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--smoke);
+}
+.mr-lane.is-mine .mr-lane-no{ color: var(--led); }
+.mr-lane.is-mine .mr-lane-road{ box-shadow: inset 0 0 0 1px rgba(201,162,39,.4); }
+
+/* ボール */
+.mr-ball{
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  margin-top: -11px;
+  margin-left: -11px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-size: 11px;
+  line-height: 1;
+  box-shadow:
+    inset -3px -4px 7px rgba(0,0,0,.45),
+    inset 3px 3px 6px rgba(255,255,255,.5),
+    0 3px 7px rgba(0,0,0,.5);
+  will-change: transform;
+  z-index: 1;
+}
+/* 光沢 */
+.mr-ball::after{
+  content: '';
+  position: absolute;
+  top: 3px; left: 5px;
+  width: 6px; height: 4px;
+  border-radius: 50%;
+  background: rgba(255,255,255,.75);
+  filter: blur(1px);
+  pointer-events: none;
+}
+.mr-ball.is-leader{
+  box-shadow:
+    inset -3px -4px 7px rgba(0,0,0,.45),
+    inset 3px 3px 6px rgba(255,255,255,.5),
+    0 0 0 2px var(--led), 0 3px 9px rgba(0,0,0,.55);
+}
+
+/* ---------- メッセージ ---------- */
+#mrMessageBar{
+  width: 100%;
+  max-width: 620px;
+  min-height: 24px;
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: .03em;
+}
+#mrMessageText.good{ color: var(--jade); }
+#mrMessageText.bad{  color: #FF8A80; }
+#mrMessageText.gold{ color: var(--led); text-shadow: 0 0 10px var(--led-glow); }
+
+/* ---------- 結果 ---------- */
+.mr-result{
+  width: 100%;
+  max-width: 620px;
+  padding: 12px;
+  border: 1px solid rgba(201,162,39,.45);
+  border-radius: var(--radius);
+  background: rgba(201,162,39,.1);
+}
+.mr-podium{
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.mr-podium-item{
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(0,0,0,.3);
+}
+.mr-podium-rank{
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--brass);
+}
+.mr-podium-item.is-1st{ border-color: var(--brass); background: rgba(201,162,39,.22); }
+.mr-podium-item.is-1st .mr-podium-rank{ color: var(--led); }
+.mr-podium-ball{
+  width: 20px; height: 20px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-size: 10px;
+  box-shadow: inset -2px -3px 5px rgba(0,0,0,.4), inset 2px 2px 4px rgba(255,255,255,.45);
+}
+.mr-podium-name{ font-size: 11.5px; }
+
+.mr-payout{
+  margin-top: 10px;
+  text-align: center;
+  font-size: 13px;
+}
+.mr-payout-total{
+  font-family: var(--font-display);
+  font-size: 24px;
+  letter-spacing: .04em;
+  color: var(--led);
+  text-shadow: 0 0 12px var(--led-glow);
+}
+.mr-payout-line{
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--smoke);
+}
+.mr-payout-miss{ color: #FF8A80; font-size: 13px; }
+
+/* ---------- 出走表 ---------- */
+.mr-board,
+.mr-tickets{
+  width: 100%;
+  max-width: 620px;
+  padding: 11px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,.2);
+}
+.mr-board-head{
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.mr-board-note{
+  font-size: 10.5px;
+  color: var(--smoke);
+}
+
+.mr-entries{
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.mr-entry{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  text-align: left;
+  font-family: inherit;
+  color: inherit;
+  cursor: pointer;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,.22);
+  transition: border-color .15s var(--ease), background .15s var(--ease);
+}
+.mr-entry:disabled{ cursor: default; opacity: .55; }
+.mr-entry.is-picked{
+  border-color: var(--brass);
+  background: rgba(201,162,39,.2);
+}
+.mr-entry-ball{
+  flex: 0 0 auto;
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-size: 12px;
+  box-shadow: inset -3px -3px 6px rgba(0,0,0,.42), inset 2px 2px 5px rgba(255,255,255,.5);
+}
+.mr-entry-body{
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.mr-entry-name{
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mr-entry-odds{
+  font-size: 10px;
+  color: var(--smoke);
+}
+.mr-entry-odds b{
+  font-family: var(--font-display);
+  font-size: 12px;
+  color: var(--led);
+  letter-spacing: .02em;
+}
+/* 人気順の色分け */
+.mr-entry.is-fav .mr-entry-odds b{ color: var(--jade); }
+.mr-entry.is-long .mr-entry-odds b{ color: #FF8A80; }
+
+/* ---------- 投票券 ---------- */
+.mr-ticket-list{
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.mr-ticket{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 11.5px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,.24);
+}
+.mr-ticket.is-hit{
+  border-color: rgba(63,191,143,.7);
+  background: rgba(63,191,143,.16);
+}
+.mr-ticket.is-miss{ opacity: .5; }
+.mr-ticket-type{
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 10px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  color: var(--brass);
+}
+.mr-ticket-picks{
+  flex: 0 0 auto;
+  display: flex;
+  gap: 3px;
+}
+.mr-ticket-ball{
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  box-shadow: inset -2px -2px 4px rgba(0,0,0,.4), inset 2px 2px 3px rgba(255,255,255,.45);
+}
+.mr-ticket-amt{
+  flex: 1 1 auto;
+  text-align: right;
+  color: var(--smoke);
+  font-size: 10.5px;
+}
+.mr-ticket-pay{
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 13px;
+  color: var(--jade);
+}
+
+/* ---------- 会場にいる人 ---------- */
+.mr-watchers{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 620px;
+}
+.mr-watcher{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  background: rgba(0,0,0,.22);
+  font-size: 11px;
+}
+.mr-watcher-avatar{
+  width: 18px; height: 18px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 10px;
+  background: linear-gradient(160deg, var(--ic-1, #C9A227), var(--ic-2, #8A701A));
+  color: var(--ic-fg, #14110A);
+}
+.mr-watcher-invest{
+  font-size: 10px;
+  color: var(--led);
+}
+
+/* ---------- 投票パネル ---------- */
+#mrTypeSeg{ margin-bottom: 9px; }
+
+.mr-pick-note{
+  margin: 0 0 7px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--smoke);
+}
+.mr-pick-row{
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 9px;
+}
+.mr-pick-ball{
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  cursor: pointer;
+  border: 2px solid transparent;
+  box-shadow: inset -3px -4px 7px rgba(0,0,0,.42), inset 3px 3px 6px rgba(255,255,255,.5);
+  transition: transform .14s var(--ease), border-color .14s var(--ease);
+}
+.mr-pick-ball:active{ transform: scale(.92); }
+.mr-pick-ball.is-on{
+  border-color: var(--led);
+  box-shadow:
+    inset -3px -4px 7px rgba(0,0,0,.42), inset 3px 3px 6px rgba(255,255,255,.5),
+    0 0 0 3px rgba(255,201,74,.35);
+}
+
+.mr-bet-row{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,.24);
+}
+.mr-bet-amount,
+.mr-bet-odds{
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.mr-bet-cap{
+  font-size: 10px;
+  letter-spacing: .06em;
+  color: var(--smoke);
+}
+.mr-bet-val{ font-size: 20px; }
+.mr-bet-oddsval{
+  font-family: var(--font-display);
+  font-size: 16px;
+  color: var(--jade);
+}
+.mr-bet-ret{ font-size: 16px; }
+
+.mr-bet-actions{
+  display: flex;
+  gap: 9px;
+}
+.mr-bet-actions .btn{ flex: 1 1 0; }
+#mrClearBtn{ flex: 0 0 34%; }
+
+/* ---------- スマホ ---------- */
+@media (max-width: 480px){
+  .mr-lane{ height: 26px; }
+  .mr-ball{ width: 19px; height: 19px; margin-top: -9.5px; margin-left: -9.5px; font-size: 10px; }
+  .mr-ball::after{ top: 2px; left: 4px; width: 5px; height: 3px; }
+  .mr-entries{ gap: 5px; }
+  .mr-entry{ padding: 5px 6px; gap: 6px; }
+  .mr-entry-ball{ width: 21px; height: 21px; font-size: 11px; }
+  .mr-payout-total{ font-size: 21px; }
+  .mr-pick-ball{ width: 31px; height: 31px; font-size: 13px; }
+}
+
+@media (max-width: 380px){
+  .mr-entries{ grid-template-columns: 1fr; }
+  .mr-lane{ height: 24px; }
+  .mr-lane-no{ width: 16px; font-size: 11px; }
+  .mr-lane-rank{ width: 18px; font-size: 11px; }
+  .mr-ball{ width: 17px; height: 17px; margin-top: -8.5px; margin-left: -8.5px; font-size: 9px; }
+  .mr-pick-ball{ width: 29px; height: 29px; font-size: 12px; }
+  .mr-bet-val{ font-size: 18px; }
+}
