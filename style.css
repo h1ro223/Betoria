@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - style.css  (v4.1)
+   Betoria - style.css  (v4.2)
    made by hiro/ヒロ   https://github.com/h1ro223
    ========================================================= */
 
@@ -21,6 +21,8 @@
   --led-glow:   rgba(255,201,74,.5);
 
   --font-display: 'Bebas Neue', 'Zen Kaku Gothic New', sans-serif;
+  /* ロゴ・ブランド用(v4.2)。クラシックで高級感のある大文字セリフ */
+  --font-brand:   'Cinzel', 'Times New Roman', serif;
   --font-body:    'Zen Kaku Gothic New', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', sans-serif;
 
   --radius: 6px;
@@ -4868,4 +4870,387 @@ body.is-tutorial #actionPanel .btn.is-pressed{
   .mr-ball{ width: 17px; height: 17px; margin-top: -8.5px; margin-left: -8.5px; font-size: 9px; }
   .mr-pick-ball{ width: 29px; height: 29px; font-size: 12px; }
   .mr-bet-val{ font-size: 18px; }
+}
+
+/* =========================================================
+   v4.2 起動画面 / ブランドフォント / マーブルレースUI刷新
+   ========================================================= */
+
+/* ---------- ブランドのフォントを差し替え ---------- */
+.brand-name{
+  font-family: var(--font-brand);
+  font-weight: 700;
+  letter-spacing: .18em;
+  font-size: 17px;
+}
+.title-logo{
+  font-family: var(--font-brand);
+  font-weight: 700;
+  letter-spacing: .16em;
+}
+
+/* =========================================================
+   起動画面
+   Renderが眠っているときの待ち時間を、ロゴを見せて埋めるための画面。
+   ========================================================= */
+#splash{
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background:
+    radial-gradient(120% 90% at 50% 30%, #123028 0%, #08120F 55%, #030807 100%),
+    #030807;
+  transition: opacity .55s var(--ease), visibility .55s var(--ease);
+}
+/* 読み込み中は後ろの画面を触れないようにする */
+body.is-booting{ overflow: hidden; }
+#splash.is-hiding{ opacity: 0; visibility: hidden; }
+
+.splash-inner{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 30px;
+  width: 100%;
+  max-width: 460px;
+  animation: splashIn .9s var(--ease) both;
+}
+@keyframes splashIn{
+  from{ opacity: 0; transform: translateY(14px); }
+  to{   opacity: 1; transform: none; }
+}
+
+/* 金の枠 */
+.splash-frame{
+  position: relative;
+  width: 100%;
+  padding: 30px 22px 24px;
+  text-align: center;
+  border: 1px solid rgba(201,162,39,.5);
+  border-radius: 3px;
+  background:
+    linear-gradient(180deg, rgba(201,162,39,.09), rgba(0,0,0,.35));
+  box-shadow:
+    0 0 0 1px rgba(201,162,39,.16),
+    0 0 44px rgba(201,162,39,.13),
+    inset 0 0 30px rgba(0,0,0,.5);
+}
+/* 四隅の角飾り */
+.splash-frame::before,
+.splash-frame::after{
+  content: '';
+  position: absolute;
+  width: 16px; height: 16px;
+  border: 1px solid var(--brass);
+  opacity: .8;
+}
+.splash-frame::before{ top: 7px; left: 7px; border-right: 0; border-bottom: 0; }
+.splash-frame::after{ bottom: 7px; right: 7px; border-left: 0; border-top: 0; }
+
+.splash-suits{
+  display: flex;
+  justify-content: center;
+  gap: 13px;
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: var(--brass);
+}
+.splash-suits span{
+  opacity: .35;
+  animation: splashSuit 2.6s ease-in-out infinite;
+}
+.splash-suits span:nth-child(2){ animation-delay: .22s; color: var(--crimson); }
+.splash-suits span:nth-child(3){ animation-delay: .44s; color: var(--crimson); }
+.splash-suits span:nth-child(4){ animation-delay: .66s; }
+@keyframes splashSuit{
+  0%, 100%{ opacity: .28; transform: translateY(0); }
+  50%{      opacity: 1;   transform: translateY(-3px); }
+}
+
+/* ロゴ本体 */
+.splash-logo{
+  position: relative;
+  margin: 0;
+  font-family: var(--font-brand);
+  font-weight: 700;
+  font-size: clamp(34px, 12vw, 54px);
+  line-height: 1.05;
+  letter-spacing: .2em;
+  text-indent: .2em;            /* 字間ぶんの見た目のズレを打ち消す */
+  overflow: hidden;
+}
+.splash-logo-text{
+  background: linear-gradient(180deg, #FBEFC0 0%, #E0B72F 42%, #9A7A16 72%, #F4E4A8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(201,162,39,.35));
+}
+/* 一度だけ光が走る */
+.splash-shine{
+  position: absolute;
+  top: 0; left: -60%;
+  width: 45%; height: 100%;
+  background: linear-gradient(105deg,
+    transparent 0%, rgba(255,255,255,.55) 50%, transparent 100%);
+  transform: skewX(-18deg);
+  animation: splashShine 2.8s ease-in-out .5s infinite;
+  pointer-events: none;
+}
+@keyframes splashShine{
+  0%{   left: -60%; }
+  55%{  left: 125%; }
+  100%{ left: 125%; }
+}
+
+.splash-tagline{
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  letter-spacing: .1em;
+  color: var(--smoke);
+}
+
+/* 区切り線 */
+.splash-rule{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 16px;
+}
+.splash-rule span{
+  width: 52px; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201,162,39,.65), transparent);
+}
+.splash-rule i{
+  font-style: normal;
+  font-size: 9px;
+  color: var(--brass);
+}
+
+/* 進行状況 */
+.splash-status{
+  width: 100%;
+  text-align: center;
+}
+.splash-bar{
+  position: relative;
+  width: 100%;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(243,238,226,.1);
+  overflow: hidden;
+}
+.splash-bar span{
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--brass-dim), var(--led), var(--brass-dim));
+  box-shadow: 0 0 10px var(--led-glow);
+  transition: width .5s var(--ease);
+}
+.splash-text{
+  margin: 13px 0 0;
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  color: var(--smoke);
+}
+.splash-sub{
+  margin: 6px 0 0;
+  font-size: 10.5px;
+  line-height: 1.6;
+  color: rgba(243,238,226,.42);
+}
+
+.splash-skip{
+  padding: 8px 20px;
+  font-family: inherit;
+  font-size: 11.5px;
+  letter-spacing: .06em;
+  color: var(--smoke);
+  cursor: pointer;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,.3);
+}
+.splash-skip:hover{ color: var(--ivory); border-color: rgba(201,162,39,.5); }
+
+/* =========================================================
+   マーブルレース UI刷新
+   ========================================================= */
+
+/* フェーズごとの切り替え。切り替わるときだけふわっと出す */
+.mr-view{
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  animation: mrViewIn .38s var(--ease) both;
+}
+@keyframes mrViewIn{
+  from{ opacity: 0; transform: translateY(8px); }
+  to{   opacity: 1; transform: none; }
+}
+/* 消えていく側 */
+.mr-view.is-leaving{
+  animation: mrViewOut .26s var(--ease) both;
+  pointer-events: none;
+}
+@keyframes mrViewOut{
+  from{ opacity: 1; transform: none; }
+  to{   opacity: 0; transform: translateY(-8px); }
+}
+
+/* 投票中は出走表を主役にする */
+#mrBetView .mr-board{
+  padding: 13px;
+}
+#mrBetView .mr-entries{
+  gap: 7px;
+}
+.mr-entry{
+  padding: 8px 10px;
+}
+/* 選ばれているものをはっきり見せる */
+.mr-entry.is-picked{
+  box-shadow: 0 0 0 2px rgba(201,162,39,.45);
+}
+.mr-entry-odds b{ font-size: 14px; }
+
+/* 選んだ番号のしるし(何番目に選んだか) */
+.mr-entry-mark{
+  flex: 0 0 auto;
+  width: 18px; height: 18px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 10px;
+  color: #14110A;
+  background: var(--led);
+}
+.mr-entry.is-picked .mr-entry-mark{ display: flex; }
+
+/* レース中はコースを大きく */
+#mrRaceView .mr-track{
+  padding: 14px 12px 14px 10px;
+}
+#mrRaceView .mr-lane{ height: 34px; }
+#mrRaceView .mr-ball{
+  width: 25px; height: 25px;
+  margin-top: -12.5px; margin-left: -12.5px;
+  font-size: 12px;
+}
+
+/* ---------- 投票スリップ(選択中の内容) ---------- */
+.mr-slip{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding: 8px 11px;
+  min-height: 46px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,.26);
+}
+.mr-slip.is-ready{
+  border-color: rgba(201,162,39,.55);
+  background: rgba(201,162,39,.1);
+}
+.mr-slip-left{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.mr-slip-right{
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+.mr-slip-cap{
+  font-size: 10.5px;
+  letter-spacing: .05em;
+  color: var(--smoke);
+}
+.mr-slip-picks{
+  display: flex;
+  gap: 4px;
+}
+.mr-slip-ball{
+  width: 24px; height: 24px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-display);
+  font-size: 12px;
+  box-shadow: inset -3px -3px 6px rgba(0,0,0,.42), inset 2px 2px 5px rgba(255,255,255,.5);
+}
+.mr-slip-odds{
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--jade);
+}
+.mr-slip-ret{ font-size: 17px; }
+
+/* ---------- 金額の行 ---------- */
+.mr-amount-row{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 9px;
+}
+.mr-amount-row .mr-bet-cap{ flex: 0 0 auto; }
+.mr-amount-row .mr-bet-val{
+  flex: 0 0 auto;
+  min-width: 62px;
+  font-size: 21px;
+}
+.mr-amount-row .chip-row{
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin: 0;
+}
+/* 小さめのチップ(1画面に収めるため) */
+.chip.is-mini{
+  width: 44px; height: 44px;
+  font-size: 12px;
+}
+
+@media (max-width: 480px){
+  .chip.is-mini{ width: 40px; height: 40px; font-size: 11px; }
+  .mr-amount-row .mr-bet-val{ min-width: 52px; font-size: 19px; }
+  .mr-slip{ min-height: 42px; padding: 7px 9px; }
+  .mr-slip-odds, .mr-slip-ret{ font-size: 15px; }
+  #mrRaceView .mr-lane{ height: 30px; }
+  #mrRaceView .mr-ball{
+    width: 22px; height: 22px;
+    margin-top: -11px; margin-left: -11px; font-size: 11px;
+  }
+}
+
+@media (max-width: 380px){
+  .chip.is-mini{ width: 35px; height: 35px; font-size: 10px; }
+  .mr-amount-row{ gap: 6px; }
+  .mr-amount-row .chip-row{ gap: 4px; }
+  .mr-slip-right{ gap: 5px; }
+  .mr-slip-odds, .mr-slip-ret{ font-size: 14px; }
+  /* 380px以下では出走表を1列にしていたが、
+     投票画面では2列のほうが一覧しやすいので戻す */
+  #mrBetView .mr-entries{ grid-template-columns: repeat(2, 1fr); gap: 5px; }
+  .mr-entry{ padding: 6px 7px; gap: 6px; }
+  .mr-entry-name{ font-size: 10.5px; }
 }

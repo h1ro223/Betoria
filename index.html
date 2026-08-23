@@ -7,7 +7,7 @@
 <title>Betoria - 無料で遊べるオンラインカジノ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Cinzel:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
 <link rel="icon" type="image/png" href="./icon/icon.png">
 <link rel="apple-touch-icon" href="./icon/icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -17,7 +17,38 @@
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="./style.css">
 </head>
-<body data-screen="title">
+<body data-screen="title" class="is-booting">
+
+<!-- ---------- 起動画面(v4.2) ----------
+     Renderの無料枠はしばらく使われていないと眠ってしまい、
+     起こすのに時間がかかる。その間ずっと真っ黒だと不安なので、
+     ロゴを見せながら接続状況を伝える画面を挟んでいる。 -->
+<div id="splash">
+  <div class="splash-inner">
+    <div class="splash-frame">
+      <div class="splash-suits">
+        <span>♠</span><span>♥</span><span>♦</span><span>♣</span>
+      </div>
+      <h1 class="splash-logo">
+        <span class="splash-logo-text">BETORIA</span>
+        <span class="splash-shine" aria-hidden="true"></span>
+      </h1>
+      <p class="splash-tagline">無料で遊べる、みんなのオンラインカジノ</p>
+      <div class="splash-rule"><span></span><i>♦</i><span></span></div>
+    </div>
+
+    <div class="splash-status">
+      <div class="splash-bar"><span id="splashBarFill"></span></div>
+      <p class="splash-text" id="splashText">読み込んでいます…</p>
+      <p class="splash-sub" id="splashSub" hidden>
+        サーバーが休止していると、起動に30秒ほどかかることがあります。
+      </p>
+    </div>
+
+    <button type="button" class="splash-skip" id="splashSkipBtn" hidden>スキップして進む</button>
+  </div>
+</div>
+
 
 <!-- ============ ヘッダー ============ -->
 <header id="topbar">
@@ -68,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.1 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v4.2 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -515,7 +546,10 @@
 
   </section>
 
-  <!-- ---------- マーブルレース(v4.1) ---------- -->
+  <!-- ---------- マーブルレース(v4.1 / v4.2でUI刷新) ----------
+       スマホの1画面に収まるよう、フェーズごとに見せるものを切り替える。
+         投票受付中 … 出走表と投票券だけ(コースは出さない)
+         レース中/結果 … コースと結果だけ(投票UIは出さない) -->
   <section class="screen" id="screenMarble" hidden>
 
     <div class="mr-top">
@@ -536,40 +570,51 @@
       <button type="button" class="icon-btn" id="mrRulesBtn" title="ルール">📖</button>
     </div>
 
-    <!-- コース -->
-    <div class="mr-track" id="mrTrack">
-      <div class="mr-goal-line"><span>GOAL</span></div>
-      <div class="mr-lanes" id="mrLanes"></div>
-    </div>
+    <!-- ===== 投票受付中のビュー ===== -->
+    <div class="mr-view" id="mrBetView">
 
-    <div id="mrMessageBar"><span id="mrMessageText">まもなくレースが始まります</span></div>
-
-    <!-- 結果 -->
-    <div class="mr-result" id="mrResult" hidden>
-      <div class="mr-podium" id="mrPodium"></div>
-      <div class="mr-payout" id="mrPayout"></div>
-    </div>
-
-    <!-- 出走表(オッズ) -->
-    <div class="mr-board" id="mrBoard">
-      <div class="mr-board-head">
-        <h3 class="block-title">出走表</h3>
-        <span class="mr-board-note" id="mrBoardNote">タップして投票</span>
+      <div class="mr-board">
+        <div class="mr-board-head">
+          <h3 class="block-title">出走表</h3>
+          <span class="mr-board-note" id="mrBoardNote">タップして選ぶ</span>
+        </div>
+        <div class="mr-entries" id="mrEntries"></div>
       </div>
-      <div class="mr-entries" id="mrEntries"></div>
-    </div>
 
-    <!-- 購入した投票券 -->
-    <div class="mr-tickets" id="mrTickets" hidden>
-      <div class="mr-board-head">
-        <h3 class="block-title">投票券</h3>
-        <span class="mr-board-note" id="mrInvestNote">合計 0 メダル</span>
+      <div class="mr-tickets" id="mrTickets" hidden>
+        <div class="mr-board-head">
+          <h3 class="block-title">購入した投票券</h3>
+          <span class="mr-board-note" id="mrInvestNote">合計 0 メダル</span>
+        </div>
+        <div class="mr-ticket-list" id="mrTicketList"></div>
       </div>
-      <div class="mr-ticket-list" id="mrTicketList"></div>
+
+      <div class="mr-watchers" id="mrWatchers"></div>
     </div>
 
-    <!-- 会場にいる人 -->
-    <div class="mr-watchers" id="mrWatchers"></div>
+    <!-- ===== レース中・結果のビュー ===== -->
+    <div class="mr-view" id="mrRaceView" hidden>
+
+      <div class="mr-track" id="mrTrack">
+        <div class="mr-goal-line"><span>GOAL</span></div>
+        <div class="mr-lanes" id="mrLanes"></div>
+      </div>
+
+      <div id="mrMessageBar"><span id="mrMessageText">まもなくレースが始まります</span></div>
+
+      <div class="mr-result" id="mrResult" hidden>
+        <div class="mr-podium" id="mrPodium"></div>
+        <div class="mr-payout" id="mrPayout"></div>
+      </div>
+
+      <div class="mr-tickets" id="mrRaceTickets" hidden>
+        <div class="mr-board-head">
+          <h3 class="block-title">あなたの投票券</h3>
+          <span class="mr-board-note" id="mrRaceInvestNote">合計 0 メダル</span>
+        </div>
+        <div class="mr-ticket-list" id="mrRaceTicketList"></div>
+      </div>
+    </div>
 
   </section>
 
@@ -654,36 +699,37 @@
     </div>
   </div>
 
-  <!-- マーブルレースの投票(v4.1) -->
+  <!-- マーブルレースの投票(v4.1 / v4.2で整理)
+       ボールは出走表から直接選ぶので、選択用の行はここには置かない -->
   <div class="panel" id="mrBetPanel" hidden>
     <div class="seg seg-3" id="mrTypeSeg">
-      <button type="button" class="seg-btn is-on" data-mrtype="win">単勝<span class="seg-sub">1着を当てる</span></button>
+      <button type="button" class="seg-btn is-on" data-mrtype="win">単勝<span class="seg-sub">1着</span></button>
       <button type="button" class="seg-btn" data-mrtype="place">複勝<span class="seg-sub">3着以内</span></button>
-      <button type="button" class="seg-btn" data-mrtype="quinella">馬連<span class="seg-sub">1・2着の組</span></button>
+      <button type="button" class="seg-btn" data-mrtype="quinella">馬連<span class="seg-sub">1・2着</span></button>
     </div>
 
-    <p class="mr-pick-note" id="mrPickNote">ボールを1つ選んでください</p>
-    <div class="mr-pick-row" id="mrPickRow"></div>
-
-    <div class="mr-bet-row">
-      <div class="mr-bet-amount">
-        <span class="mr-bet-cap">投票額</span>
-        <span class="mr-bet-val led" id="mrBetValue">0</span>
+    <div class="mr-slip" id="mrSlip">
+      <div class="mr-slip-left">
+        <span class="mr-slip-cap" id="mrPickNote">ボールを1つ選んでください</span>
+        <span class="mr-slip-picks" id="mrSlipPicks"></span>
       </div>
-      <div class="mr-bet-odds" id="mrBetOdds" hidden>
-        <span class="mr-bet-cap">オッズ</span>
-        <span class="mr-bet-oddsval" id="mrBetOddsVal">-</span>
-        <span class="mr-bet-cap">払戻予定</span>
-        <span class="mr-bet-ret led" id="mrBetReturn">-</span>
+      <div class="mr-slip-right">
+        <span class="mr-slip-odds" id="mrBetOddsVal">-</span>
+        <span class="mr-slip-cap">払戻予定</span>
+        <span class="mr-slip-ret led" id="mrBetReturn">-</span>
       </div>
     </div>
 
-    <div class="chip-row" id="mrChipRow">
-      <button type="button" class="chip" data-mrchip="10">10</button>
-      <button type="button" class="chip" data-mrchip="50">50</button>
-      <button type="button" class="chip" data-mrchip="100">100</button>
-      <button type="button" class="chip" data-mrchip="500">500</button>
-      <button type="button" class="chip" data-mrchip="1000">1000</button>
+    <div class="mr-amount-row">
+      <span class="mr-bet-cap">投票額</span>
+      <span class="mr-bet-val led" id="mrBetValue">0</span>
+      <div class="chip-row" id="mrChipRow">
+        <button type="button" class="chip is-mini" data-mrchip="10">10</button>
+        <button type="button" class="chip is-mini" data-mrchip="50">50</button>
+        <button type="button" class="chip is-mini" data-mrchip="100">100</button>
+        <button type="button" class="chip is-mini" data-mrchip="500">500</button>
+        <button type="button" class="chip is-mini" data-mrchip="1000">1000</button>
+      </div>
     </div>
 
     <div class="mr-bet-actions">
@@ -1259,6 +1305,18 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v4.2</h3>
+        <ul class="rule-list">
+          <li><b>起動画面を追加しました。</b>サイトを開いたときにBETORIAのロゴが表示され、サーバーの起動状況もわかるようになりました。ロゴのフォントも新しくしています。</li>
+          <li><b>マーブルレースのUIを作り直しました。</b>投票受付中は出走表と投票券だけ、レースが始まるとコースだけを表示するようになり、スマホでも1画面で見やすくなりました。</li>
+          <li>出走表を<b>そのままタップして選べる</b>ようになりました(下の選択欄がなくなり、操作が短くなりました)。</li>
+          <li>投票受付とレースの切り替えに<b>フェード演出</b>を追加しました。</li>
+          <li><b>「レース会場へ」がすぐ開かない不具合を修正しました。</b>通信の準備を待たずに会場へ入ろうとしていたことが原因でした。</li>
+          <li>会場に<b>誰もいないときはレースを完全に止める</b>ようにしました(サーバーの負荷を下げるためです)。</li>
+          <li><b>同じアカウントに複数の端末から同時にログインできなくなりました。</b>あとからログインすると、前に使っていた端末は自動的にログアウトされます。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v4.1</h3>
         <ul class="rule-list">

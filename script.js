@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - script.js  (v4.1)
+   Betoria - script.js  (v4.2)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -412,7 +412,6 @@ const el = {
   mrResult: $('mrResult'),
   mrPodium: $('mrPodium'),
   mrPayout: $('mrPayout'),
-  mrBoard: $('mrBoard'),
   mrBoardNote: $('mrBoardNote'),
   mrEntries: $('mrEntries'),
   mrTickets: $('mrTickets'),
@@ -422,9 +421,14 @@ const el = {
   mrBetPanel: $('mrBetPanel'),
   mrTypeSeg: $('mrTypeSeg'),
   mrPickNote: $('mrPickNote'),
-  mrPickRow: $('mrPickRow'),
+  mrBetView: $('mrBetView'),
+  mrRaceView: $('mrRaceView'),
+  mrSlip: $('mrSlip'),
+  mrSlipPicks: $('mrSlipPicks'),
+  mrRaceTickets: $('mrRaceTickets'),
+  mrRaceTicketList: $('mrRaceTicketList'),
+  mrRaceInvestNote: $('mrRaceInvestNote'),
   mrBetValue: $('mrBetValue'),
-  mrBetOdds: $('mrBetOdds'),
   mrBetOddsVal: $('mrBetOddsVal'),
   mrBetReturn: $('mrBetReturn'),
   mrChipRow: $('mrChipRow'),
@@ -1284,7 +1288,14 @@ async function api(path, options){
   const res = await fetch(base + path, opt);
   let data = {};
   try { data = await res.json(); } catch {}
-  if (!res.ok) throw new Error(data.error || '通信エラー (' + res.status + ')');
+  if (!res.ok){
+    /* v4.2: 別の端末でログインされていたら、その場でログアウトする */
+    if (res.status === 401 && data.code === 'session'){
+      forceLogout('別の端末でログインされました。\nこの端末からはログアウトしました。');
+      throw new Error(data.error || '別の端末でログインされました');
+    }
+    throw new Error(data.error || '通信エラー (' + res.status + ')');
+  }
   return data;
 }
 
@@ -3250,6 +3261,7 @@ function clearFocus(){
    12. オンライン
    ========================================================= */
 const online = {
+  connectPromise: null,     // 接続手続き中の Promise(v4.2)
   socket: null, roomId: null, state: null, connecting: false,
   createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10,
   createSprintGoal: SPRINT_GOAL_DEFAULT,
@@ -3313,20 +3325,64 @@ async function enterOnline(){
     online.socket.emit('room:list');
     return;
   }
-  if (online.connecting) return;
+  el.roomList.innerHTML = '<p class="empty-note">読み込み中…</p>';
+  try {
+    await ensureSocket();
+  } catch (e){
+    el.roomList.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>';
+  }
+}
+
+/* =========================================================
+   接続の確保(v4.2)
+
+   socket.io のライブラリ自体は必要になってから読み込んでいる。
+   v4.1ではマーブルレースがこの読み込みを待たずに接続しようとしていたため、
+   ライブラリが未読み込みだと会場に入れなかった。
+   ここに一本化して、どの画面から来ても同じ手順を通るようにした。
+   ========================================================= */
+async function ensureSocket(){
+  if (online.socket && online.socket.connected) {
+    setConn('on', '接続中');
+    return online.socket;
+  }
+  /* すでに接続手続き中なら、その完了を待つ(二重に繋がないため) */
+  if (online.connectPromise) return online.connectPromise;
 
   online.connecting = true;
   setConn('', '接続しています…');
-  el.roomList.innerHTML = '<p class="empty-note">読み込み中…</p>';
 
-  try {
-    await loadSocketIo();
-    connectSocket();
-  } catch (e){
-    online.connecting = false;
-    setConn('off', '接続できません');
-    el.roomList.innerHTML = '<p class="empty-note">' + esc(e.message) + '</p>';
-  }
+  online.connectPromise = (async () => {
+    try {
+      await loadSocketIo();
+      if (!online.socket) connectSocket();
+      /* connect イベントが来るまで待つ。
+         Renderが眠っていると起きるまで時間がかかるので、長めに待つ */
+      if (!online.socket.connected){
+        await new Promise((resolve, reject) => {
+          const done = () => { cleanup(); resolve(); };
+          const failed = (e) => { cleanup(); reject(new Error((e && e.message) || '接続に失敗しました')); };
+          const timer = setTimeout(() => { cleanup(); reject(new Error('接続がタイムアウトしました')); }, 70000);
+          function cleanup(){
+            clearTimeout(timer);
+            online.socket.off('connect', done);
+            online.socket.off('connect_error', failed);
+          }
+          online.socket.once('connect', done);
+          online.socket.once('connect_error', failed);
+        });
+      }
+      return online.socket;
+    } catch (e){
+      online.connecting = false;
+      setConn('off', '接続できません');
+      throw e;
+    } finally {
+      online.connectPromise = null;
+    }
+  })();
+
+  return online.connectPromise;
 }
 
 function connectSocket(){
@@ -3353,6 +3409,10 @@ function connectSocket(){
   sock.on('connect_error', (err) => {
     online.connecting = false;
     setConn('off', '接続エラー');
+    /* v4.2: 別端末ログインで弾かれた場合は、繋ぎ直さずログアウトする */
+    if (err && /別の端末/.test(err.message || '')){
+      return forceLogout(err.message + '。\nこの端末からはログアウトしました。');
+    }
     el.roomList.innerHTML = '<p class="empty-note">' + esc(err.message || '接続に失敗しました') + '</p>';
   });
 
@@ -3383,6 +3443,12 @@ function connectSocket(){
     audio.play('join');
   });
   sock.on('room:state', onRoomState);
+
+  /* 別の端末でログインされた(v4.2) */
+  sock.on('auth:kicked', (d) => {
+    forceLogout(((d && d.reason) || '別の端末でログインされました') +
+                '。\nこの端末からはログアウトしました。');
+  });
 
   /* マーブルレース(v4.1) */
   sock.on('marble:state', onMarbleState);
@@ -5011,6 +5077,7 @@ const marble = {
   picks: [],
   amount: 0,
   /* レース演出 */
+  view: '',              // 'bet' | 'race'(いま見せている側)(v4.2)
   raf: null,
   raceStart: 0,
   lastRank: '',
@@ -5021,15 +5088,11 @@ const marble = {
 /* ---------------------------------------------------------
    会場への出入り
    --------------------------------------------------------- */
-function enterMarble(){
+async function enterMarble(){
   if (!account.user){
     toast('マーブルレースにはログインが必要です');
     openOverlay(el.accountOverlay);
     return;
-  }
-  if (!online.socket || !online.socket.connected){
-    connectSocket();
-    toast('サーバーに接続しています…');
   }
   view.game = 'marble';
   view.mode = 'online';
@@ -5042,14 +5105,27 @@ function enterMarble(){
   marble.picks = [];
   marble.amount = 0;
   marble.shownRace = -1;
+  marble.view = '';
 
   showScreen('marble');
   showPanel('mr-wait');
   el.mrWaitText.textContent = '会場に入っています…';
   setMrMessage('まもなくレースが始まります');
+  marbleShowView('race');   // 入場中はコース側を見せておく
   renderMarble();
 
-  if (online.socket) online.socket.emit('marble:join');
+  /* v4.2: socket.io の読み込みと接続を必ず待ってから入場する。
+     ここを待たずに emit していたのが「会場が開かない」不具合の原因だった */
+  try {
+    const sock = await ensureSocket();
+    if (!marble.joined) return;          // 待っている間に戻っていたら何もしない
+    sock.emit('marble:join');
+  } catch (e){
+    if (!marble.joined) return;
+    el.mrWaitText.textContent = 'サーバーに接続できませんでした';
+    setMrMessage(e.message || '接続に失敗しました', 'bad');
+    toast(e.message || '接続に失敗しました');
+  }
 }
 
 function leaveMarble(){
@@ -5077,19 +5153,23 @@ function onMarbleState(state){
   }
 
   if (state.phase === 'bet'){
+    marbleShowView('bet');
     showPanel('mr-bet');
     setMrMessage('投票を受け付けています');
   } else if (state.phase === 'race'){
+    marbleShowView('race');
     showPanel('mr-wait');
     el.mrWaitText.textContent = 'レース中です…';
     startMarbleRace(state);
   } else if (state.phase === 'result'){
+    marbleShowView('race');
     showPanel('mr-wait');
     el.mrWaitText.textContent = 'まもなく次のレースが始まります…';
     showMarbleResult(state);
   } else {
+    marbleShowView('race');
     showPanel('mr-wait');
-    el.mrWaitText.textContent = 'まもなくレースが始まります…';
+    el.mrWaitText.textContent = '会場を準備しています…';
   }
 
   startMrTimer(state.deadline);
@@ -5101,6 +5181,7 @@ function onMarbleState(state){
    --------------------------------------------------------- */
 function startMrTimer(deadline){
   stopMrTimer();
+  el.mrTimerChip.hidden = !deadline;
   if (!deadline) return;
   const tick = () => {
     const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
@@ -5275,6 +5356,35 @@ function setMrMessage(text, tone){
 }
 
 /* ---------------------------------------------------------
+   フェーズごとの画面切り替え(v4.2)
+
+   スマホの1画面に収めるため、投票中は出走表だけ、
+   レース中はコースだけを見せる。切り替えはフェードで繋ぐ。
+   --------------------------------------------------------- */
+function marbleShowView(which){
+  const next = which === 'bet' ? el.mrBetView : el.mrRaceView;
+  const prev = which === 'bet' ? el.mrRaceView : el.mrBetView;
+  if (marble.view === which) return;
+  marble.view = which;
+
+  /* 出ていく側をふわっと消してから、入れ替える。
+     フェードの途中でもう一度切り替わることがあるので、
+     消すときは「まだ裏側のままか」を必ず確かめる。
+     これを見ていないと、古いタイマーが新しい画面を隠してしまう */
+  if (!prev.hidden){
+    prev.classList.add('is-leaving');
+    setTimeout(() => {
+      prev.classList.remove('is-leaving');
+      if (marble.view !== (prev === el.mrBetView ? 'bet' : 'race')) prev.hidden = true;
+    }, 260);
+  }
+  next.hidden = false;
+  /* アニメーションをやり直させる */
+  next.classList.remove('is-leaving');
+  void next.offsetWidth;
+}
+
+/* ---------------------------------------------------------
    出走表・投票券・観客
    --------------------------------------------------------- */
 function renderMarbleEntries(){
@@ -5304,6 +5414,10 @@ function renderMarbleEntries(){
           ? '複勝 <b>' + place.toFixed(1) + '</b>'
           : '単勝 <b>' + win.toFixed(1) + '</b>');
 
+    /* 馬連のときは何番目に選んだかが分かるよう番号を出す */
+    const mark = picked && MR_TYPE_INFO[marble.type].picks > 1
+      ? (marble.picks.indexOf(b.no) + 1) : '✓';
+
     return '<button type="button" class="mr-entry' + cls + '" data-entry="' + b.no + '"' +
       (betting ? '' : ' disabled') + '>' +
       '<span class="mr-entry-ball" style="background:' + b.color + ';color:' + b.ink + '">' + b.no + '</span>' +
@@ -5311,6 +5425,7 @@ function renderMarbleEntries(){
         '<span class="mr-entry-name">' + esc(b.name) + '</span>' +
         '<span class="mr-entry-odds">' + oddsHtml + '</span>' +
       '</span>' +
+      '<span class="mr-entry-mark">' + mark + '</span>' +
     '</button>';
   }).join('');
 
@@ -5319,11 +5434,17 @@ function renderMarbleEntries(){
     : '締め切りました';
 }
 
+/* 投票券の一覧。投票画面とレース画面の両方に同じものを出す(v4.2) */
 function renderMarbleTickets(){
   const st = marble.state;
   const list = st ? (st.myTickets || []) : [];
-  if (!list.length){ el.mrTickets.hidden = true; return; }
+  if (!list.length){
+    el.mrTickets.hidden = true;
+    el.mrRaceTickets.hidden = true;
+    return;
+  }
   el.mrTickets.hidden = false;
+  el.mrRaceTickets.hidden = false;
 
   const byNo = new Map((st.balls || []).map(b => [b.no, b]));
   const order = (st.phase === 'result' && st.order) ? st.order : null;
@@ -5348,8 +5469,11 @@ function renderMarbleTickets(){
     '</div>';
   }).join('');
 
-  el.mrInvestNote.textContent = '合計 ' + Number(st.myInvest || 0).toLocaleString() +
+  const note = '合計 ' + Number(st.myInvest || 0).toLocaleString() +
     ' メダル(' + list.length + '/' + st.maxTickets + '枚)';
+  el.mrInvestNote.textContent = note;
+  el.mrRaceInvestNote.textContent = note;
+  el.mrRaceTicketList.innerHTML = el.mrTicketList.innerHTML;
 }
 
 function renderMarbleWatchers(){
@@ -5385,18 +5509,23 @@ function currentMarbleOdds(){
   return marble.type === 'win' ? st.odds.win[idx] : st.odds.place[idx];
 }
 
-function renderMarblePickRow(){
+/* 選択中の内容を投票スリップに出す(v4.2)。
+   ボールは出走表から直接選ぶので、専用の選択行は無くした */
+function renderMarbleSlip(){
   const st = marble.state;
-  if (!st || !st.balls.length){ el.mrPickRow.innerHTML = ''; return; }
-  el.mrPickRow.innerHTML = st.balls.map(b =>
-    '<button type="button" class="mr-pick-ball' +
-      (marble.picks.includes(b.no) ? ' is-on' : '') + '" data-pick="' + b.no + '" ' +
-      'style="background:' + b.color + ';color:' + b.ink + '">' + b.no + '</button>').join('');
-
   const info = MR_TYPE_INFO[marble.type];
-  el.mrPickNote.textContent = marble.picks.length === info.picks
-    ? '選択中: ' + marble.picks.join(' - ')
-    : info.note;
+  const ready = marble.picks.length === info.picks;
+
+  el.mrSlip.classList.toggle('is-ready', ready);
+  el.mrPickNote.textContent = ready ? info.label : info.note;
+
+  if (!st || !marble.picks.length){ el.mrSlipPicks.innerHTML = ''; return; }
+  const byNo = new Map(st.balls.map(b => [b.no, b]));
+  el.mrSlipPicks.innerHTML = marble.picks.map(n => {
+    const b = byNo.get(n) || { color: '#888', ink: '#fff' };
+    return '<span class="mr-slip-ball" style="background:' + b.color +
+           ';color:' + b.ink + '">' + n + '</span>';
+  }).join('');
 }
 
 function renderMarbleBetPanel(){
@@ -5407,12 +5536,12 @@ function renderMarbleBetPanel(){
   el.mrBetValue.textContent = marble.amount.toLocaleString();
 
   if (odds){
-    el.mrBetOdds.hidden = false;
     el.mrBetOddsVal.textContent = odds.toFixed(1) + '倍';
     el.mrBetReturn.textContent = marble.amount > 0
       ? Math.floor(marble.amount * odds).toLocaleString() : '-';
   } else {
-    el.mrBetOdds.hidden = true;
+    el.mrBetOddsVal.textContent = '-';
+    el.mrBetReturn.textContent = '-';
   }
 
   const min = st ? st.minBet : 10;
@@ -5434,7 +5563,7 @@ function renderMarble(){
   const st = marble.state;
   if (st){
     el.mrRaceNo.textContent = st.raceNo;
-    const label = { bet: '投票受付中', race: 'レース中', result: '払い戻し', idle: '準備中' }[st.phase] || '';
+    const label = { bet: '投票受付中', race: 'レース中', result: '払い戻し', idle: '待機中' }[st.phase] || '';
     el.mrPhaseText.textContent = label;
     el.mrPhaseChip.className = 'mr-chip is-phase is-' + st.phase;
     el.mrResult.hidden = st.phase !== 'result';
@@ -5443,7 +5572,7 @@ function renderMarble(){
     if (el.mrLanes.childElementCount !== st.balls.length) renderMarbleLanes();
   }
   renderMarbleEntries();
-  renderMarblePickRow();
+  renderMarbleSlip();
   renderMarbleBetPanel();
   renderMarbleTickets();
   renderMarbleWatchers();
@@ -6337,12 +6466,7 @@ el.mrTypeSeg.addEventListener('click', (e) => {
   if (!b) return;
   marbleSetType(b.dataset.mrtype);
 });
-el.mrPickRow.addEventListener('click', (e) => {
-  const b = e.target.closest('.mr-pick-ball');
-  if (!b) return;
-  marbleTogglePick(Number(b.dataset.pick));
-});
-/* 出走表からも直接選べるようにしておく(タップの往復を減らす) */
+/* ボールは出走表から直接選ぶ(v4.2で選択専用の行は廃止) */
 el.mrEntries.addEventListener('click', (e) => {
   const b = e.target.closest('.mr-entry');
   if (!b || b.disabled) return;
@@ -6840,6 +6964,118 @@ function resumeInviteJoin(){
   enterOnline();   // 接続後、connectハンドラで join が走る
 }
 
+/* =========================================================
+   起動画面(v4.2)
+
+   Renderの無料枠は、しばらく使われていないとサーバーが眠ってしまい、
+   起こすのに30秒ほどかかることがある。その間なにも出ないと
+   「壊れている」と思われてしまうので、ロゴを見せながら状況を伝える。
+
+   ついでにここで先に接続まで済ませておくと、
+   あとからマーブルレースの会場を開いたときも待たされずに済む。
+   ========================================================= */
+const SPLASH_MIN_MS  = 1500;    // ロゴを見せる最低時間
+const SPLASH_WAIT_MS = 9000;    // これ以上は待たせず、接続は裏で続ける
+let splashDone = false;
+
+function splashSay(text, sub){
+  const t = $('splashText');
+  if (t) t.textContent = text;
+  const su = $('splashSub');
+  if (su && typeof sub === 'boolean') su.hidden = !sub;
+}
+
+function splashProgress(pct){
+  const bar = $('splashBarFill');
+  if (bar) bar.style.width = Math.max(0, Math.min(100, pct)) + '%';
+}
+
+function hideSplash(){
+  if (splashDone) return;
+  splashDone = true;
+  splashProgress(100);
+  const sp = $('splash');
+  if (!sp){ document.body.classList.remove('is-booting'); return; }
+  sp.classList.add('is-hiding');
+  document.body.classList.remove('is-booting');
+  /* 完全に消えてから DOM ごと外す(重ならないように) */
+  setTimeout(() => { if (sp.parentNode) sp.parentNode.removeChild(sp); }, 620);
+}
+
+async function runSplash(){
+  const started = Date.now();
+  splashProgress(12);
+  splashSay('読み込んでいます…');
+
+  const skip = $('splashSkipBtn');
+  if (skip) skip.addEventListener('click', hideSplash);
+
+  /* ログインしていない人は接続の必要がないので、ロゴだけ見せて終わり */
+  if (!account.token){
+    splashProgress(70);
+    const rest = Math.max(0, SPLASH_MIN_MS - (Date.now() - started));
+    await sleep(rest);
+    return hideSplash();
+  }
+
+  splashSay('サーバーに接続しています…');
+  splashProgress(35);
+
+  /* 3秒たっても繋がらなければ、眠っている可能性を伝える */
+  const slowTimer = setTimeout(() => {
+    if (splashDone) return;
+    splashSay('サーバーを起動しています…', true);
+    splashProgress(60);
+    if (skip) skip.hidden = false;
+  }, 3000);
+
+  try {
+    await Promise.race([
+      ensureSocket(),
+      sleep(SPLASH_WAIT_MS).then(() => { throw new Error('slow'); })
+    ]);
+    splashSay('準備ができました');
+    splashProgress(95);
+  } catch {
+    /* 待ちきれなかっただけ。接続は裏で続いているのでそのまま進める */
+    splashSay('接続を待っています…', true);
+  }
+  clearTimeout(slowTimer);
+
+  const rest = Math.max(0, SPLASH_MIN_MS - (Date.now() - started));
+  if (rest) await sleep(rest);
+  hideSplash();
+}
+
+/* =========================================================
+   別の端末でログインされたとき(v4.2)
+   ここに来たら、この端末はもうログイン状態ではない。
+   ========================================================= */
+let kickedAlready = false;
+function forceLogout(reason){
+  if (kickedAlready) return;
+  kickedAlready = true;
+
+  /* 会場やルームからは黙って抜ける(通信はもう通らない) */
+  marble.joined = false;
+  stopMarbleRace();
+  stopMrTimer();
+  stopHiloTimer();
+  if (online.socket){
+    try { online.socket.disconnect(); } catch {}
+    online.socket = null;
+  }
+  online.connectPromise = null;
+  online.connecting = false;
+  clearAccount();
+  document.querySelectorAll('.overlay').forEach(o => { o.hidden = true; });
+  showScreen('title');
+  renderMedal();
+  alert(reason || '別の端末でログインされました。\nこの端末からはログアウトしました。');
+  /* 次にログインし直せるよう、目印を戻しておく */
+  setTimeout(() => { kickedAlready = false; }, 1200);
+}
+
 async function init(){
   buildShoe();
   if (settings.bgmOn) bgm.prefetch();
@@ -6858,6 +7094,8 @@ async function init(){
   if (account.user){ loadFriends(true); loadNotices(true); checkBonus(true); }
   startDayWatch();
   resumeInviteJoin();
+  /* 画面の準備が全部できてから起動画面を閉じる(v4.2) */
+  await runSplash();
 }
 
 init();

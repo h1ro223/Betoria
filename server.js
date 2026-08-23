@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v4.1)
+   Betoria - server.js  (v4.2)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.1.0';
+const APP_VERSION = '4.2.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -263,7 +263,9 @@ const db = (() => {
                'hl_rounds, hl_wins, hl_losses, ' +
                /* マーブルレース(v4.1) */
                'mr_total_gain, mr_best_gain, mr_best_gain_at, mr_day_key, mr_day_gain, mr_day_best, ' +
-               'mr_races, mr_hits, mr_misses';
+               'mr_races, mr_hits, mr_misses, ' +
+               /* 同時ログイン制限(v4.2) */
+               'session_id';
 
   return {
     kind: 'postgres',
@@ -344,6 +346,11 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_hits         INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_misses       INTEGER NOT NULL DEFAULT 0`);
 
+      /* いま有効なログインの識別子(v4.2)
+         同じアカウントに2台からログインできないようにするために使う。
+         新しくログインするたびに作り直し、古い端末のトークンを無効にする */
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_id TEXT`);
+
       /* 通知(v3.2) */
       await pool.query(`
         CREATE TABLE IF NOT EXISTS notices(
@@ -419,7 +426,7 @@ const db = (() => {
         `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
           $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
           $28,$29,$30,$31,$32,$33,$34,$35,$36,
-          $37,$38,$39,$40,$41,$42,$43,$44,$45)`,
+          $37,$38,$39,$40,$41,$42,$43,$44,$45,$46)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
          row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
@@ -436,7 +443,8 @@ const db = (() => {
          /* マーブルレース(v4.1) */
          row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
          row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
-         row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0]);
+         row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0,
+         row.session_id || null]);
       return row;
     },
     async saveUser(row){
@@ -453,7 +461,8 @@ const db = (() => {
          hl_rounds=$32, hl_wins=$33, hl_losses=$34,
          mr_total_gain=$35, mr_best_gain=$36, mr_best_gain_at=$37,
          mr_day_key=$38, mr_day_gain=$39, mr_day_best=$40,
-         mr_races=$41, mr_hits=$42, mr_misses=$43
+         mr_races=$41, mr_hits=$42, mr_misses=$43,
+         session_id=$44
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
@@ -470,7 +479,8 @@ const db = (() => {
          /* マーブルレース(v4.1) */
          row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
          row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
-         row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0]);
+         row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0,
+         row.session_id || null]);
       return row;
     },
     async deleteUser(name){
@@ -626,24 +636,73 @@ function sign(payload){
   return crypto.createHmac('sha256', SECRET).update(payload).digest('base64url');
 }
 
-function makeToken(username){
+/* =========================================================
+   トークン(v4.2でログイン識別子つきに変更)
+
+   形式: base64url(ユーザー名).有効期限.ログイン識別子.署名
+   v4.1までは識別子のない3つ組だった。古いトークンも読めるようにしてあるが、
+   そのユーザーが一度でも新しくログインすると session_id が入るので、
+   古いトークンはそこで使えなくなる(=自動的に追い出される)。
+   ========================================================= */
+/* Socket.io の実体。下のほうで代入する。
+   ログイン処理から古い接続を切るために、ここから参照できるようにしている */
+let ioRef = null;
+
+function newSessionId(){ return crypto.randomBytes(9).toString('base64url'); }
+
+function makeToken(username, sessionId){
   const exp = Date.now() + TOKEN_DAYS * 86400000;
-  const body = Buffer.from(username).toString('base64url') + '.' + exp;
+  const body = Buffer.from(username).toString('base64url') + '.' + exp +
+               '.' + (sessionId || '');
   return body + '.' + sign(body);
 }
 
+/* 戻り値は { name, sid } か null。sid は古いトークンだと null になる */
 function readToken(token){
   if (typeof token !== 'string') return null;
   const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  const body = parts[0] + '.' + parts[1];
+  if (parts.length !== 3 && parts.length !== 4) return null;
+
+  const sig = parts[parts.length - 1];
+  const body = parts.slice(0, parts.length - 1).join('.');
   const expected = sign(body);
-  const a = Buffer.from(parts[2]);
+  const a = Buffer.from(sig);
   const b = Buffer.from(expected);
   if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   if (Number(parts[1]) < Date.now()) return null;
-  try { return Buffer.from(parts[0], 'base64url').toString('utf8'); }
-  catch { return null; }
+
+  try {
+    return {
+      name: Buffer.from(parts[0], 'base64url').toString('utf8'),
+      sid: parts.length === 4 ? (parts[2] || null) : null
+    };
+  } catch { return null; }
+}
+
+/* そのトークンが「いま有効なログイン」かどうか。
+   session_id をまだ持っていないユーザー(v4.1以前から居る人)は、
+   次にログインするまで今までどおり使えるようにしている */
+function sessionValid(user, sid){
+  if (!user) return false;
+  if (!user.session_id) return true;
+  return user.session_id === sid;
+}
+
+/* 新しくログインしたので、同じアカウントで繋がっている古い接続を切る。
+   先に画面へ知らせてから切断する */
+function kickOtherSessions(name, keepSid){
+  if (!ioRef) return;
+  for (const sock of ioRef.sockets.sockets.values()){
+    if (sock.data && sock.data.name === name && sock.data.sid !== keepSid){
+      sock.emit('auth:kicked', { reason: '別の端末でログインされました' });
+      setTimeout(() => { try { sock.disconnect(true); } catch {} }, 120);
+    }
+  }
+  /* マーブルレースの会場からも外しておく */
+  if (typeof marble !== 'undefined' && marble.watchers.has(name)){
+    marble.watchers.delete(name);
+    marble.tickets.delete(name);
+  }
 }
 
 /* =========================================================
@@ -1478,11 +1537,37 @@ function marbleClearTimer(){
   if (marble.timer){ clearTimeout(marble.timer); marble.timer = null; }
 }
 
+/* 会場を完全に止める(v4.2)
+   最後の1人が抜けたら、投票中でもレース中でもその場で停止する。
+   無人のサーバーでタイマーを回し続けないための処理。
+   投票内容は退出時に消しているので、途中で止めても取りこぼしは起きない */
+function stopMarbleHall(){
+  marbleClearTimer();
+  marble.phase = 'idle';
+  marble.balls = [];
+  marble.odds = null;
+  marble.order = [];
+  marble.track = [];
+  marble.tickets = new Map();
+  marble.lastResult = null;
+  marble.deadline = 0;
+}
+
+/* 会場から人がいなくなっていないか確かめ、いなければ止める */
+function checkMarbleEmpty(){
+  if (marble.watchers.size === 0 && marble.phase !== 'idle'){
+    stopMarbleHall();
+    console.log('[marble] 会場が無人になったため停止しました');
+    return true;
+  }
+  return false;
+}
+
 /* 投票受付の開始。会場に誰もいなければ止めておく(無駄に動かさない) */
 function startMarbleBetting(io){
   marbleClearTimer();
   if (marble.watchers.size === 0){
-    marble.phase = 'idle';
+    stopMarbleHall();
     return;
   }
   marble.raceNo++;
@@ -1502,6 +1587,7 @@ function startMarbleBetting(io){
 /* レース本番。着順はこの瞬間に確定させ、演出データと一緒に配る */
 function startMarbleRace(io){
   marbleClearTimer();
+  if (checkMarbleEmpty()) return;   // v4.2
   marble.phase = 'race';
   marble.order = drawMarbleOrder(marble.balls);
   marble.track = makeMarbleTrack(marble.balls, marble.order);
@@ -1514,6 +1600,12 @@ function startMarbleRace(io){
 /* 払い戻し */
 async function finishMarbleRace(io){
   marbleClearTimer();
+  /* レース中に全員抜けた場合でも、投票していた人への払い戻しだけは行う。
+     投票が1件も無ければそのまま止めてよい */
+  if (marble.watchers.size === 0 && marble.tickets.size === 0){
+    stopMarbleHall();
+    return;
+  }
   marble.phase = 'result';
   marble.deadline = Date.now() + MR_RESULT_MS;
 
@@ -1551,6 +1643,8 @@ async function finishMarbleRace(io){
 
   marble.lastResult = { order, perUser };
   broadcastMarble(io);
+  /* 誰も残っていなければ次のレースは始めない */
+  if (checkMarbleEmpty()) return;
   marble.timer = setTimeout(() => startMarbleBetting(io), MR_RESULT_MS);
 }
 
@@ -2247,14 +2341,33 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-function authFail(res, msg){ return res.status(401).json({ error: msg }); }
+/* 認証に失敗したときの返事。
+   v4.2: 別の端末でログインされた場合は code を付けて画面側に知らせる。
+   画面はこれを見て、強制的にログアウトしてタイトルへ戻す */
+function authFail(res, msg){
+  if (res.req && res.req.__sessionExpired){
+    return res.status(401).json({
+      error: '別の端末でログインされました', code: 'session'
+    });
+  }
+  return res.status(401).json({ error: msg });
+}
 
+/* ログイン中のユーザーを返す。
+   トークンが古い(別端末でログインし直された)ときは null を返しつつ、
+   req に目印を付けて authFail が理由を出せるようにしている */
 async function currentUser(req){
   const h = req.headers.authorization || '';
   const token = h.startsWith('Bearer ') ? h.slice(7) : '';
-  const name = readToken(token);
-  if (!name) return null;
-  return await db.findUser(name);
+  const t = readToken(token);
+  if (!t) return null;
+  const u = await db.findUser(t.name);
+  if (!u) return null;
+  if (!sessionValid(u, t.sid)){
+    req.__sessionExpired = true;
+    return null;
+  }
+  return u;
 }
 
 /* 最終ログイン時刻を更新する(短時間の連打では書き込まない) */
@@ -2381,7 +2494,9 @@ function blankUserRow(username, pass_hash){
     /* マーブルレース(v4.1) */
     mr_total_gain: 0, mr_best_gain: 0, mr_best_gain_at: null,
     mr_day_key: null, mr_day_gain: 0, mr_day_best: 0,
-    mr_races: 0, mr_hits: 0, mr_misses: 0
+    mr_races: 0, mr_hits: 0, mr_misses: 0,
+    /* 同時ログイン制限(v4.2) */
+    session_id: null
   };
 }
 
@@ -2394,8 +2509,9 @@ app.post('/api/register', async (req, res) => {
 
     const row = blankUserRow(username, hashPassword(password));
     row.last_login = new Date();
+    row.session_id = newSessionId();          // v4.2
     await db.createUser(row);
-    res.json({ token: makeToken(username), user: publicUser(row) });
+    res.json({ token: makeToken(username, row.session_id), user: publicUser(row) });
   } catch (e){
     console.error('[register]', e);
     res.status(500).json({ error: '登録に失敗しました' });
@@ -2409,8 +2525,13 @@ app.post('/api/login', async (req, res) => {
     if (!u || !verifyPassword(String(password || ''), u.pass_hash))
       return res.status(401).json({ error: 'ユーザー名かパスワードが違います' });
     u.last_login = new Date();
+    /* v4.2: ログインし直すと新しい識別子になるので、
+       それまで使っていた端末のトークンは自動的に無効になる */
+    const sid = newSessionId();
+    u.session_id = sid;
     await db.saveUser(u);
-    res.json({ token: makeToken(u.username), user: publicUser(u) });
+    kickOtherSessions(u.username, sid);
+    res.json({ token: makeToken(u.username, sid), user: publicUser(u) });
   } catch (e){
     console.error('[login]', e);
     res.status(500).json({ error: 'ログインに失敗しました' });
@@ -2442,9 +2563,12 @@ app.post('/api/password', async (req, res) => {
 
   try {
     u.pass_hash = hashPassword(next);
-    await db.saveUser(u);
     /* 変更後は今のトークンだけを有効にし、他端末のセッションは切る */
-    const token = makeToken(u.username);
+    const sid = newSessionId();
+    u.session_id = sid;
+    await db.saveUser(u);
+    kickOtherSessions(u.username, sid);
+    const token = makeToken(u.username, sid);
     res.json({ ok: true, token, user: publicUser(u) });
   } catch (e){
     console.error('[password]', e);
@@ -3095,12 +3219,16 @@ app.post('/api/admin/delete', async (req, res) => {
    ========================================================= */
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+ioRef = io;   // v4.2: ログイン時に古い端末を切るために使う
 
 io.use(async (socket, next) => {
-  const name = readToken(socket.handshake.auth?.token);
-  if (!name) return next(new Error('ログインが必要です'));
-  const u = await db.findUser(name);
+  const t = readToken(socket.handshake.auth?.token);
+  if (!t) return next(new Error('ログインが必要です'));
+  const u = await db.findUser(t.name);
   if (!u) return next(new Error('アカウントが見つかりません'));
+  /* v4.2: 別の端末でログインし直されていたら、この接続はもう無効 */
+  if (!sessionValid(u, t.sid)) return next(new Error('別の端末でログインされました'));
+  socket.data.sid = t.sid;
   socket.data.name = u.username;
   socket.data.level = u.level;
   socket.data.medal = u.medal;
@@ -3507,7 +3635,8 @@ io.on('connection', (socket) => {
     marble.watchers.delete(name);
     marble.tickets.delete(name);
     socket.leave(MR_ROOM);
-    /* 誰もいなくなったら、次のレースは始まらない(タイマーが自然に止まる) */
+    /* v4.2: 最後の1人が抜けたら、その場でレースごと止める */
+    if (checkMarbleEmpty()) return;
     broadcastMarble(io);
   });
 
@@ -3654,7 +3783,8 @@ io.on('connection', (socket) => {
     if (w && w.sid === socket.id){
       marble.watchers.delete(name);
       marble.tickets.delete(name);
-      broadcastMarble(io);
+      /* v4.2: 無人になったらレースを止める */
+      if (!checkMarbleEmpty()) broadcastMarble(io);
     }
     /* 切断した瞬間を最終ログインとして残す(次に見たとき「◯分前」が正しくなる) */
     try {
