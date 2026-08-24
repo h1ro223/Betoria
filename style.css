@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - style.css  (v4.2)
+   Betoria - style.css  (v4.3)
    made by hiro/ヒロ   https://github.com/h1ro223
    ========================================================= */
 
@@ -5254,3 +5254,63 @@ body.is-booting{ overflow: hidden; }
   .mr-entry{ padding: 6px 7px; gap: 6px; }
   .mr-entry-name{ font-size: 10.5px; }
 }
+
+/* =========================================================
+   v4.3 チップの色 / レース開始の秒読み
+   ========================================================= */
+
+/* 1000枚のチップ(v4.3で追加)。
+   ブラックジャック側は500枚までしか使っていなかったので、
+   マーブルレース用にもう1段だけ用意した */
+.chip-1000{
+  background: radial-gradient(circle at 50% 38%, #6C4BA6, #33215C);
+}
+
+/* マーブルレースのチップは小さいので、縁と文字を少し詰める */
+.chip.is-mini{
+  border-width: 2px;
+  border-style: dashed;
+  border-color: rgba(255,255,255,.5);
+  box-shadow: 0 3px 9px rgba(0,0,0,.45), inset 0 -2px 5px rgba(0,0,0,.35);
+}
+
+/* ---------- スタート前の秒読み ---------- */
+.mr-count{
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(60% 80% at 50% 50%, rgba(0,0,0,.72), rgba(0,0,0,.88));
+  backdrop-filter: blur(1.5px);
+  pointer-events: none;
+}
+.mr-count-num{
+  font-size: clamp(56px, 17vw, 92px);
+  line-height: 1;
+  letter-spacing: .02em;
+}
+.mr-count-num.is-pop{ animation: mrCountPop .9s var(--ease); }
+@keyframes mrCountPop{
+  0%{   transform: scale(1.55); opacity: 0; }
+  22%{  transform: scale(1);    opacity: 1; }
+  100%{ transform: scale(1);    opacity: 1; }
+}
+.mr-count-cap{
+  font-size: 11.5px;
+  letter-spacing: .12em;
+  color: var(--smoke);
+}
+
+/* 秒読み中のフェーズ表示 */
+.mr-chip.is-phase.is-count{ border-color: rgba(232,138,50,.65); }
+.mr-chip.is-phase.is-count .mr-chip-val{ color: #F0A85A; }
+
+/* 投票済みのときは、選び直せないことが分かるようにする */
+#mrBetPanel .seg-btn:disabled{ opacity: .45; cursor: default; }
+.mr-entry:disabled{ cursor: default; }

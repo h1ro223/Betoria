@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v4.2)
+   Betoria - server.js  (v4.3)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.2.0';
+const APP_VERSION = '4.3.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1249,14 +1249,15 @@ function hiloState(room){
      オッズはこの確率から逆算するので、強いボールほど低配当になる。
    ========================================================= */
 const MR_BALLS       = 8;
-const MR_BET_MS      = 35000;   // 投票受付
-const MR_RACE_MS     = 15000;   // レース本番
+const MR_BET_MS      = 30000;   // 投票受付(v4.3)
+const MR_COUNT_SEC   = 3;       // 締め切ってからスタートまでの秒読み(v4.3)
+const MR_RACE_MS     = 28000;   // レース本番(v4.3)
 const MR_RESULT_MS   = 10000;   // 払い戻しの確認
 const MR_PAYOUT_RATE = 0.85;    // 払戻率(控除率15%)。上げるとメダルが増えやすくなる
 const MR_MIN_BET     = 10;
 const MR_MAX_BET     = 100000;
-const MR_MAX_TICKETS = 12;      // 1レースで買える投票券の枚数
-const MR_TICKS       = 24;      // 演出用に送る位置データの数
+const MR_MAX_TICKETS = 1;       // 1レースで買える投票券の枚数(v4.3で1枚に)
+const MR_TICKS       = 40;      // 演出用に送る位置データの数(v4.3でレース延長に合わせて増量)
 const MR_MIN_ODDS    = 1.1;
 const MR_ROOM        = 'marble-hall';
 
@@ -1284,7 +1285,9 @@ const MR_BET_TYPES = {
 
 /* 会場はサーバーに1つだけ */
 const marble = {
-  phase: 'idle',          // idle | bet | race | result
+  phase: 'idle',          // idle | bet | count | race | result(v4.3で count を追加)
+  count: 0,               // 秒読みの残り(3→2→1)
+  countTimer: null,
   raceNo: 0,
   balls: [],
   order: [],              // 着順(ボール番号の配列)
@@ -1495,6 +1498,8 @@ function marbleState(forName){
 
   const st = {
     phase: marble.phase,
+    count: marble.count || 0,
+    countSec: MR_COUNT_SEC,
     raceNo: marble.raceNo,
     balls: marble.balls.map(b => ({ no: b.no, name: b.name, color: b.color, ink: b.ink })),
     odds: marble.odds,
@@ -1512,6 +1517,7 @@ function marbleState(forName){
     myInvest: invest
   };
 
+  /* 秒読み中は出走表を見せたままにしたいので、着順や位置データはまだ送らない */
   if (marble.phase === 'race' || marble.phase === 'result'){
     st.track = marble.track;
     st.order = marble.order;
@@ -1535,6 +1541,7 @@ function broadcastMarble(io){
    --------------------------------------------------------- */
 function marbleClearTimer(){
   if (marble.timer){ clearTimeout(marble.timer); marble.timer = null; }
+  if (marble.countTimer){ clearInterval(marble.countTimer); marble.countTimer = null; }
 }
 
 /* 会場を完全に止める(v4.2)
@@ -1544,6 +1551,7 @@ function marbleClearTimer(){
 function stopMarbleHall(){
   marbleClearTimer();
   marble.phase = 'idle';
+  marble.count = 0;
   marble.balls = [];
   marble.odds = null;
   marble.order = [];
@@ -1581,7 +1589,31 @@ function startMarbleBetting(io){
   marble.deadline = Date.now() + MR_BET_MS;
 
   broadcastMarble(io);
-  marble.timer = setTimeout(() => startMarbleRace(io), MR_BET_MS);
+  marble.timer = setTimeout(() => startMarbleCountdown(io), MR_BET_MS);
+}
+
+/* 締め切ってからスタートまでの秒読み(v4.3)
+   ブラックジャックの開始前と同じ 3・2・1 の演出をレースにも入れた。
+   着順はレース開始時に決めるので、ここではまだ何も抽選していない */
+function startMarbleCountdown(io){
+  marbleClearTimer();
+  if (checkMarbleEmpty()) return;
+
+  marble.phase = 'count';
+  marble.count = MR_COUNT_SEC;
+  marble.deadline = Date.now() + MR_COUNT_SEC * 1000;
+  marble.message = '';
+  broadcastMarble(io);
+
+  marble.countTimer = setInterval(() => {
+    marble.count--;
+    if (marble.count <= 0){
+      clearInterval(marble.countTimer);
+      marble.countTimer = null;
+      return startMarbleRace(io);
+    }
+    broadcastMarble(io);
+  }, 1000);
 }
 
 /* レース本番。着順はこの瞬間に確定させ、演出データと一緒に配る */
@@ -3661,9 +3693,13 @@ io.on('connection', (socket) => {
     if (amt > MR_MAX_BET)
       return socket.emit('room:error', '1回の投票は' + MR_MAX_BET.toLocaleString() + 'メダルまでです');
 
+    /* v4.3: 1レースにつき1買い目だけ。買い直しもできない一発勝負にした */
     const mine = marble.tickets.get(name) || [];
     if (mine.length >= MR_MAX_TICKETS)
-      return socket.emit('room:error', '1レースで買えるのは' + MR_MAX_TICKETS + '枚までです');
+      return socket.emit('room:error',
+        MR_MAX_TICKETS === 1
+          ? 'このレースはすでに投票済みです(1レース1点まで)'
+          : '1レースで買えるのは' + MR_MAX_TICKETS + '枚までです');
 
     /* オッズは投票した瞬間の値で固定する(あとで変動しない) */
     const odds = mrOddsOf(def.key, list);

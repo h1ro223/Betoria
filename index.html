@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.2 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v4.3 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -598,6 +598,12 @@
       <div class="mr-track" id="mrTrack">
         <div class="mr-goal-line"><span>GOAL</span></div>
         <div class="mr-lanes" id="mrLanes"></div>
+
+        <!-- スタート前の秒読み(v4.3) -->
+        <div class="mr-count" id="mrCount" hidden>
+          <span class="mr-count-num led" id="mrCountNum">3</span>
+          <span class="mr-count-cap">まもなくスタート</span>
+        </div>
       </div>
 
       <div id="mrMessageBar"><span id="mrMessageText">まもなくレースが始まります</span></div>
@@ -724,11 +730,11 @@
       <span class="mr-bet-cap">投票額</span>
       <span class="mr-bet-val led" id="mrBetValue">0</span>
       <div class="chip-row" id="mrChipRow">
-        <button type="button" class="chip is-mini" data-mrchip="10">10</button>
-        <button type="button" class="chip is-mini" data-mrchip="50">50</button>
-        <button type="button" class="chip is-mini" data-mrchip="100">100</button>
-        <button type="button" class="chip is-mini" data-mrchip="500">500</button>
-        <button type="button" class="chip is-mini" data-mrchip="1000">1000</button>
+        <button type="button" class="chip is-mini chip-10"   data-mrchip="10">10</button>
+        <button type="button" class="chip is-mini chip-50"   data-mrchip="50">50</button>
+        <button type="button" class="chip is-mini chip-100"  data-mrchip="100">100</button>
+        <button type="button" class="chip is-mini chip-500"  data-mrchip="500">500</button>
+        <button type="button" class="chip is-mini chip-1000" data-mrchip="1000">1000</button>
       </div>
     </div>
 
@@ -998,7 +1004,7 @@
           <ul class="rule-list">
             <li><b>8つのボール</b>が走るレースで、どれが上位に入るかを当てるゲームです。競馬と同じ仕組みだと思ってください。</li>
             <li>会場は<b>常時開催</b>です。部屋を作る必要はなく、入ればすぐ次のレースに参加できます。<b>1人でも遊べます</b>。</li>
-            <li>1レースはおよそ1分です。<b>投票35秒 → レース15秒 → 払い戻し10秒</b>で、そのまま次のレースが始まります。</li>
+            <li>1レースはおよそ70秒です。<b>投票30秒 → 秒読み3秒 → レース28秒 → 払い戻し10秒</b>で、そのまま次のレースが始まります。</li>
             <li>出走する8つのボールは固定ですが、<b>強さは毎レース変わります</b>。オッズもそれに合わせて毎回変化します。</li>
             <li>投票しなかったレースは、ただ見ているだけでもかまいません。</li>
           </ul>
@@ -1017,8 +1023,9 @@
             <li>オッズは<b>ボールの強さから自動で計算</b>されます。強いボールほど低配当、弱いボールほど高配当です。</li>
             <li>払い戻しは <b>投票額 × オッズ</b> です(端数は切り捨て)。オッズには投票額そのものが含まれます。</li>
             <li>オッズは<b>投票した瞬間の値で固定</b>されます。あとから変動することはありません。</li>
-            <li>投票は<b>10メダルから</b>、1回あたり100,000メダルまで。1レースで<b>最大12枚</b>まで買えます。</li>
-            <li>単勝と複勝を同時に買う、複数のボールに分けて買う、といった買い方もできます。</li>
+            <li>投票は<b>10メダルから</b>、1回あたり100,000メダルまで。</li>
+            <li><b>投票できるのは1レースにつき1点だけ</b>です。買ったあとは締め切りまで変更できないので、よく考えて選んでください。</li>
+            <li><b>レースが始まると会場から出られません。</b>払い戻しを受け取るまでお待ちください。</li>
           </ul>
         </div>
         <div class="sheet-section">
@@ -1305,6 +1312,16 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v4.3</h3>
+        <ul class="rule-list">
+          <li>マーブルレースに<b>スタート前の秒読み(3・2・1)</b>を追加しました。</li>
+          <li>投票受付を<b>30秒</b>に、レースを<b>28秒</b>に変更しました。レースをじっくり見られるようになっています。</li>
+          <li><b>投票は1レースにつき1点だけ</b>になりました。買ったあとは締め切りまで変更できません。</li>
+          <li><b>レース中は会場から出られない</b>ようにしました(払い戻しの取りこぼしを防ぐためです)。</li>
+          <li>投票額のチップに<b>金額ごとの色</b>を付けて、見分けやすくしました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v4.2</h3>
         <ul class="rule-list">

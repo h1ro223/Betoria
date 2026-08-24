@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - script.js  (v4.2)
+   Betoria - script.js  (v4.3)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -407,6 +407,8 @@ const el = {
   mrTimerChip: $('mrTimerChip'),
   mrTimerNum: $('mrTimerNum'),
   mrTrack: $('mrTrack'),
+  mrCount: $('mrCount'),
+  mrCountNum: $('mrCountNum'),
   mrLanes: $('mrLanes'),
   mrMessageText: $('mrMessageText'),
   mrResult: $('mrResult'),
@@ -5078,6 +5080,7 @@ const marble = {
   amount: 0,
   /* レース演出 */
   view: '',              // 'bet' | 'race'(いま見せている側)(v4.2)
+  shownCount: 0,         // 秒読みで出した数字(v4.3)
   raf: null,
   raceStart: 0,
   lastRank: '',
@@ -5148,6 +5151,7 @@ function onMarbleState(state){
     marble.shownRace = state.raceNo;
     marble.picks = [];
     marble.amount = 0;
+    marble.shownCount = 0;
     stopMarbleRace();
     resetMarbleBalls();
   }
@@ -5156,17 +5160,28 @@ function onMarbleState(state){
     marbleShowView('bet');
     showPanel('mr-bet');
     setMrMessage('投票を受け付けています');
+  } else if (state.phase === 'count'){
+    /* 締め切ってからスタートまでの秒読み(v4.3)。
+       ここでコース画面へ移り、3・2・1を見せる */
+    marbleShowView('race');
+    showPanel('mr-wait');
+    el.mrWaitText.textContent = 'まもなくスタートです';
+    setMrMessage('投票を締め切りました');
+    showMarbleCountdown(state.count);
   } else if (state.phase === 'race'){
     marbleShowView('race');
     showPanel('mr-wait');
     el.mrWaitText.textContent = 'レース中です…';
+    hideMarbleCountdown();
     startMarbleRace(state);
   } else if (state.phase === 'result'){
     marbleShowView('race');
     showPanel('mr-wait');
     el.mrWaitText.textContent = 'まもなく次のレースが始まります…';
+    hideMarbleCountdown();
     showMarbleResult(state);
   } else {
+    hideMarbleCountdown();
     marbleShowView('race');
     showPanel('mr-wait');
     el.mrWaitText.textContent = '会場を準備しています…';
@@ -5293,6 +5308,32 @@ function startMarbleRace(state){
 
 function stopMarbleRace(){
   if (marble.raf){ cancelAnimationFrame(marble.raf); marble.raf = null; }
+}
+
+/* ---------------------------------------------------------
+   スタート前の秒読み(v4.3)
+   サーバーから届く数字をそのまま出すだけ。
+   同じ数字が続けて届いても、演出は1回しか出さない。
+   --------------------------------------------------------- */
+function showMarbleCountdown(n){
+  if (!(n > 0)) return hideMarbleCountdown();
+  el.mrCount.hidden = false;
+  if (marble.shownCount === n) return;
+  marble.shownCount = n;
+
+  el.mrCountNum.textContent = n;
+  el.mrCountNum.classList.remove('is-pop');
+  void el.mrCountNum.offsetWidth;
+  el.mrCountNum.classList.add('is-pop');
+  audio.play('chip');
+
+  /* スタート位置に戻しておく(前のレースの位置が残らないように) */
+  resetMarbleBalls();
+}
+
+function hideMarbleCountdown(){
+  el.mrCount.hidden = true;
+  marble.shownCount = 0;
 }
 
 /* ---------------------------------------------------------
@@ -5528,10 +5569,17 @@ function renderMarbleSlip(){
   }).join('');
 }
 
+/* このレースですでに投票しているか(v4.3: 1レース1点なので買い直しできない) */
+function marbleAlreadyBet(){
+  const st = marble.state;
+  return !!(st && (st.myTickets || []).length >= (st.maxTickets || 1));
+}
+
 function renderMarbleBetPanel(){
   const st = marble.state;
   const odds = currentMarbleOdds();
   const medal = myMedal();
+  const done = marbleAlreadyBet();
 
   el.mrBetValue.textContent = marble.amount.toLocaleString();
 
@@ -5545,28 +5593,42 @@ function renderMarbleBetPanel(){
   }
 
   const min = st ? st.minBet : 10;
-  const full = st && (st.myTickets || []).length >= st.maxTickets;
-  el.mrBuyBtn.disabled = !st || st.phase !== 'bet' || !odds ||
-                         marble.amount < min || marble.amount > medal || full;
-  el.mrClearBtn.disabled = marble.amount === 0 && marble.picks.length === 0;
+  el.mrBuyBtn.disabled = !st || st.phase !== 'bet' || !odds || done ||
+                         marble.amount < min || marble.amount > medal;
+  el.mrBuyBtn.textContent = done ? '投票済み' : '投票する';
+  el.mrClearBtn.disabled = done || (marble.amount === 0 && marble.picks.length === 0);
 
-  /* 持っているメダルを超えるチップは押せないようにする */
+  /* 持っているメダルを超えるチップは押せないようにする。
+     投票済みならすべて押せない(1レース1点のため) */
   el.mrChipRow.querySelectorAll('.chip').forEach(c => {
-    c.disabled = Number(c.dataset.mrchip) > medal - marble.amount;
+    c.disabled = done || Number(c.dataset.mrchip) > medal - marble.amount;
   });
 
-  el.mrTypeSeg.querySelectorAll('.seg-btn').forEach(b =>
-    b.classList.toggle('is-on', b.dataset.mrtype === marble.type));
+  el.mrTypeSeg.querySelectorAll('.seg-btn').forEach(b => {
+    b.classList.toggle('is-on', b.dataset.mrtype === marble.type);
+    b.disabled = done;
+  });
+
+  /* 投票済みであることが分かるよう、スリップの案内文も変える */
+  if (done) el.mrPickNote.textContent = 'このレースは投票済みです';
 }
 
 function renderMarble(){
   const st = marble.state;
   if (st){
     el.mrRaceNo.textContent = st.raceNo;
-    const label = { bet: '投票受付中', race: 'レース中', result: '払い戻し', idle: '待機中' }[st.phase] || '';
+    const label = {
+      bet: '投票受付中', count: 'まもなく開始',
+      race: 'レース中', result: '払い戻し', idle: '待機中'
+    }[st.phase] || '';
     el.mrPhaseText.textContent = label;
     el.mrPhaseChip.className = 'mr-chip is-phase is-' + st.phase;
     el.mrResult.hidden = st.phase !== 'result';
+
+    /* v4.3: レースが動いている間は会場から出られないようにする。
+       途中で抜けられると、投票した分の払い戻しが受け取れなくなるため */
+    const racing = st.phase === 'count' || st.phase === 'race';
+    el.mrLeaveBtn.hidden = racing;
 
     /* 出走表が変わったらコースを作り直す */
     if (el.mrLanes.childElementCount !== st.balls.length) renderMarbleLanes();
@@ -5583,6 +5645,7 @@ function renderMarble(){
 function marbleTogglePick(no){
   const st = marble.state;
   if (!st || st.phase !== 'bet') return;
+  if (marbleAlreadyBet()) return toast('このレースはすでに投票済みです');
   const need = MR_TYPE_INFO[marble.type].picks;
   const i = marble.picks.indexOf(no);
 
@@ -5598,6 +5661,7 @@ function marbleTogglePick(no){
 
 function marbleSetType(type){
   if (!MR_TYPE_INFO[type] || marble.type === type) return;
+  if (marbleAlreadyBet()) return;
   marble.type = type;
   marble.picks = [];
   audio.play('chip');
@@ -5606,7 +5670,7 @@ function marbleSetType(type){
 
 function marbleAddChip(v){
   const st = marble.state;
-  if (!st || st.phase !== 'bet') return;
+  if (!st || st.phase !== 'bet' || marbleAlreadyBet()) return;
   const max = Math.min(myMedal(), st.maxBet);
   marble.amount = Math.min(max, marble.amount + v);
   audio.play('chip');
@@ -5614,6 +5678,7 @@ function marbleAddChip(v){
 }
 
 function marbleClear(){
+  if (marbleAlreadyBet()) return;
   marble.amount = 0;
   marble.picks = [];
   audio.play('button');
@@ -5624,6 +5689,7 @@ function marbleBuy(){
   const st = marble.state;
   const odds = currentMarbleOdds();
   if (!st || st.phase !== 'bet' || !odds) return;
+  if (marbleAlreadyBet()) return toast('このレースはすでに投票済みです');
   if (marble.amount < st.minBet) return toast('最低' + st.minBet + 'メダルから投票できます');
   if (marble.amount > myMedal()) return toast('メダルが足りません');
 
@@ -5633,8 +5699,8 @@ function marbleBuy(){
     picks: marble.picks.slice(),
     amount: marble.amount
   });
-  /* 連続で買いやすいよう、金額だけ残して選択を消す */
-  marble.picks = [];
+  /* v4.3: 1レース1点なので、買ったあとは選択をそのまま残して
+     「何に投票したか」が分かるようにしておく */
   renderMarble();
 }
 
@@ -6190,7 +6256,15 @@ el.brandBtn.addEventListener('click', () => {
   }
   /* ハイ&ローのシングルは進行を止めてから戻る(v4.0) */
   if (screen === 'hilo' && view.mode === 'single') endHiloSingle();
-  if (screen === 'marble') leaveMarble();   // v4.1
+  if (screen === 'marble'){
+    /* v4.3: レース中は抜けさせない */
+    const ph = marble.state ? marble.state.phase : '';
+    if (ph === 'count' || ph === 'race'){
+      toast('レースが終わるまでお待ちください');
+      return;
+    }
+    leaveMarble();
+  }
   stopHiloTimer();
   audio.play('button');
   showScreen('title');
@@ -6481,6 +6555,9 @@ el.mrClearBtn.addEventListener('click', () => marbleClear());
 el.mrBuyBtn.addEventListener('click', () => marbleBuy());
 el.mrRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('marble'); });
 el.mrLeaveBtn.addEventListener('click', () => {
+  /* v4.3: レース中は抜けられない(払い戻しを取りこぼさないため) */
+  const ph = marble.state ? marble.state.phase : '';
+  if (ph === 'count' || ph === 'race') return toast('レースが終わるまでお待ちください');
   audio.play('button');
   leaveMarble();
   showScreen('title');
