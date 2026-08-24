@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - style.css  (v4.3)
+   Betoria - style.css  (v4.4)
    made by hiro/ヒロ   https://github.com/h1ro223
    ========================================================= */
 
@@ -4424,31 +4424,45 @@ body.is-tutorial #actionPanel .btn.is-pressed{
     linear-gradient(180deg, rgba(0,0,0,.34), rgba(0,0,0,.18));
   overflow: hidden;
 }
-/* ゴールライン(右端の市松模様) */
+/* ゴールライン(走路の右端に立てる市松模様)
+   v4.4: 以前はコース全体の右端を基準にしていたため、
+   その外側にある順位の数字の上に重なって読めなかった。
+   順位欄のぶんだけ内側にずらして、走路の終わりに正しく合わせている。
+   --mr-rank-w / --mr-gap を変えると自動で追従する */
+.mr-track{
+  --mr-rank-w: 22px;   /* 順位欄の幅(.mr-lane-rank と揃える) */
+  --mr-gap: 6px;       /* レーン内の要素間の隙間(.mr-lane の gap と揃える) */
+  --mr-pad-r: 10px;    /* .mr-track の右padding */
+}
 .mr-goal-line{
   position: absolute;
   top: 0;
-  right: 10px;
-  width: 12px;
+  right: calc(var(--mr-pad-r) + var(--mr-rank-w) + var(--mr-gap));
+  width: 10px;
   height: 100%;
   background:
-    repeating-conic-gradient(#F3EEE2 0% 25%, #1A1A1A 0% 50%) 0 0 / 8px 8px;
-  opacity: .55;
-  z-index: 2;
+    repeating-conic-gradient(#F3EEE2 0% 25%, #1A1A1A 0% 50%) 0 0 / 7px 7px;
+  opacity: .5;
+  z-index: 0;          /* ボールより後ろ。数字とも重ならない */
   pointer-events: none;
 }
+/* 「GOAL」の文字を縦書きでラインに沿わせる(v4.4で表示) */
 .mr-goal-line span{
   position: absolute;
-  top: 2px; left: 50%;
-  transform: translateX(-50%) rotate(90deg);
-  transform-origin: center;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  writing-mode: vertical-rl;
   font-family: var(--font-display);
-  font-size: 9px;
-  letter-spacing: .1em;
+  font-size: 10px;
+  letter-spacing: .22em;
   color: var(--ivory);
+  text-shadow: 0 0 4px rgba(0,0,0,.9), 0 0 8px rgba(0,0,0,.7);
   white-space: nowrap;
-  display: none;
+  pointer-events: none;
 }
+
+/* 順位の数字はラインより手前に置く */
+.mr-lane-rank{ position: relative; z-index: 2; }
 
 .mr-lanes{
   display: flex;
@@ -4866,6 +4880,8 @@ body.is-tutorial #actionPanel .btn.is-pressed{
   .mr-entries{ grid-template-columns: 1fr; }
   .mr-lane{ height: 24px; }
   .mr-lane-no{ width: 16px; font-size: 11px; }
+  /* 順位欄を狭めたら、ゴールラインの位置も合わせる(v4.4) */
+  .mr-track{ --mr-rank-w: 18px; }
   .mr-lane-rank{ width: 18px; font-size: 11px; }
   .mr-ball{ width: 17px; height: 17px; margin-top: -8.5px; margin-left: -8.5px; font-size: 9px; }
   .mr-pick-ball{ width: 29px; height: 29px; font-size: 12px; }

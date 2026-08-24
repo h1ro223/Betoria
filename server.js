@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v4.3)
+   Betoria - server.js  (v4.4)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.3.0';
+const APP_VERSION = '4.4.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1430,19 +1430,70 @@ function drawMarbleOrder(balls){
    クライアントはこの数字を補間して描くだけでよい。
    --------------------------------------------------------- */
 function makeMarbleTrack(balls, order){
-  /* 着順ごとのゴール時刻。1着ほど早く、少しばらつかせる */
+  /* -------------------------------------------------------
+     着順ごとのゴール時刻を決める(v4.4で作り直し)
+
+     v4.3までは「0.90 + 着順 × 0.012」の固定式だったので、
+     どのレースも1着〜8着が同じ幅にきれいに並び、
+     結果として毎回そっくりな僅差レースになっていた。
+
+     v4.4では2つの要素でタイム差をつける。
+       1. 強さの差 … 隣り合う着順どうしの実力差が大きいほど、
+                      その間のタイム差も大きくなる
+       2. レースごとの気分 … 荒れ具合を毎回ランダムに変える。
+                      同じ顔ぶれでも、圧勝の回と大混戦の回が出る
+     ------------------------------------------------------- */
+  const W = balls.reduce((a, b) => a + b.w, 0);
+  const wOf = {};
+  for (const b of balls) wOf[b.no] = b.w / W;     // 0〜1に均した強さ
+
+  /* このレースの荒れ具合。小さいほど団子、大きいほど差がつく。
+     2乗しているのは「そこそこの回」を多めに、
+     「極端な回」をたまに出すため */
+  const spread = 0.35 + Math.pow(mrRandom(), 2) * 1.85;
+
+  /* 1着のゴール時刻。早いほど後続を引き離して見える */
+  const lead = 0.80 + mrRandom() * 0.13;
+
+  /* 隣り合う着順の間隔を、実力差から積み上げていく */
   const finish = {};
-  order.forEach((no, rank) => {
-    const base = 0.90 + rank * 0.012;
-    finish[no] = Math.min(0.995, base + mrRandom() * 0.008);
-  });
+  let t = lead;
+  finish[order[0]] = t;
+  for (let i = 1; i < order.length; i++){
+    const prev = wOf[order[i - 1]] || 0;
+    const cur  = wOf[order[i]] || 0;
+
+    /* 実力差ぶんの間隔。前が格上なら開き、同格なら詰まる。
+       差がマイナス(格下が先着＝波乱)のときは 0 として扱う */
+    const byPower = Math.max(0, prev - cur) * 2.6;
+    /* 最低限の間隔と、着順ごとのゆらぎ */
+    const jitter = 0.004 + mrRandom() * 0.020;
+
+    t += (0.010 + byPower) * spread + jitter;
+    finish[order[i]] = Math.min(0.995, t);
+  }
+
+  /* 全員が画面内に収まるよう、はみ出す場合だけ全体を縮める。
+     縮めても順番は変わらないので着順は保たれる */
+  const last = finish[order[order.length - 1]];
+  if (last > 0.995){
+    const scale = (0.995 - lead) / (last - lead);
+    for (let i = 1; i < order.length; i++){
+      const no = order[i];
+      finish[no] = lead + (finish[no] - lead) * scale;
+    }
+  }
+
+  /* 揺らぎの大きさも荒れ具合に合わせる。
+     差がつくレースほど道中も動きが大きく見えるようにした */
+  const waveScale = 0.75 + spread * 0.35;
 
   return balls.map(b => {
     /* ボールごとに揺らぎの波を3つ持たせる(抜きつ抜かれつの表現) */
     const waves = [];
     for (let k = 0; k < 3; k++){
       waves.push({
-        amp: 0.03 + mrRandom() * 0.05,
+        amp: (0.03 + mrRandom() * 0.05) * waveScale,
         freq: 1.2 + mrRandom() * 2.6,
         phase: mrRandom() * Math.PI * 2
       });
@@ -1460,7 +1511,12 @@ function makeMarbleTrack(balls, order){
       for (const w of waves) noise += Math.sin(x * w.freq * Math.PI * 2 + w.phase) * w.amp;
       p += noise * damp;
 
-      p = Math.max(prev, Math.min(1, p));   // 逆走はしない
+      /* ゴールに触れてよいのは、自分のゴール時刻を過ぎてから(v4.4)。
+         揺らぎを大きくしたことで、まれに格下が先にゴール地点へ
+         届いてしまい、表示される着順と食い違うことがあった。
+         ここで蓋をしておけば、到達順は必ず finish の順になる */
+      const cap = x < finish[b.no] ? 0.985 : 1;
+      p = Math.max(prev, Math.min(cap, p));   // 逆走はしない
       prev = p;
       pts.push(Math.round(p * 1000) / 1000);
     }

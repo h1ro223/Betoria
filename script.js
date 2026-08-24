@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - script.js  (v4.3)
+   Betoria - script.js  (v4.4)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -5194,10 +5194,19 @@ function onMarbleState(state){
 /* ---------------------------------------------------------
    残り時間
    --------------------------------------------------------- */
+/* 残り時間の表示(v4.4)
+   秒読み中は画面中央に大きく数字が出るので二重になるし、
+   レース中の残り秒数は見ても意味がない(進み具合はボールを見ればわかる)。
+   数字を出すのは「投票の締め切りまで」と「次のレースまで」だけにした */
+const MR_TIMER_PHASES = ['bet', 'result'];
+
 function startMrTimer(deadline){
   stopMrTimer();
-  el.mrTimerChip.hidden = !deadline;
-  if (!deadline) return;
+  const ph = marble.state ? marble.state.phase : '';
+  const show = !!deadline && MR_TIMER_PHASES.includes(ph);
+  el.mrTimerChip.hidden = !show;
+  if (!show) return;
+
   const tick = () => {
     const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
     el.mrTimerNum.textContent = left;
@@ -5275,9 +5284,14 @@ function startMarbleRace(state){
     const r2 = el.mrLanes.querySelector('.mr-lane-road');
     if (r2 && r2.clientWidth) roadW = r2.clientWidth;
 
-    /* 現在位置から順位を出す */
+    /* 現在位置から順位を出す。
+       位置がぴったり同じときは、確定している着順のほうを優先する(v4.4)。
+       こうしないと僅差のときに番号順で並んでしまい、
+       ゴール直前の表示が最終結果と食い違って見える */
+    const rankOf = new Map((st.order || []).map((no, i) => [no, i]));
     const now = st.track.map(t => ({ no: t.no, p: marbleProgressAt(t.pts, x) }));
-    now.sort((a, b) => b.p - a.p);
+    now.sort((a, b) => (b.p - a.p) ||
+      ((rankOf.get(a.no) ?? 99) - (rankOf.get(b.no) ?? 99)));
 
     now.forEach((item, idx) => {
       const ball = el.mrLanes.querySelector('.mr-ball[data-ball="' + item.no + '"]');
