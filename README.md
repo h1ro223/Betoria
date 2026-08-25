@@ -1,2 +1,6 @@
-オンライン用
-# https://blackjack-online-hm83.onrender.com/
+完全新作 Betoria v4.5
+無料で出来るオンライン力ジノゲーム！
+
+現在はブラックジャック、マーブルレース、ハイアンドローの3種類のゲームが遊べます！
+
+https://betoria.onrender.com/
