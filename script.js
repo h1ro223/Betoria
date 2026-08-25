@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - script.js  (v4.4)
+   Betoria - script.js  (v4.5)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -409,6 +409,7 @@ const el = {
   mrTrack: $('mrTrack'),
   mrCount: $('mrCount'),
   mrCountNum: $('mrCountNum'),
+  mrCheerRow: $('mrCheerRow'),
   mrLanes: $('mrLanes'),
   mrMessageText: $('mrMessageText'),
   mrResult: $('mrResult'),
@@ -852,6 +853,17 @@ function ledTick(node){
   node.classList.add('tick');
 }
 
+/* 中身が前回と変わったときだけ光らせる(v4.5)
+   マーブルレースの秒読み中はサーバーから毎秒状態が届き、
+   そのたびに renderMedal() が呼ばれていたため、
+   メダルの数字が変わっていないのに毎秒点滅していた */
+function ledSet(node, text){
+  const next = String(text);
+  if (node.textContent === next) return;
+  node.textContent = next;
+  ledTick(node);
+}
+
 function setMessage(text, tone){
   view.message = text;
   view.tone = tone || '';
@@ -1051,9 +1063,8 @@ function renderMedal(){
   /* チュートリアルは架空のメダルで進むので、席の値をそのまま出す(v3.3) */
   if (view.mode === 'tutorial'){
     const me = view.seats[0];
-    el.medalCount.textContent = me ? me.medal : 1000;
     if (el.medalLabel) el.medalLabel.textContent = '練習メダル';
-    ledTick(el.medalCount);
+    ledSet(el.medalCount, me ? me.medal : 1000);
     renderNorma();
     renderSprint();
     updateAdBtn();
@@ -1061,17 +1072,16 @@ function renderMedal(){
   }
 
   if (isSingleGame()){
-    el.medalCount.textContent = screen === 'hilo' ? hiloSingle.medal : single.medal;
     if (el.medalLabel) el.medalLabel.textContent = '練習メダル';
+    ledSet(el.medalCount, screen === 'hilo' ? hiloSingle.medal : single.medal);
   } else if (tourney){
     const me = view.seats.find(s => s.isYou);
-    el.medalCount.textContent = me ? me.medal : 0;
     if (el.medalLabel) el.medalLabel.textContent = '大会メダル';
+    ledSet(el.medalCount, me ? me.medal : 0);
   } else {
-    el.medalCount.textContent = myMedal();
     if (el.medalLabel) el.medalLabel.textContent = '所持メダル';
+    ledSet(el.medalCount, myMedal());
   }
-  ledTick(el.medalCount);
   renderNorma();
   renderSprint();
   updateAdBtn();
@@ -3454,6 +3464,8 @@ function connectSocket(){
 
   /* マーブルレース(v4.1) */
   sock.on('marble:state', onMarbleState);
+  /* 会場チャット(v4.5)。表示は通常のチャットと同じ仕組みを使う */
+  sock.on('marble:chat', onChatMessage);
   sock.on('marble:bought', (t) => {
     toast(t.label + ' ' + t.picks.join('-') + ' に ' +
           Number(t.amount).toLocaleString() + ' メダル投票しました');
@@ -4058,12 +4070,17 @@ function updateOnlinePanels(state){
    ========================================================= */
 const chat = { open: false, unread: 0, log: [], floatTimers: [] };
 
+/* いまのチャットがマーブルレースの会場チャットかどうか(v4.5)。
+   会場は部屋を持たないので、送信先のイベント名が変わる */
+function chatIsMarble(){ return screen === 'marble' && marble.joined; }
+
 function chatAvailable(){
   /* 観戦者はチャットを見られない(v3.0) */
   if (view.spectating) return false;
   return view.mode === 'online'
       && online.socket && online.socket.connected
-      && (screen === 'room' || screen === 'game' || screen === 'hilo');
+      && (screen === 'room' || screen === 'game' || screen === 'hilo'
+          || chatIsMarble());
 }
 
 function updateChatVisibility(){
@@ -4181,18 +4198,44 @@ function onChatMessage(m){
   if (!mine && m.kind !== 'system') audio.play('chip');
 }
 
+/* 会場チャットとルームチャットで送り先を切り替える(v4.5) */
+function chatEvent(){ return chatIsMarble() ? 'marble:chat' : 'chat:send'; }
+
 function sendChatText(){
   const text = el.chatInput.value.trim();
   if (!text || !online.socket) return;
-  online.socket.emit('chat:send', { text });
+  online.socket.emit(chatEvent(), { text });
   el.chatInput.value = '';
   audio.play('button');
 }
 
 function sendChatStamp(stamp){
   if (!online.socket) return;
-  online.socket.emit('chat:send', { stamp });
+  online.socket.emit(chatEvent(), { stamp });
   audio.play('button');
+}
+
+/* マーブルレース専用の応援スタンプ(v4.5) */
+function sendChatCheer(cheer){
+  if (!online.socket || !chatIsMarble()) return;
+  online.socket.emit('marble:chat', { cheer });
+  audio.play('button');
+}
+
+/* 応援スタンプのボタンを並べる。会場にいるときだけ出す */
+function renderMarbleCheers(){
+  if (!el.mrCheerRow) return;
+  const on = chatIsMarble();
+  el.mrCheerRow.hidden = !on;
+  if (!on) return;
+
+  const list = (marble.state && marble.state.cheers) || [];
+  const sig = list.join('|');
+  if (el.mrCheerRow.dataset.sig === sig) return;   // 中身が同じなら作り直さない
+  el.mrCheerRow.dataset.sig = sig;
+  el.mrCheerRow.innerHTML = list.map(c =>
+    '<button type="button" class="mr-cheer" data-cheer="' + esc(c) + '">' + esc(c) + '</button>'
+  ).join('');
 }
 
 /* --- チャットFABのドラッグ移動 ---
@@ -5116,6 +5159,7 @@ async function enterMarble(){
   setMrMessage('まもなくレースが始まります');
   marbleShowView('race');   // 入場中はコース側を見せておく
   renderMarble();
+  updateChatVisibility();   // v4.5: 会場チャットを使えるようにする
 
   /* v4.2: socket.io の読み込みと接続を必ず待ってから入場する。
      ここを待たずに emit していたのが「会場が開かない」不具合の原因だった */
@@ -5136,6 +5180,9 @@ function leaveMarble(){
   stopMarbleRace();
   stopMrTimer();
   if (online.socket && online.socket.connected) online.socket.emit('marble:leave');
+  /* v4.5: 会場を出たらチャットも閉じる */
+  chat.log = [];
+  updateChatVisibility();
 }
 
 /* ---------------------------------------------------------
@@ -5189,6 +5236,7 @@ function onMarbleState(state){
 
   startMrTimer(state.deadline);
   renderMarble();
+  updateChatVisibility();
 }
 
 /* ---------------------------------------------------------
@@ -5652,6 +5700,7 @@ function renderMarble(){
   renderMarbleBetPanel();
   renderMarbleTickets();
   renderMarbleWatchers();
+  renderMarbleCheers();
   renderMedal();
 }
 
@@ -6568,6 +6617,12 @@ el.mrChipRow.addEventListener('click', (e) => {
 el.mrClearBtn.addEventListener('click', () => marbleClear());
 el.mrBuyBtn.addEventListener('click', () => marbleBuy());
 el.mrRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('marble'); });
+/* 応援スタンプ(v4.5) */
+el.mrCheerRow.addEventListener('click', (e) => {
+  const b = e.target.closest('.mr-cheer');
+  if (!b) return;
+  sendChatCheer(b.dataset.cheer);
+});
 el.mrLeaveBtn.addEventListener('click', () => {
   /* v4.3: レース中は抜けられない(払い戻しを取りこぼさないため) */
   const ph = marble.state ? marble.state.phase : '';

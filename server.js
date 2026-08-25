@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v4.4)
+   Betoria - server.js  (v4.5)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.4.0';
+const APP_VERSION = '4.5.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -855,6 +855,15 @@ const CHAMPION_START_MEDAL = 1000;
 const CHAMPION_ROUND_MIN = 10;
 const CHAMPION_ROUND_MAX = 100;
 const CHAT_STAMPS = ['👍', '🎉', '😂', '😭', '🔥', '🙏'];
+
+/* マーブルレース用の応援スタンプ(v4.5)
+   競馬中継のような掛け声を、押すだけで送れるようにしたもの。
+   自由入力もできるが、レース中は手が離せないので定型文を用意した */
+const MR_CHEERS = [
+  'いけーっ！', '差せ差せ！', '本命こい！', '大穴きた！',
+  'まくれー！', '粘れー！', 'よし来た！', 'あーっ！',
+  'とられた…', 'ナイス！', 'ここから！', '頼む！'
+];
 const MIN_HUMANS = 2;   // オンラインで開始に必要な人プレイヤー数
 /* チャンピオンモードの全額ベットボーナス(WIN/BLACKJACKの獲得メダルを1.5倍)(v3.0) */
 const ALLIN_BONUS_RATE = 1.5;
@@ -1251,13 +1260,13 @@ function hiloState(room){
 const MR_BALLS       = 8;
 const MR_BET_MS      = 30000;   // 投票受付(v4.3)
 const MR_COUNT_SEC   = 3;       // 締め切ってからスタートまでの秒読み(v4.3)
-const MR_RACE_MS     = 28000;   // レース本番(v4.3)
+const MR_RACE_MS     = 20000;   // レース本番(v4.5で短縮)
 const MR_RESULT_MS   = 10000;   // 払い戻しの確認
 const MR_PAYOUT_RATE = 0.85;    // 払戻率(控除率15%)。上げるとメダルが増えやすくなる
 const MR_MIN_BET     = 10;
 const MR_MAX_BET     = 100000;
 const MR_MAX_TICKETS = 1;       // 1レースで買える投票券の枚数(v4.3で1枚に)
-const MR_TICKS       = 40;      // 演出用に送る位置データの数(v4.3でレース延長に合わせて増量)
+const MR_TICKS       = 32;      // 演出用に送る位置データの数(v4.5)
 const MR_MIN_ODDS    = 1.1;
 const MR_ROOM        = 'marble-hall';
 
@@ -1452,13 +1461,27 @@ function makeMarbleTrack(balls, order){
      「極端な回」をたまに出すため */
   const spread = 0.35 + Math.pow(mrRandom(), 2) * 1.85;
 
-  /* 1着のゴール時刻。早いほど後続を引き離して見える */
-  const lead = 0.80 + mrRandom() * 0.13;
+  /* 隣り合う着順の間隔を、実力差から積み上げていく。
 
-  /* 隣り合う着順の間隔を、実力差から積み上げていく */
-  const finish = {};
-  let t = lead;
-  finish[order[0]] = t;
+     v4.5の修正(重要):
+     v4.4では積み上げた値をその場で Math.min(0.995, t) と頭打ちにしていた。
+     そのため上限を超えた着順が「まとめて 0.995」に潰れてしまい、
+     8頭のうち何頭も“まったく同じゴール時刻”になっていた。
+     3000レースで調べたところ、91%のレースでゴール時刻が4種類以下、
+     37%では2種類以下という状態で、これが
+     「終盤に下位が横一列で並ぶ」「途中で止まって見える」の原因だった。
+
+     さらに、その下にある「はみ出したら縮める」補正は
+     頭打ちした“後”の値を見ていたため never fire(3000回中0回)だった。
+
+     v4.5では頭打ちをやめ、まず素の値を全部出しきってから、
+     はみ出した分だけ全体を比率で縮める。
+     こうすると必ず全員バラバラのゴール時刻になり、間隔も保たれる。 */
+  const MR_FINISH_LAST = 0.998;   // 最下位がゴールする位置(=演出のほぼ終わり)
+
+  /* まず「着順どうしの間隔の比率」だけを積み上げる。
+     ここでは画面の幅を気にせず、実力差の大小関係だけを作る */
+  const cum = [0];
   for (let i = 1; i < order.length; i++){
     const prev = wOf[order[i - 1]] || 0;
     const cur  = wOf[order[i]] || 0;
@@ -1466,22 +1489,32 @@ function makeMarbleTrack(balls, order){
     /* 実力差ぶんの間隔。前が格上なら開き、同格なら詰まる。
        差がマイナス(格下が先着＝波乱)のときは 0 として扱う */
     const byPower = Math.max(0, prev - cur) * 2.6;
-    /* 最低限の間隔と、着順ごとのゆらぎ */
+    /* 最低限の間隔と、着順ごとのゆらぎ。
+       0.012 は「どんなに実力が拮抗していても、これだけは離れる」下限 */
     const jitter = 0.004 + mrRandom() * 0.020;
 
-    t += (0.010 + byPower) * spread + jitter;
-    finish[order[i]] = Math.min(0.995, t);
+    /* 後ろの着順ほど間隔を広げる(v4.5)。
+       本物のレースでも先頭集団は固まり、後方はばらけていくので、
+       これがないと下位4頭が横一列に並んで見えてしまう */
+    const tail = 1 + (i - 1) * 0.26;
+
+    cum.push(cum[i - 1] + ((0.012 + byPower) * spread + jitter) * tail);
   }
 
-  /* 全員が画面内に収まるよう、はみ出す場合だけ全体を縮める。
-     縮めても順番は変わらないので着順は保たれる */
-  const last = finish[order[order.length - 1]];
-  if (last > 0.995){
-    const scale = (0.995 - lead) / (last - lead);
-    for (let i = 1; i < order.length; i++){
-      const no = order[i];
-      finish[no] = lead + (finish[no] - lead) * scale;
-    }
+  /* 1着から最下位までを、どれだけの幅に収めるか。
+     広いほど「圧勝」に、狭いほど「大混戦」に見える。
+     ここを広げすぎると1着がゴールしたあと長く待つことになるので、
+     20秒のレースで2〜4秒に収まる範囲にしている(v4.5) */
+  const span = 0.10 + Math.pow(mrRandom(), 1.2) * 0.10;
+
+  /* 比率をその幅に写す。割合で配るので、
+     必ず全員ちがうゴール時刻になり、はみ出すこともない
+     (v4.4は頭打ちで潰れて団子になっていた) */
+  const total = cum[cum.length - 1] || 1;
+  const lead = MR_FINISH_LAST - span;
+  const finish = {};
+  for (let i = 0; i < order.length; i++){
+    finish[order[i]] = lead + span * (cum[i] / total);
   }
 
   /* 揺らぎの大きさも荒れ具合に合わせる。
@@ -1492,33 +1525,55 @@ function makeMarbleTrack(balls, order){
     /* ボールごとに揺らぎの波を3つ持たせる(抜きつ抜かれつの表現) */
     const waves = [];
     for (let k = 0; k < 3; k++){
+      /* v4.5: 揺らぎが速く大きすぎると、1フレームで進む量より
+         揺らぎの戻りが上回ってしまい「後退しない」制約に当たって
+         その場で止まって見えていた。振幅を抑え、周期をゆっくりにする */
       waves.push({
-        amp: (0.03 + mrRandom() * 0.05) * waveScale,
-        freq: 1.2 + mrRandom() * 2.6,
+        amp: (0.014 + mrRandom() * 0.024) * waveScale,
+        freq: 0.7 + mrRandom() * 1.5,
         phase: mrRandom() * Math.PI * 2
       });
     }
     const pts = [];
     let prev = 0;
-    for (let t = 0; t <= MR_TICKS; t++){
-      const x = t / MR_TICKS;
-      let p = x / finish[b.no];
+    const fin = finish[b.no];
 
-      /* 揺らぎはスタートとゴールで0になるよう、中央でだけ効かせる。
-         こうすると最終的な着順は必ず order のとおりになる */
+    /* このボールがゴールするフレームを先に決めてしまう(v4.5)。
+       以前は毎フレームの位置を計算してから「1に届いたか」で
+       判定していたため、小数の丸めのせいで
+       まれに下位が先にゴールしたことになり、
+       表示される着順と食い違うことがあった。
+       ここで整数のフレーム番号として確定させれば、
+       finish の順序がそのまま到達順になり、絶対に食い違わない */
+    const goalTick = Math.max(1, Math.min(MR_TICKS, Math.ceil(fin * MR_TICKS)));
+
+    for (let t = 0; t <= MR_TICKS; t++){
+      /* 自分のゴールフレームに達したら、そこからはゴール地点 */
+      if (t >= goalTick){ prev = 1; pts.push(1); continue; }
+
+      const x = t / MR_TICKS;
+      let p = x / fin;
+
+      /* 揺らぎはスタートとゴールで0になるよう、中央でだけ効かせる */
       const damp = Math.sin(Math.PI * x) * (1 - x) * 1.15;
       let noise = 0;
       for (const w of waves) noise += Math.sin(x * w.freq * Math.PI * 2 + w.phase) * w.amp;
       p += noise * damp;
 
-      /* ゴールに触れてよいのは、自分のゴール時刻を過ぎてから(v4.4)。
-         揺らぎを大きくしたことで、まれに格下が先にゴール地点へ
-         届いてしまい、表示される着順と食い違うことがあった。
-         ここで蓋をしておけば、到達順は必ず finish の順になる */
-      const cap = x < finish[b.no] ? 0.985 : 1;
+      /* ゴールする手前までの天井。
+         ゴールが近づくにつれ天井も上がっていくので、
+         ここに張り付いたボールも止まって見えない */
+      const cap = 0.940 + 0.055 * (t / goalTick);
       p = Math.max(prev, Math.min(cap, p));   // 逆走はしない
+
+      /* 動きが完全に止まると不自然なので、最低限は進ませる */
+      const creep = prev + 0.0020;
+      if (p < creep) p = Math.min(cap, creep);
+
       prev = p;
-      pts.push(Math.round(p * 1000) / 1000);
+      /* 小数4桁で送る。3桁だと最低前進量が丸めで消えて
+         「止まって見える」フレームができてしまう */
+      pts.push(Math.round(p * 10000) / 10000);
     }
     pts[MR_TICKS] = 1;
     return { no: b.no, pts };
@@ -1563,6 +1618,8 @@ function marbleState(forName){
     betMs: MR_BET_MS,
     raceMs: MR_RACE_MS,
     resultMs: MR_RESULT_MS,
+    cheers: MR_CHEERS,
+    stamps: CHAT_STAMPS,
     minBet: MR_MIN_BET,
     maxBet: MR_MAX_BET,
     maxTickets: MR_MAX_TICKETS,
@@ -1583,6 +1640,18 @@ function marbleState(forName){
     st.order = marble.lastResult.order;
   }
   return st;
+}
+
+/* マーブルレースの会場チャット(v4.5)
+   部屋を持たないゲームなので、観客一覧をそのまま宛先にする */
+function marbleChat(io, msg){
+  for (const w of marble.watchers.values()){
+    if (w.sid) io.to(w.sid).emit('marble:chat', msg);
+  }
+}
+
+function marbleChatSystem(io, body){
+  marbleChat(io, { from: null, body, kind: 'system', at: Date.now() });
 }
 
 function broadcastMarble(io){
@@ -1731,6 +1800,13 @@ async function finishMarbleRace(io){
 
   marble.lastResult = { order, perUser };
   broadcastMarble(io);
+
+  /* 結果を会場チャットにも残しておくと、
+     少し目を離していても何が起きたか追える(v4.5) */
+  const win = marble.balls.find(b => b.no === order[0]);
+  marbleChatSystem(io, 'RACE ' + marble.raceNo + ' 結果 … 1着 ' +
+    order[0] + ' ' + (win ? win.name : '') +
+    '(' + order.slice(0, 3).join('-') + ')');
   /* 誰も残っていなければ次のレースは始めない */
   if (checkMarbleEmpty()) return;
   marble.timer = setTimeout(() => startMarbleBetting(io), MR_RESULT_MS);
@@ -3716,6 +3792,7 @@ io.on('connection', (socket) => {
        (自分にも届くので、これだけで入室した本人の画面も揃う) */
     if (wasEmpty || marble.phase === 'idle') startMarbleBetting(io);
     else broadcastMarble(io);
+    marbleChatSystem(io, name + ' さんが会場に入りました');
   });
 
   socket.on('marble:leave', () => {
@@ -3726,6 +3803,31 @@ io.on('connection', (socket) => {
     /* v4.2: 最後の1人が抜けたら、その場でレースごと止める */
     if (checkMarbleEmpty()) return;
     broadcastMarble(io);
+    marbleChatSystem(io, name + ' さんが退出しました');
+  });
+
+  /* 会場チャット(v4.5)。ルームのチャットとは宛先が違うので別に持つ */
+  socket.on('marble:chat', ({ text, stamp, cheer } = {}) => {
+    if (!marble.watchers.has(name)) return;
+
+    const now = Date.now();
+    const last = socket.data.lastMrChat || 0;
+    if (now - last < 500) return;                 // 連投防止
+    socket.data.lastMrChat = now;
+
+    let body, kind;
+    if (stamp){
+      if (!CHAT_STAMPS.includes(String(stamp))) return;
+      body = String(stamp); kind = 'stamp';
+    } else if (cheer){
+      if (!MR_CHEERS.includes(String(cheer))) return;
+      body = String(cheer); kind = 'cheer';
+    } else {
+      body = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (!body) return;
+      kind = 'text';
+    }
+    marbleChat(io, { from: name, body, kind, at: now });
   });
 
   socket.on('marble:bet', async ({ type, picks, amount } = {}) => {

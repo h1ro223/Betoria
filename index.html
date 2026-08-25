@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.4 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v4.5 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -1007,6 +1007,7 @@
             <li>1レースはおよそ70秒です。<b>投票30秒 → 秒読み3秒 → レース28秒 → 払い戻し10秒</b>で、そのまま次のレースが始まります。</li>
             <li>出走する8つのボールは固定ですが、<b>強さは毎レース変わります</b>。オッズもそれに合わせて毎回変化します。</li>
             <li>投票しなかったレースは、ただ見ているだけでもかまいません。</li>
+            <li>会場では<b>チャット</b>が使えます。「いけーっ！」などの<b>応援スタンプ</b>を押すだけでも参加できます。</li>
           </ul>
         </div>
         <div class="sheet-section">
@@ -1312,6 +1313,14 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v4.5</h3>
+        <ul class="rule-list">
+          <li><b>マーブルレースにチャットを追加しました。</b>「いけーっ！」「差せ差せ！」などの<b>応援スタンプ</b>もあるので、みんなでレースを盛り上げられます。</li>
+          <li><b>レースの動きを大きく改善しました。</b>終盤に下位のボールが横一列に並んでしまう問題と、ボールが止まって見える問題を修正しています。</li>
+          <li>1レースの時間を<b>20秒</b>に短縮しました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v4.4</h3>
         <ul class="rule-list">
@@ -1726,6 +1735,10 @@
     <button type="button" class="close-btn" id="chatCloseBtn" aria-label="閉じる">✕</button>
   </div>
   <div class="chat-log" id="chatLog"></div>
+
+  <!-- マーブルレースの応援スタンプ(v4.5)。会場にいるときだけ出す -->
+  <div class="mr-cheer-row" id="mrCheerRow" hidden></div>
+
   <div class="chat-stamps" id="chatStamps">
     <button type="button" class="stamp-btn" data-stamp="👍">👍</button>
     <button type="button" class="stamp-btn" data-stamp="🎉">🎉</button>
