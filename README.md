@@ -3,4 +3,4 @@
 
 現在はブラックジャック、マーブルレース、ハイアンドローの3種類のゲームが遊べます！
 
-https://betoria.onrender.com/
+# https://betoria.onrender.com/
