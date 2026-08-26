@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - style.css  (v4.5)
+   Betoria - style.css  (v4.6)
    made by hiro/ヒロ   https://github.com/h1ro223
    ========================================================= */
 
@@ -2369,14 +2369,8 @@ input, textarea{
 .sheet-wide{ width: min(720px, 100%); }
 .dev-head-right{ display: flex; align-items: center; gap: 8px; }
 
-.pin-input{
-  text-align: center;
-  font-family: var(--font-display);
-  font-size: 34px;
-  letter-spacing: .5em;
-  padding-left: .5em;
-  margin-top: 4px;
-}
+/* 暗証番号の入力欄。見た目は v4.6 の指定(下のほう)にまとめてある */
+.pin-input{ margin-top: 4px; }
 
 .dev-list{ display: flex; flex-direction: column; gap: 9px; padding-top: 4px; }
 
@@ -2436,7 +2430,6 @@ input, textarea{
 @media (max-width: 560px){
   .dev-row{ grid-template-columns: 1fr; }
   .dev-actions{ justify-content: flex-end; }
-  .pin-input{ font-size: 28px; }
 }
 
 /* CPU補充が使えない状況(2人部屋など)のグレーアウト */
@@ -5394,3 +5387,101 @@ body.is-booting{ overflow: hidden; }
 }
 .mr-cheer:active{ transform: scale(.94); }
 .mr-cheer:disabled{ opacity: .45; cursor: default; }
+
+/* =========================================================
+   v4.6 ゴール表示 / オーナー表示 / 確認画面 / 退出ボタン
+   ========================================================= */
+
+/* ---------- ゴールした順位を光らせる ---------- */
+.mr-lane-rank{
+  transition: color .2s var(--ease), text-shadow .2s var(--ease);
+}
+.mr-lane-rank.is-goal{
+  color: var(--led);
+  font-size: 14px;
+  text-shadow:
+    0 0 6px var(--led-glow),
+    0 0 14px rgba(255,201,74,.6),
+    0 0 22px rgba(255,201,74,.35);
+  animation: mrGoalPop .45s var(--ease);
+}
+@keyframes mrGoalPop{
+  0%{   transform: scale(1.5); }
+  60%{  transform: scale(1); }
+  100%{ transform: scale(1); }
+}
+
+/* ---------- オーナー(開発者)の名前 ---------- */
+.is-owner{
+  color: var(--led);
+  font-weight: 800;
+  text-shadow: 0 0 8px rgba(255,201,74,.35);
+}
+.owner-crown{
+  margin-right: 2px;
+  font-size: .92em;
+  /* 絵文字は色を継がないので、影だけ足して馴染ませる */
+  filter: drop-shadow(0 0 4px rgba(255,201,74,.55));
+}
+
+/* ---------- 退出ボタン(🚪に統一) ---------- */
+.back-btn.is-exit{
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  min-width: 42px;
+  height: 38px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.back-btn.is-exit:hover{
+  border-color: rgba(196,52,46,.6);
+  background: rgba(196,52,46,.14);
+}
+
+@media (max-width: 480px){
+  .back-btn.is-exit{ width: 38px; min-width: 38px; height: 34px; font-size: 16px; }
+}
+
+/* ---------- 確認画面 ---------- */
+.confirm-text{
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: var(--ivory);
+}
+/* 赤字の注意書き。取り返しがつかないことを伝えるためのもの */
+.confirm-warn{
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1.7;
+  color: #FF8A80;
+  border: 1px solid rgba(196,52,46,.55);
+  border-radius: var(--radius);
+  background: rgba(196,52,46,.12);
+}
+.confirm-actions{
+  display: flex;
+  gap: 10px;
+}
+.confirm-actions .btn{ flex: 1 1 0; }
+
+/* ---------- 暗証番号の入力欄 ----------
+   1文字ずつ大きな丸で表示されていて物々しかったので、
+   アカウント登録のパスワード欄と同じ見た目に揃える */
+.pin-input{
+  text-align: left;
+  font-family: inherit;
+  font-size: 16px;
+  letter-spacing: normal;
+  padding-left: 12px;
+  margin-top: 4px;
+}
+
+@media (max-width: 480px){
+  .pin-input{ font-size: 16px; }
+}

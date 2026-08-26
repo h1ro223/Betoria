@@ -51,6 +51,24 @@ const ICON_COLORS = [
 const DEFAULT_ICON_COLOR = 'brass';
 const iconColorOf = (c) => (ICON_COLORS.some(x => x.key === c) ? c : DEFAULT_ICON_COLOR);
 
+/* =========================================================
+   オーナー(開発者)の表示(v4.6)
+   サーバーから受け取った名前と一致する人だけ、
+   名前の先頭に👑を付けて金色で表示する。
+   ========================================================= */
+function isOwnerName(name){
+  return !!name && !!online.ownerName && name === online.ownerName;
+}
+
+/* 名前をHTMLにする。オーナーなら👑つきの金色になる。
+   名前を画面に出すところは esc(name) ではなくこちらを使う */
+function nameHTML(name){
+  const n = esc(String(name == null ? '' : name));
+  return isOwnerName(name)
+    ? '<span class="is-owner"><span class="owner-crown">👑</span>' + n + '</span>'
+    : n;
+}
+
 /* 全額ベットボーナス(チャンピオンモード・サーバーと合わせる) */
 const ALLIN_BONUS_RATE = 1.5;
 /* 連勝表示を出し始める連勝数 */
@@ -549,6 +567,17 @@ const el = {
   noticeClearBtn: $('noticeClearBtn'),
 
   toRankingBtn: $('toRankingBtn'),
+  /* ヘルプと確認ダイアログ(v4.6) */
+  toHelpBtn: $('toHelpBtn'),
+  helpOverlay: $('helpOverlay'),
+  helpCloseBtn: $('helpCloseBtn'),
+  confirmOverlay: $('confirmOverlay'),
+  confirmTitle: $('confirmTitle'),
+  confirmText: $('confirmText'),
+  confirmWarn: $('confirmWarn'),
+  confirmOkBtn: $('confirmOkBtn'),
+  confirmCancelBtn: $('confirmCancelBtn'),
+  confirmCloseBtn: $('confirmCloseBtn'),
   rankOverlay: $('rankOverlay'),
 
   bonusOverlay: $('bonusOverlay'),
@@ -628,7 +657,6 @@ const el = {
   standingsTitle: $('standingsTitle'),
   screenGame: $('screenGame'),
 
-  toRulesBtn: $('toRulesBtn'),
   toSettingsBtn: $('toSettingsBtn'),
   changelogBtn: $('changelogBtn'),
   changelogOverlay: $('changelogOverlay'),
@@ -999,7 +1027,7 @@ function seatMarkup(seat){
 
   return '' +
     '<div class="seat-top">' +
-      '<span class="seat-label">' + esc(seat.name) + ' ' + lv + '</span>' +
+      '<span class="seat-label">' + nameHTML(seat.name) + ' ' + lv + '</span>' +
       '<div class="total-box">' +
         '<span class="total-cap">合計</span>' +
         '<span class="' + scoreClass + '">' + scoreText + '</span>' +
@@ -1540,7 +1568,7 @@ function friendRowMarkup(f, actions){
         '<span class="friend-dot"></span>' +
       '</span>' +
       '<span class="friend-main">' +
-        '<span class="friend-name">' + esc(f.username) + '</span>' +
+        '<span class="friend-name">' + nameHTML(f.username) + '</span>' +
         '<span class="friend-meta">' +
           '<span class="friend-lv">Lv.' + f.level + '</span>' +
           '<span class="friend-seen">' + esc(formatLastSeen(f)) + '</span>' +
@@ -1828,6 +1856,8 @@ async function loadRanking(){
   try {
     const d = await api('/api/ranking?day=' + encodeURIComponent(ranking.day) +
                        '&game=' + encodeURIComponent(ranking.game));
+    /* 未接続でもオーナーに👑を付けられるようにする(v4.6) */
+    if (d && d.owner) online.ownerName = d.owner;
     ranking.data = d;
     if (d.label && ranking.day === 'yesterday'){
       el.rankYesterdayBtn.textContent = '前日(' + d.label + ')';
@@ -1868,7 +1898,7 @@ function renderRankList(){
         '<span class="rank-avatar" data-icon-color="' + iconColorOf(r.iconColor) + '">' +
           esc(String(r.username).charAt(0).toUpperCase()) + '</span>' +
         '<span class="rank-main">' +
-          '<span class="rank-name">' + esc(r.username) + '</span>' +
+          '<span class="rank-name">' + nameHTML(r.username) + '</span>' +
           '<span class="rank-meta">' +
             '<span class="rank-lv">Lv.' + r.level + '</span>' +
             (r.date ? '<span class="rank-date">' + esc(fmtRankDate(r.date)) + '</span>' : '') +
@@ -1904,7 +1934,7 @@ function renderRankSelf(rows){
       '<span class="rank-no"><span class="rank-num">-</span></span>' +
       '<span class="rank-avatar" data-icon-color="' + iconColorOf(u.iconColor) + '">' +
         esc(u.username.charAt(0).toUpperCase()) + '</span>' +
-      '<span class="rank-main"><span class="rank-name">' + esc(u.username) + '</span>' +
+      '<span class="rank-main"><span class="rank-name">' + nameHTML(u.username) + '</span>' +
         '<span class="rank-meta"><span class="rank-lv">Lv.' + u.level + '</span></span></span>' +
       '<span class="rank-medal led">' + Number(val || 0).toLocaleString() + '</span>' +
     '</div>';
@@ -1916,6 +1946,45 @@ function openRankPanel(game){
   syncRankTabs();
   openOverlay(el.rankOverlay);
   loadRanking();
+}
+
+/* =========================================================
+   退出の確認(v4.6)
+
+   標準の confirm() だと赤字の注意書きが出せないので、
+   サイトの見た目に合わせた確認画面を用意した。
+   使い方: askConfirm({ text, warn, okText }).then(ok => ...)
+   ========================================================= */
+let confirmResolve = null;
+
+function askConfirm({ title, text, warn, okText } = {}){
+  el.confirmTitle.textContent = title || '確認';
+  el.confirmText.textContent = text || '本当によろしいですか?';
+  el.confirmWarn.hidden = !warn;
+  if (warn) el.confirmWarn.textContent = warn;
+  el.confirmOkBtn.textContent = okText || '退出する';
+
+  openOverlay(el.confirmOverlay);
+  audio.play('button');
+
+  return new Promise((resolve) => {
+    /* 前の確認が残っていたら、キャンセル扱いで閉じておく */
+    if (confirmResolve) confirmResolve(false);
+    confirmResolve = resolve;
+  });
+}
+
+function closeConfirm(ok){
+  closeOverlay(el.confirmOverlay);
+  const fn = confirmResolve;
+  confirmResolve = null;
+  if (fn) fn(!!ok);
+}
+
+/* ヘルプ(v4.6)。サイト全体の説明。ゲームのルールとは別 */
+function openHelp(){
+  audio.play('button');
+  openOverlay(el.helpOverlay);
 }
 
 /* ルールシートの表示をゲームごとに切り替える(v4.0) */
@@ -2021,6 +2090,7 @@ function canShowBonus(){
   if (screen !== 'title') return false;
   const overlays = [el.accountOverlay, el.rulesOverlay, el.settingsOverlay,
     el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay,
+    el.helpOverlay, el.confirmOverlay,
     el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay,
     el.invitedOverlay, el.adOverlay];
   return overlays.every(o => !o || o.hidden);
@@ -3274,6 +3344,7 @@ function clearFocus(){
    ========================================================= */
 const online = {
   connectPromise: null,     // 接続手続き中の Promise(v4.2)
+  ownerName: '',            // オーナーのアカウント名(v4.6)
   socket: null, roomId: null, state: null, connecting: false,
   createMax: 4, createMode: 'enjoy', createCpuFill: false, createRounds: 10,
   createSprintGoal: SPRINT_GOAL_DEFAULT,
@@ -3454,6 +3525,9 @@ function connectSocket(){
     online.pendingJoin = null;
     audio.play('join');
   });
+  /* オーナー名を受け取る(v4.6) */
+  sock.on('app:info', (d) => { online.ownerName = (d && d.owner) || ''; });
+
   sock.on('room:state', onRoomState);
 
   /* 別の端末でログインされた(v4.2) */
@@ -3879,7 +3953,7 @@ function renderStandings(state){
         ((sprint ? !p.rank : p.eliminated) ? ' is-eliminated' : '') + '">' +
         '<span class="standing-rank' + (first ? ' is-first' : '') + '">' + rankLabel + '</span>' +
         '<div class="standing-info">' +
-          '<span class="standing-name">' + esc(p.name) + (p.cpu ? ' (CPU)' : '') + (isYou ? '(あなた)' : '') + '</span>' +
+          '<span class="standing-name">' + nameHTML(p.name) + (p.cpu ? ' (CPU)' : '') + (isYou ? '(あなた)' : '') + '</span>' +
           '<span class="standing-meta">' + kindLabel + ' ・ 大会メダル ' + Number(p.medal).toLocaleString() +
             sub +
           '</span>' +
@@ -3930,7 +4004,7 @@ function renderRoomScreen(state){
       '<div class="member-row' + (p.isYou ? ' is-you' : '') + '">' +
         '<span class="member-avatar" data-icon-color="' + iconColorOf(p.iconColor) + '">' +
           esc(p.name.charAt(0).toUpperCase()) + '</span>' +
-        '<span class="member-name">' + esc(p.name) + (p.isYou ? '(あなた)' : '') + '</span>' +
+        '<span class="member-name">' + nameHTML(p.name) + (p.isYou ? '(あなた)' : '') + '</span>' +
         social +
         '<span class="member-lv">Lv.' + p.level + '</span>' +
         badge +
@@ -4154,7 +4228,7 @@ function renderChatLog(){
     const stampCls = m.kind === 'stamp' ? ' is-stamp' : '';
     return '' +
       '<div class="chat-msg' + (mine ? ' is-me' : '') + stampCls + '">' +
-        (mine ? '' : '<span class="chat-who">' + esc(m.from) + '</span>') +
+        (mine ? '' : '<span class="chat-who">' + nameHTML(m.from) + '</span>') +
         '<span class="chat-body">' + esc(m.body) + '</span>' +
       '</div>';
   }).join('');
@@ -4166,9 +4240,9 @@ function pushChatFloat(m){
   if (m.kind === 'system'){
     node.textContent = m.body;
   } else if (m.kind === 'stamp'){
-    node.innerHTML = '<b>' + esc(m.from) + '</b>' + esc(m.body);
+    node.innerHTML = '<b>' + nameHTML(m.from) + '</b>' + esc(m.body);
   } else {
-    node.innerHTML = '<b>' + esc(m.from) + '</b>' + esc(m.body);
+    node.innerHTML = '<b>' + nameHTML(m.from) + '</b>' + esc(m.body);
   }
   el.chatFloat.appendChild(node);
   while (el.chatFloat.children.length > 3) el.chatFloat.removeChild(el.chatFloat.firstChild);
@@ -4760,7 +4834,7 @@ function renderHiloPlayers(){
         '<span class="hilo-player-avatar" data-icon-color="' + iconColorOf(p.iconColor) + '">' +
           esc(String(p.name).charAt(0).toUpperCase()) + '</span>' +
         '<span class="hilo-player-body">' +
-          '<span class="hilo-player-name">' + esc(p.name) + (p.cpu ? ' 🤖' : '') + '</span>' +
+          '<span class="hilo-player-name">' + nameHTML(p.name) + (p.cpu ? ' 🤖' : '') + '</span>' +
           '<span class="hilo-player-state' + stateCls + '">' + esc(state) + '</span>' +
         '</span>' +
         '<span class="hilo-player-pick' + pickCls + '">' + pickTxt + '</span>' +
@@ -5299,7 +5373,10 @@ function resetMarbleBalls(){
     n.style.transform = 'translateX(0) rotate(0deg)';
     n.classList.remove('is-leader');
   });
-  el.mrLanes.querySelectorAll('.mr-lane-rank').forEach(n => { n.textContent = ''; });
+  el.mrLanes.querySelectorAll('.mr-lane-rank').forEach(n => {
+    n.textContent = '';
+    n.classList.remove('is-goal');
+  });
 }
 
 /* 位置データ(0〜1が MR_TICKS+1 個)を、いまの時刻で線形に補間する */
@@ -5351,7 +5428,12 @@ function startMarbleRace(state){
         ball.classList.toggle('is-leader', idx === 0);
       }
       const rank = el.mrLanes.querySelector('.mr-lane-rank[data-rank="' + item.no + '"]');
-      if (rank) rank.textContent = (idx + 1);
+      if (rank){
+        rank.textContent = (idx + 1);
+        /* ゴールしたら順位を金色に光らせる(v4.6)。
+           どのボールが到達済みか一目でわかるようにするため */
+        rank.classList.toggle('is-goal', item.p >= 1);
+      }
     });
 
     /* 先頭が入れ替わった瞬間だけ音を鳴らす(鳴りすぎないように) */
@@ -5416,7 +5498,10 @@ function showMarbleResult(state){
       ball.classList.toggle('is-leader', idx === 0);
     }
     const rank = el.mrLanes.querySelector('.mr-lane-rank[data-rank="' + no + '"]');
-    if (rank) rank.textContent = (idx + 1);
+    if (rank){
+      rank.textContent = (idx + 1);
+      rank.classList.add('is-goal');   // 全員ゴール済み(v4.6)
+    }
   });
 
   const byNo = new Map(st.balls.map(b => [b.no, b]));
@@ -5587,7 +5672,7 @@ function renderMarbleWatchers(){
     '<span class="mr-watcher">' +
       '<span class="mr-watcher-avatar" data-icon-color="' + iconColorOf(w.iconColor) + '">' +
         esc(String(w.name).charAt(0).toUpperCase()) + '</span>' +
-      esc(w.name) +
+      nameHTML(w.name) +
       (w.invest > 0 ? '<span class="mr-watcher-invest">' +
         Number(w.invest).toLocaleString() + '</span>' : '') +
     '</span>').join('');
@@ -6282,7 +6367,11 @@ function closeA2HS(){
 
 /* --- タイトル(v4.0) --- */
 el.toGamesBtn.addEventListener('click', () => { audio.play('button'); openGameSelect(); });
-el.toRulesBtn.addEventListener('click', () => { audio.play('button'); openRules(); });
+el.toHelpBtn.addEventListener('click', () => openHelp());
+el.helpCloseBtn.addEventListener('click', () => closeOverlay(el.helpOverlay));
+el.confirmOkBtn.addEventListener('click', () => closeConfirm(true));
+el.confirmCancelBtn.addEventListener('click', () => closeConfirm(false));
+el.confirmCloseBtn.addEventListener('click', () => closeConfirm(false));
 
 /* --- ゲーム選択(v4.0) --- */
 el.gameSelectBackBtn.addEventListener('click', () => { audio.play('button'); showScreen('title'); });
@@ -6302,18 +6391,26 @@ el.gmRankingBtn.addEventListener('click', () => { audio.play('button'); openRank
 el.gmRulesBtn.addEventListener('click', () => { audio.play('button'); openRules(view.game); });
 el.toSettingsBtn.addEventListener('click', () => { audio.play('button'); renderSettings(); openOverlay(el.settingsOverlay); });
 
-el.brandBtn.addEventListener('click', () => {
+el.brandBtn.addEventListener('click', async () => {
   if (screen === 'title') return;
   if (tutorial.active && screen === 'game'){
-    if (!confirm('チュートリアルを終了してタイトルに戻りますか?')) return;
+    const ok = await askConfirm({
+      title: 'チュートリアルを終了',
+      text: 'チュートリアルを終了してタイトルに戻ります。よろしいですか?',
+      okText: '終了する'
+    });
+    if (!ok) return;
     endTutorial();
-    audio.play('button');
     showScreen('title');
     renderMedal();
     return;
   }
   if (screen === 'room' || ((screen === 'game' || screen === 'hilo') && view.mode === 'online')){
-    if (!confirm('部屋から退出してタイトルに戻りますか?')) return;
+    const ok = await askConfirm({
+      title: '部屋から退出',
+      text: '部屋から退出してタイトルに戻ります。よろしいですか?'
+    });
+    if (!ok) return;
     if (online.socket) online.socket.emit('room:leave');
     resetOnlineRoomView();
   }
@@ -6326,6 +6423,17 @@ el.brandBtn.addEventListener('click', () => {
       toast('レースが終わるまでお待ちください');
       return;
     }
+    /* v4.6: 投票済みならメダルが戻らないことを伝える */
+    const bet = marble.state ? (marble.state.myInvest || 0) : 0;
+    const ok = await askConfirm({
+      title: '会場から退出',
+      text: 'レース会場から退出してタイトルに戻ります。よろしいですか?',
+      warn: bet > 0
+        ? '※投票時にベットした ' + Number(bet).toLocaleString() +
+          ' メダルは返却されません！！'
+        : ''
+    });
+    if (!ok) return;
     leaveMarble();
   }
   stopHiloTimer();
@@ -6334,15 +6442,27 @@ el.brandBtn.addEventListener('click', () => {
   renderMedal();
 });
 
-el.leaveBtn.addEventListener('click', () => {
-  audio.play('button');
+el.leaveBtn.addEventListener('click', async () => {
   if (view.mode === 'online' && (screen === 'room' || screen === 'game' || screen === 'hilo')){
-    if (!confirm('部屋から退出しますか?')) return;
+    const ok = await askConfirm({
+      title: '部屋から退出',
+      text: '部屋から退出してタイトルに戻ります。よろしいですか?'
+    });
+    if (!ok) return;
     stopHiloTimer();
     leaveOnlineRoom();
     showScreen('title');
   } else if (screen === 'game'){
-    if (view.phase === 'play' && !confirm('タイトルに戻りますか?(このラウンドは終了扱いになります)')) return;
+    if (view.phase === 'play'){
+      const ok = await askConfirm({
+        title: 'タイトルへ戻る',
+        text: 'タイトルに戻ります。よろしいですか?',
+        warn: 'このラウンドは終了扱いになります',
+        okText: '戻る'
+      });
+      if (!ok) return;
+    }
+    audio.play('button');
     showScreen('title');
   }
 });
@@ -6352,7 +6472,13 @@ el.gameRulesBtn.addEventListener('click', () => { audio.play('button'); openRule
 el.changelogBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.changelogOverlay); });
 
 /* --- シングル準備画面 --- */
-el.singleBackBtn.addEventListener('click', () => { audio.play('button'); showScreen('title'); });
+el.singleBackBtn.addEventListener('click', async () => {
+  const ok = await askConfirm({
+    title: 'タイトルへ戻る',
+    text: 'タイトルに戻ります。よろしいですか?', okText: '戻る'
+  });
+  if (ok) showScreen('title');
+});
 el.singleSeatSeg.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn');
   if (!b) return;
@@ -6398,9 +6524,13 @@ el.singleStartBtn.addEventListener('click', () => { audio.play('button'); startS
 /* --- チュートリアル(v3.3) --- */
 el.tutorialNextBtn.addEventListener('click', tutorialNext);
 el.tutorialSkipBtn.addEventListener('click', skipTutorialChapter);
-el.tutorialExitBtn.addEventListener('click', () => {
-  if (!confirm('チュートリアルを終了してタイトルに戻りますか?')) return;
-  audio.play('button');
+el.tutorialExitBtn.addEventListener('click', async () => {
+  const ok = await askConfirm({
+    title: 'チュートリアルを終了',
+    text: 'チュートリアルを終了してタイトルに戻ります。よろしいですか?',
+    okText: '終了する'
+  });
+  if (!ok) return;
   endTutorial();
   showScreen('title');
 });
@@ -6417,7 +6547,13 @@ el.tutorialEndPlayBtn.addEventListener('click', () => {
 el.changelogCloseBtn.addEventListener('click', () => closeOverlay(el.changelogOverlay));
 
 /* --- ロビー --- */
-el.lobbyBackBtn.addEventListener('click', () => { audio.play('button'); showScreen('title'); });
+el.lobbyBackBtn.addEventListener('click', async () => {
+  const ok = await askConfirm({
+    title: 'タイトルへ戻る',
+    text: 'タイトルに戻ります。よろしいですか?', okText: '戻る'
+  });
+  if (ok) showScreen('title');
+});
 el.refreshRoomsBtn.addEventListener('click', () => {
   audio.play('button');
   if (online.socket) online.socket.emit('room:list');
@@ -6542,7 +6678,13 @@ el.joinIdBtn.addEventListener('click', () => {
 el.joinIdInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.joinIdBtn.click(); });
 
 /* --- 待機ルーム --- */
-el.roomLeaveBtn.addEventListener('click', () => { audio.play('button'); leaveOnlineRoom(); });
+el.roomLeaveBtn.addEventListener('click', async () => {
+  const ok = await askConfirm({
+    title: '部屋から退出',
+    text: 'この部屋から退出します。よろしいですか?'
+  });
+  if (ok) leaveOnlineRoom();
+});
 
 /* --- ログインボーナス(v3.2) --- */
 el.bonusCloseBtn.addEventListener('click', closeBonusPanel);
@@ -6623,11 +6765,23 @@ el.mrCheerRow.addEventListener('click', (e) => {
   if (!b) return;
   sendChatCheer(b.dataset.cheer);
 });
-el.mrLeaveBtn.addEventListener('click', () => {
+el.mrLeaveBtn.addEventListener('click', async () => {
   /* v4.3: レース中は抜けられない(払い戻しを取りこぼさないため) */
   const ph = marble.state ? marble.state.phase : '';
   if (ph === 'count' || ph === 'race') return toast('レースが終わるまでお待ちください');
-  audio.play('button');
+
+  /* v4.6: 投票済みで抜けると、そのぶんは戻ってこないので強く伝える */
+  const bet = marble.state ? (marble.state.myInvest || 0) : 0;
+  const ok = await askConfirm({
+    title: '会場から退出',
+    text: 'レース会場から退出してタイトルに戻ります。よろしいですか?',
+    warn: bet > 0
+      ? '※投票時にベットした ' + Number(bet).toLocaleString() +
+        ' メダルは返却されません！！'
+      : ''
+  });
+  if (!ok) return;
+
   leaveMarble();
   showScreen('title');
   renderMedal();
@@ -6647,16 +6801,20 @@ el.hiloEndRetryBtn.addEventListener('click', () => {
   audio.play('button');
   startHiloSingle();
 });
-el.hiloLeaveBtn.addEventListener('click', () => {
-  audio.play('button');
+el.hiloLeaveBtn.addEventListener('click', async () => {
   if (view.mode === 'online'){
-    if (!confirm('部屋から退出しますか?')) return;
+    const ok = await askConfirm({
+      title: '部屋から退出',
+      text: '部屋から退出してタイトルに戻ります。よろしいですか?'
+    });
+    if (!ok) return;
     stopHiloTimer();
     leaveOnlineRoom();
     showScreen('title');
     return;
   }
   /* シングルは進行中でも気軽に抜けられる(練習メダルなので影響がない) */
+  audio.play('button');
   endHiloSingle();
   showScreen('title');
   renderMedal();

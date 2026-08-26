@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v4.5)
+   Betoria - server.js  (v4.6)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.5.0';
+const APP_VERSION = '4.6.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -85,6 +85,10 @@ const RANK_FIELDS = {
     dayKey: 'mr_day_key', dayGain: 'mr_day_gain', dayBest: 'mr_day_best'
   }
 };
+/* サイトのオーナー(開発者)のアカウント名。
+   この名前だけ、画面上で👑つきの金色で表示される(v4.6) */
+const OWNER_NAME = process.env.OWNER_NAME || 'hiro';
+
 const GAME_LABEL = {
   bj: 'ブラックジャック', hilo: 'ハイ&ロー', marble: 'マーブルレース'
 };
@@ -805,7 +809,7 @@ function publicUser(u){
     champLosses: u.champ_losses,
     champDraws: u.champ_draws,
     iconColor: ICON_COLORS.includes(u.icon_color) ? u.icon_color : DEFAULT_ICON_COLOR,
-    isOwner: u.username === (process.env.OWNER_NAME || 'hiro'),
+    isOwner: u.username === OWNER_NAME,
     /* v3.2 */
     totalGain: Number(u.total_gain || 0),
     bestGain: Number(u.best_gain || 0),
@@ -1260,6 +1264,7 @@ function hiloState(room){
 const MR_BALLS       = 8;
 const MR_BET_MS      = 30000;   // 投票受付(v4.3)
 const MR_COUNT_SEC   = 3;       // 締め切ってからスタートまでの秒読み(v4.3)
+const MR_RUSH_MS     = 5000;    // 全員が投票し終えたときの残り時間(v4.6)
 const MR_RACE_MS     = 20000;   // レース本番(v4.5で短縮)
 const MR_RESULT_MS   = 10000;   // 払い戻しの確認
 const MR_PAYOUT_RATE = 0.85;    // 払戻率(控除率15%)。上げるとメダルが増えやすくなる
@@ -1295,6 +1300,7 @@ const MR_BET_TYPES = {
 /* 会場はサーバーに1つだけ */
 const marble = {
   phase: 'idle',          // idle | bet | count | race | result(v4.3で count を追加)
+  rushed: false,          // 全員投票で締め切りを早めたか(v4.6)
   count: 0,               // 秒読みの残り(3→2→1)
   countTimer: null,
   raceNo: 0,
@@ -1618,6 +1624,7 @@ function marbleState(forName){
     betMs: MR_BET_MS,
     raceMs: MR_RACE_MS,
     resultMs: MR_RESULT_MS,
+    rushed: !!marble.rushed,
     cheers: MR_CHEERS,
     stamps: CHAT_STAMPS,
     minBet: MR_MIN_BET,
@@ -1677,6 +1684,7 @@ function stopMarbleHall(){
   marbleClearTimer();
   marble.phase = 'idle';
   marble.count = 0;
+  marble.rushed = false;
   marble.balls = [];
   marble.odds = null;
   marble.order = [];
@@ -1687,6 +1695,13 @@ function stopMarbleHall(){
 }
 
 /* 会場から人がいなくなっていないか確かめ、いなければ止める */
+/* 会場が無人なら止める。
+   v4.6: ただし「まだ始まっていない投票受付中」に限る。
+
+   投票せずに退出 → もう一度入り直すと出走表が作り直される、という
+   やり直し(リセマラ)ができてしまっていたため、
+   一度始まったレースは無人になっても最後まで裏で進めるようにした。
+   止めてよいのは、次のレースを始める判断をするときだけ。 */
 function checkMarbleEmpty(){
   if (marble.watchers.size === 0 && marble.phase !== 'idle'){
     stopMarbleHall();
@@ -1711,10 +1726,34 @@ function startMarbleBetting(io){
   marble.track = [];
   marble.lastResult = null;
   marble.tickets = new Map();
+  marble.rushed = false;
   marble.deadline = Date.now() + MR_BET_MS;
 
   broadcastMarble(io);
   marble.timer = setTimeout(() => startMarbleCountdown(io), MR_BET_MS);
+}
+
+/* 会場にいる全員が投票し終えたら、締め切りを早める(v4.6)
+   待ち時間を減らしてテンポよく回すための処理。
+   一度早めたら戻さない(rushed)ので、
+   あとから人が入ってきても締め切りが延びることはない */
+function maybeRushMarble(io){
+  if (marble.phase !== 'bet' || marble.rushed) return;
+  if (marble.watchers.size === 0) return;
+
+  for (const w of marble.watchers.values()){
+    const t = marble.tickets.get(w.name);
+    if (!t || !t.length) return;      // まだ投票していない人がいる
+  }
+
+  const left = marble.deadline - Date.now();
+  if (left <= MR_RUSH_MS) return;     // すでに残りわずかなら何もしない
+
+  marble.rushed = true;
+  marble.deadline = Date.now() + MR_RUSH_MS;
+  marbleClearTimer();
+  marble.timer = setTimeout(() => startMarbleCountdown(io), MR_RUSH_MS);
+  marbleChatSystem(io, '全員の投票が完了しました。まもなく締め切ります');
 }
 
 /* 締め切ってからスタートまでの秒読み(v4.3)
@@ -1722,7 +1761,6 @@ function startMarbleBetting(io){
    着順はレース開始時に決めるので、ここではまだ何も抽選していない */
 function startMarbleCountdown(io){
   marbleClearTimer();
-  if (checkMarbleEmpty()) return;
 
   marble.phase = 'count';
   marble.count = MR_COUNT_SEC;
@@ -1744,8 +1782,7 @@ function startMarbleCountdown(io){
 /* レース本番。着順はこの瞬間に確定させ、演出データと一緒に配る */
 function startMarbleRace(io){
   marbleClearTimer();
-  if (checkMarbleEmpty()) return;   // v4.2
-  marble.phase = 'race';
+  marble.phase = 'race';   // v4.6: 始まったレースは無人でも最後まで走らせる
   marble.order = drawMarbleOrder(marble.balls);
   marble.track = makeMarbleTrack(marble.balls, marble.order);
   marble.deadline = Date.now() + MR_RACE_MS;
@@ -1757,12 +1794,6 @@ function startMarbleRace(io){
 /* 払い戻し */
 async function finishMarbleRace(io){
   marbleClearTimer();
-  /* レース中に全員抜けた場合でも、投票していた人への払い戻しだけは行う。
-     投票が1件も無ければそのまま止めてよい */
-  if (marble.watchers.size === 0 && marble.tickets.size === 0){
-    stopMarbleHall();
-    return;
-  }
   marble.phase = 'result';
   marble.deadline = Date.now() + MR_RESULT_MS;
 
@@ -3194,11 +3225,12 @@ app.get('/api/ranking', async (req, res) => {
   try {
     await catchUpSettle();
     if (which === 'alltime'){
-      return res.json({ day: 'alltime', game, best: await buildAllTimeBest(game) });
+      return res.json({ day: 'alltime', game, owner: OWNER_NAME,
+                        best: await buildAllTimeBest(game) });
     }
     const key = which === 'yesterday' ? shiftDateKey(today, -1) : today;
     const data = await buildRanking(key, key === today, game);
-    res.json({ day: which, game, dateKey: key, label: shortDate(key),
+    res.json({ day: which, game, owner: OWNER_NAME, dateKey: key, label: shortDate(key),
                total: data.total, best: data.best });
   } catch (e){
     console.error('[ranking]', e);
@@ -3249,7 +3281,6 @@ app.get('/api/health', (req, res) => res.json({ ok: true, db: db.kind, rooms: ro
    ADMIN_PIN / OWNER_NAME は環境変数で変更できる。
    ========================================================= */
 const ADMIN_PIN  = process.env.ADMIN_PIN  || '20050223';
-const OWNER_NAME = process.env.OWNER_NAME || 'hiro';
 
 function isOwnerName(name){
   return typeof name === 'string' && name === OWNER_NAME;
@@ -3403,6 +3434,10 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   const name = socket.data.name;
+
+  /* オーナー名を伝える(v4.6)。
+     画面側はこれを見て、開発者の名前に👑を付ける */
+  socket.emit('app:info', { owner: OWNER_NAME });
 
   socket.emit('room:list', roomList());
   /* ログインしたことをフレンドに知らせ、相手のオンライン人数表示を更新させる(v3.1) */
@@ -3787,10 +3822,12 @@ io.on('connection', (socket) => {
     });
     socket.join(MR_ROOM);
 
-    /* 誰もいなくて止まっていたら、ここで会場を動かし始める。
-       すでに動いているときは、観客一覧を全員に配り直す
-       (自分にも届くので、これだけで入室した本人の画面も揃う) */
-    if (wasEmpty || marble.phase === 'idle') startMarbleBetting(io);
+    /* 会場が完全に止まっているときだけ、新しいレースを始める(v4.6)。
+       以前は「入ったとき無人だったら」で判定していたため、
+       全員が抜けたあとに入り直すと出走表が作り直され、
+       気に入らない出走表を引いてもやり直せてしまった。
+       進行中(idle以外)なら、そのまま今のレースに合流する */
+    if (marble.phase === 'idle') startMarbleBetting(io);
     else broadcastMarble(io);
     marbleChatSystem(io, name + ' さんが会場に入りました');
   });
@@ -3800,8 +3837,11 @@ io.on('connection', (socket) => {
     marble.watchers.delete(name);
     marble.tickets.delete(name);
     socket.leave(MR_ROOM);
-    /* v4.2: 最後の1人が抜けたら、その場でレースごと止める */
-    if (checkMarbleEmpty()) return;
+    /* v4.6: 途中で抜けても、いま動いているレースは最後まで進める。
+       ここで止めてしまうと、入り直したときに出走表が作り直されて
+       やり直し(リセマラ)ができてしまうため。
+       無人のまま結果まで進めば、そこで次を始めずに停止する */
+    maybeRushMarble(io);   // 抜けた結果、残り全員が投票済みになることがある
     broadcastMarble(io);
     marbleChatSystem(io, name + ' さんが退出しました');
   });
@@ -3882,6 +3922,7 @@ io.on('connection', (socket) => {
 
     socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
     socket.emit('marble:bought', { type: def.key, label: def.label, picks: sorted, amount: amt, odds });
+    maybeRushMarble(io);   // v4.6: 全員そろったら締め切りを早める
     broadcastMarble(io);
   });
 
@@ -3977,8 +4018,9 @@ io.on('connection', (socket) => {
     if (w && w.sid === socket.id){
       marble.watchers.delete(name);
       marble.tickets.delete(name);
-      /* v4.2: 無人になったらレースを止める */
-      if (!checkMarbleEmpty()) broadcastMarble(io);
+      /* v4.6: 切断でも、いま動いているレースは止めない */
+      maybeRushMarble(io);
+      broadcastMarble(io);
     }
     /* 切断した瞬間を最終ログインとして残す(次に見たとき「◯分前」が正しくなる) */
     try {

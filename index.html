@@ -99,14 +99,14 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.5 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v4.6 更新履歴</button>
     </div>
 
     <nav class="title-menu">
       <button type="button" class="title-btn is-primary" id="toGamesBtn">
         <span class="title-btn-icon">🃏</span>
         <span class="title-btn-text">
-          <span class="title-btn-name">ゲームを選ぶ</span>
+          <span class="title-btn-name">プレイ</span>
           <span class="title-btn-desc">ブラックジャック / ハイ&amp;ロー / マーブルレース</span>
         </span>
       </button>
@@ -117,11 +117,11 @@
           <span class="title-btn-desc">ゲームごとに獲得枚数を競う</span>
         </span>
       </button>
-      <button type="button" class="title-btn" id="toRulesBtn">
-        <span class="title-btn-icon">📖</span>
+      <button type="button" class="title-btn" id="toHelpBtn">
+        <span class="title-btn-icon">❓</span>
         <span class="title-btn-text">
-          <span class="title-btn-name">ルール</span>
-          <span class="title-btn-desc">遊び方と配当を確認</span>
+          <span class="title-btn-name">ヘルプ</span>
+          <span class="title-btn-desc">このサイトの使い方</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toSettingsBtn">
@@ -138,7 +138,7 @@
   <section class="screen" id="screenGameSelect" hidden>
     <div class="setup-head">
       <button type="button" class="back-btn" id="gameSelectBackBtn">◀ もどる</button>
-      <h2>ゲームを選ぶ</h2>
+      <h2>プレイ</h2>
     </div>
 
     <p class="screen-note">遊びたいゲームを選んでください。所持メダルはすべてのゲームで共通です。</p>
@@ -192,7 +192,7 @@
   <section class="screen" id="screenGameMenu" hidden>
     <div class="setup-head">
       <button type="button" class="back-btn" id="gameMenuBackBtn">◀ もどる</button>
-      <h2 id="gameMenuTitle">ゲーム</h2>
+      <h2 id="gameMenuTitle">モード選択</h2>
     </div>
 
     <p class="screen-note" id="gameMenuDesc">-</p>
@@ -239,7 +239,7 @@
   <!-- ---------- シングル準備 ---------- -->
   <section class="screen" id="screenSingleSetup" hidden>
     <div class="page-head">
-      <button type="button" class="back-btn" id="singleBackBtn">← タイトル</button>
+      <button type="button" class="back-btn is-exit" id="singleBackBtn" title="タイトルへ戻る" aria-label="タイトルへ戻る">🚪</button>
       <h2 class="page-title">シングルプレイ</h2>
     </div>
 
@@ -292,7 +292,7 @@
   <!-- ---------- ロビー ---------- -->
   <section class="screen" id="screenLobby" hidden>
     <div class="page-head">
-      <button type="button" class="back-btn" id="lobbyBackBtn">← タイトル</button>
+      <button type="button" class="back-btn is-exit" id="lobbyBackBtn" title="タイトルへ戻る" aria-label="タイトルへ戻る">🚪</button>
       <h2 class="page-title" id="lobbyTitle">オンラインプレイ</h2>
       <span class="conn-badge" id="connBadge">接続中…</span>
     </div>
@@ -372,7 +372,7 @@
   <!-- ---------- 待機ルーム ---------- -->
   <section class="screen" id="screenRoom" hidden>
     <div class="page-head">
-      <button type="button" class="back-btn" id="roomLeaveBtn">← 退出</button>
+      <button type="button" class="back-btn is-exit" id="roomLeaveBtn" title="退出" aria-label="退出">🚪</button>
       <h2 class="page-title" id="roomTitle">待機ルーム</h2>
       <span class="conn-badge" id="roomCountBadge">1/4</span>
     </div>
@@ -426,7 +426,7 @@
   <section class="screen" id="screenGame" hidden>
 
     <div class="tutorial-head" id="tutorialHead" hidden>
-      <button type="button" class="back-btn" id="tutorialExitBtn">← 退出</button>
+      <button type="button" class="back-btn is-exit" id="tutorialExitBtn" title="退出" aria-label="退出">🚪</button>
       <div class="tutorial-progress">
         <span class="tutorial-chapter" id="tutorialChapter">1 / 6</span>
         <span class="tutorial-title" id="tutorialTitle">基本の流れ</span>
@@ -499,7 +499,7 @@
   <section class="screen" id="screenHilo" hidden>
 
     <div class="hilo-top">
-      <button type="button" class="back-btn" id="hiloLeaveBtn">◀ もどる</button>
+      <button type="button" class="back-btn is-exit" id="hiloLeaveBtn" title="退出" aria-label="退出">🚪</button>
       <div class="hilo-top-chips">
         <div class="hilo-chip" id="hiloRoundChip" hidden>
           <span class="hilo-chip-key">ラウンド</span>
@@ -553,7 +553,7 @@
   <section class="screen" id="screenMarble" hidden>
 
     <div class="mr-top">
-      <button type="button" class="back-btn" id="mrLeaveBtn">◀ もどる</button>
+      <button type="button" class="back-btn is-exit" id="mrLeaveBtn" title="退出" aria-label="退出">🚪</button>
       <div class="mr-top-chips">
         <div class="mr-chip">
           <span class="mr-chip-key">RACE</span>
@@ -984,6 +984,135 @@
 </div>
 
 <!-- ============ ルール ============ -->
+<!-- ============ 退出の確認(v4.6) ============
+     単純な確認だけでなく、マーブルレースの投票後のように
+     赤字の注意書きを添えたい場面があるので専用の画面にした -->
+<div class="overlay" id="confirmOverlay" hidden>
+  <div class="sheet sheet-narrow" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+    <div class="sheet-head">
+      <h2 id="confirmTitle">確認</h2>
+      <button type="button" class="close-btn" id="confirmCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="confirm-text" id="confirmText">本当によろしいですか?</p>
+      <p class="confirm-warn" id="confirmWarn" hidden></p>
+      <div class="confirm-actions">
+        <button type="button" class="btn btn-ghost" id="confirmCancelBtn">キャンセル</button>
+        <button type="button" class="btn btn-primary" id="confirmOkBtn">退出する</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ヘルプ(v4.6) ============
+     ゲームごとの遊び方は各ゲームの「ルール」に置き、
+     ここにはサイト全体にかかわる説明だけをまとめる -->
+<div class="overlay" id="helpOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="ヘルプ">
+    <div class="sheet-head">
+      <h2>ヘルプ</h2>
+      <button type="button" class="close-btn" id="helpCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+
+      <div class="sheet-section">
+        <h3>Betoria とは</h3>
+        <ul class="rule-list">
+          <li><b>お金は一切かかりません。</b>すべて無料で遊べる、オンラインカジノ風のゲームサイトです。</li>
+          <li>ゲーム内の<b>メダル</b>はこのサイトの中だけのもので、現金や景品と交換することはできません。</li>
+          <li>いま遊べるゲームは <b>ブラックジャック</b> / <b>ハイ&amp;ロー</b> / <b>マーブルレース</b> の3種類です。</li>
+          <li>各ゲームの遊び方は、<b>タイトル → プレイ → ゲームを選ぶ → ルール</b> から見られます。ゲーム中の <b>📖</b> ボタンからも開けます。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>アカウントとメダル</h3>
+        <ul class="rule-list">
+          <li><b>メダル・レベル・フレンドはすべてのゲームで共通</b>です。どのゲームで増やしても同じ財布に入ります。</li>
+          <li>オンラインで遊ぶには<b>アカウント登録</b>が必要です。登録は無料で、必要なのは名前とパスワードだけです。</li>
+          <li><b>同じアカウントに複数の端末から同時にログインすることはできません。</b>あとからログインすると、前の端末は自動的にログアウトされます。</li>
+          <li><b>シングルプレイ(練習モード)</b>は専用のメダルで遊ぶので、所持メダルは増えも減りもしません。記録にも残りません。</li>
+          <li>メダルが尽きても、下のログインボーナスや広告で受け取れるので、遊べなくなることはありません。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>メダルの増やし方</h3>
+        <ul class="rule-list">
+          <li><b>ログインボーナス</b> … 1日1回受け取れます。<b>連続でログインするほど増えます</b>。</li>
+          <li><b>広告を見る</b> … メダルが少ないときに、画面右上のボタンから受け取れます。1日に受け取れる回数と間隔には上限があります。</li>
+          <li><b>ゲームで勝つ</b> … いちばんの近道です。負けても経験値は入るので、レベルは上がっていきます。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>レベルと経験値</h3>
+        <ul class="rule-list">
+          <li>ゲームを遊ぶと<b>経験値</b>がたまり、レベルが上がります。<b>負けても経験値は入ります</b>。</li>
+          <li>レベルは右上のアイコンに表示され、ほかのプレイヤーからも見えます。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>ランキング</h3>
+        <ul class="rule-list">
+          <li><b>ゲームごとに別々</b>に集計されます。ブラックジャックとマーブルレースの記録は混ざりません。</li>
+          <li><b>総獲得枚数</b>(その日の合計)と<b>一撃獲得枚数</b>(1回の最高記録)の2種類があります。</li>
+          <li>対象は<b>オンラインのみ</b>です。練習モード・ログインボーナス・広告は含みません。</li>
+          <li>集計は<b>毎日0時(日本時間)</b>に確定します。入賞すると通知が届きます。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>フレンド</h3>
+        <ul class="rule-list">
+          <li>名前を検索して<b>フレンド申請</b>を送れます。相手が承認すると成立します。</li>
+          <li>フレンドが<b>オンラインかどうか</b>が一覧でわかります。</li>
+          <li>部屋にいるときは、フレンドを<b>招待</b>できます。招待された人には通知が届きます。</li>
+          <li>待機ルームでは、フレンド同士に <b>🤝</b> のしるしが付きます。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>通知</h3>
+        <ul class="rule-list">
+          <li>右上の<b>🔔</b>から確認できます。フレンド申請・招待・ランキング入賞などが届きます。</li>
+          <li>未読の件数がアイコンの下に表示されます。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>ホーム画面に追加する</h3>
+        <ul class="rule-list">
+          <li>スマホのホーム画面に追加すると、<b>アプリのように全画面で</b>遊べます。</li>
+          <li><b>iPhone(Safari)</b> … 共有ボタン → 「ホーム画面に追加」</li>
+          <li><b>Android(Chrome)</b> … メニュー → 「ホーム画面に追加」</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>うまく動かないとき</h3>
+        <ul class="rule-list">
+          <li><b>起動が遅い</b> … しばらく誰も遊んでいないとサーバーが休止するため、最初の起動に30秒ほどかかることがあります。起動画面が出ていればそのままお待ちください。</li>
+          <li><b>音が出ない</b> … スマホはマナーモードだと鳴らないことがあります。設定からBGM・効果音の確認もしてみてください。</li>
+          <li><b>接続が切れた</b> … 通信状態を確認して、ページを再読み込みしてください。メダルや記録はサーバーに保存されているので消えません。</li>
+        </ul>
+      </div>
+
+      <div class="sheet-section">
+        <h3>このサイトについて</h3>
+        <ul class="rule-list">
+          <li>制作: <b>hiro / ヒロ</b></li>
+          <li>ソースコードなどは <a href="https://github.com/h1ro223" target="_blank" rel="noopener">github.com/h1ro223</a> で公開しています。</li>
+          <li>更新内容はタイトル画面の<b>バージョン表記</b>から確認できます。</li>
+          <li>ご意見・不具合の報告はGitHubまたはDiscordまでお願いします。</li>
+        </ul>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="rulesOverlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="ルール">
     <div class="sheet-head">
@@ -1313,6 +1442,16 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v4.6</h3>
+        <ul class="rule-list">
+          <li>タイトル画面の「ルール」を<b>「ヘルプ」</b>に変更し、サイト全体の使い方をまとめました。各ゲームの遊び方は、これまでどおりゲームごとの「ルール」から見られます。</li>
+          <li>退出ボタンを <b>🚪</b> に統一し、押したときに<b>確認画面</b>が出るようになりました。</li>
+          <li>マーブルレースで、<b>参加者全員が投票を終えると締め切りが早まる</b>ようになりました。</li>
+          <li>マーブルレースで、<b>ゴールしたボールの順位が金色に光る</b>ようになりました。</li>
+          <li>開発者(hiro)の名前が<b>👑つきの金色</b>で表示されるようになりました。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v4.5</h3>
         <ul class="rule-list">
