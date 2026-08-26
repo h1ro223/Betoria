@@ -1,9 +1,8 @@
 /* =========================================================
-   Betoria - server.js  (v4.6)
+   Betoria - server.js  (v4.7)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
-     ・HIGH & LOW(ハイ&ロー)
      ・MARBLE RACE(マーブルレース)  ← v4.1 で追加
    Render(無料枠)向け  Express + Socket.io + PostgreSQL
    DATABASE_URL が無い場合はメモリ保存で動作します(ローカル検証用)
@@ -19,7 +18,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.6.0';
+const APP_VERSION = '4.7.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -64,7 +63,7 @@ function shortDate(key){
    「どのゲームの記録か」を必ず持ち歩く。
    ランキングはゲームごとに完全に分ける(本人の希望)。
    ========================================================= */
-const GAMES = ['bj', 'hilo', 'marble'];
+const GAMES = ['bj', 'marble'];
 const DEFAULT_GAME = 'bj';
 function normGame(g){ return GAMES.includes(g) ? g : DEFAULT_GAME; }
 
@@ -76,10 +75,6 @@ const RANK_FIELDS = {
     total: 'total_gain', best: 'best_gain', bestAt: 'best_gain_at',
     dayKey: 'day_key', dayGain: 'day_gain', dayBest: 'day_best'
   },
-  hilo: {
-    total: 'hl_total_gain', best: 'hl_best_gain', bestAt: 'hl_best_gain_at',
-    dayKey: 'hl_day_key', dayGain: 'hl_day_gain', dayBest: 'hl_day_best'
-  },
   marble: {
     total: 'mr_total_gain', best: 'mr_best_gain', bestAt: 'mr_best_gain_at',
     dayKey: 'mr_day_key', dayGain: 'mr_day_gain', dayBest: 'mr_day_best'
@@ -90,7 +85,7 @@ const RANK_FIELDS = {
 const OWNER_NAME = process.env.OWNER_NAME || 'hiro';
 
 const GAME_LABEL = {
-  bj: 'ブラックジャック', hilo: 'ハイ&ロー', marble: 'マーブルレース'
+  bj: 'ブラックジャック', marble: 'マーブルレース'
 };
 
 /* アカウントアイコンの色(v3.0)。クライアントの ICON_COLORS と必ず揃えること */
@@ -262,9 +257,6 @@ const db = (() => {
                'champ_plays, champ_wins, champ_losses, champ_draws, last_login, icon_color, ' +
                'total_gain, best_gain, best_gain_at, day_key, day_gain, day_best, ' +
                'bonus_date, bonus_ad_date, login_streak, login_days, created_at, ' +
-               /* ハイ&ロー(v4.0) */
-               'hl_total_gain, hl_best_gain, hl_best_gain_at, hl_day_key, hl_day_gain, hl_day_best, ' +
-               'hl_rounds, hl_wins, hl_losses, ' +
                /* マーブルレース(v4.1) */
                'mr_total_gain, mr_best_gain, mr_best_gain_at, mr_day_key, mr_day_gain, mr_day_best, ' +
                'mr_races, mr_hits, mr_misses, ' +
@@ -326,18 +318,17 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_streak  INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_days    INTEGER NOT NULL DEFAULT 0`);
 
-      /* ハイ&ロー用の列(v4.0)。
-         ランキングをゲームごとに分けるため、集計列も別で持つ。
-         ゲームを増やすときは RANK_FIELDS と合わせてここにも足すこと。 */
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_total_gain   BIGINT  NOT NULL DEFAULT 0`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_best_gain    BIGINT  NOT NULL DEFAULT 0`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_best_gain_at TEXT`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_day_key      TEXT`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_day_gain     BIGINT  NOT NULL DEFAULT 0`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_day_best     BIGINT  NOT NULL DEFAULT 0`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_rounds       INTEGER NOT NULL DEFAULT 0`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_wins         INTEGER NOT NULL DEFAULT 0`);
-      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS hl_losses       INTEGER NOT NULL DEFAULT 0`);
+      /* ハイ&ローの列を削除する(v4.7)
+         ゲームごと廃止したため、専用の集計列も片付ける。
+         IF EXISTS なので、何度デプロイしても安全に空振りする。
+         この処理自体は将来消してしまってかまわない */
+      for (const col of ['hl_total_gain', 'hl_best_gain', 'hl_best_gain_at',
+                         'hl_day_key', 'hl_day_gain', 'hl_day_best',
+                         'hl_rounds', 'hl_wins', 'hl_losses']){
+        await pool.query(`ALTER TABLE users DROP COLUMN IF EXISTS ${col}`);
+      }
+      /* 日次ランキングに残っているハイ&ローの記録も消す */
+      await pool.query(`DELETE FROM rank_daily_v4 WHERE game='hilo'`);
 
       /* マーブルレース用の列(v4.1) */
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_total_gain   BIGINT  NOT NULL DEFAULT 0`);
@@ -429,8 +420,7 @@ const db = (() => {
       await pool.query(
         `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
           $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
-          $28,$29,$30,$31,$32,$33,$34,$35,$36,
-          $37,$38,$39,$40,$41,$42,$43,$44,$45,$46)`,
+          $28,$29,$30,$31,$32,$33,$34,$35,$36,$37)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
          row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
@@ -440,10 +430,6 @@ const db = (() => {
          row.bonus_date || null, row.bonus_ad_date || null,
          row.login_streak || 0, row.login_days || 0,
          row.created_at || new Date(),
-         /* ハイ&ロー(v4.0) */
-         row.hl_total_gain || 0, row.hl_best_gain || 0, row.hl_best_gain_at || null,
-         row.hl_day_key || null, row.hl_day_gain || 0, row.hl_day_best || 0,
-         row.hl_rounds || 0, row.hl_wins || 0, row.hl_losses || 0,
          /* マーブルレース(v4.1) */
          row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
          row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
@@ -460,13 +446,10 @@ const db = (() => {
          total_gain=$16, best_gain=$17, best_gain_at=$18,
          day_key=$19, day_gain=$20, day_best=$21,
          bonus_date=$22, bonus_ad_date=$23, login_streak=$24, login_days=$25,
-         hl_total_gain=$26, hl_best_gain=$27, hl_best_gain_at=$28,
-         hl_day_key=$29, hl_day_gain=$30, hl_day_best=$31,
-         hl_rounds=$32, hl_wins=$33, hl_losses=$34,
-         mr_total_gain=$35, mr_best_gain=$36, mr_best_gain_at=$37,
-         mr_day_key=$38, mr_day_gain=$39, mr_day_best=$40,
-         mr_races=$41, mr_hits=$42, mr_misses=$43,
-         session_id=$44
+         mr_total_gain=$26, mr_best_gain=$27, mr_best_gain_at=$28,
+         mr_day_key=$29, mr_day_gain=$30, mr_day_best=$31,
+         mr_races=$32, mr_hits=$33, mr_misses=$34,
+         session_id=$35
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
@@ -476,10 +459,6 @@ const db = (() => {
          row.day_key || null, row.day_gain || 0, row.day_best || 0,
          row.bonus_date || null, row.bonus_ad_date || null,
          row.login_streak || 0, row.login_days || 0,
-         /* ハイ&ロー(v4.0) */
-         row.hl_total_gain || 0, row.hl_best_gain || 0, row.hl_best_gain_at || null,
-         row.hl_day_key || null, row.hl_day_gain || 0, row.hl_day_best || 0,
-         row.hl_rounds || 0, row.hl_wins || 0, row.hl_losses || 0,
          /* マーブルレース(v4.1) */
          row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
          row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
@@ -766,22 +745,6 @@ function applyEnjoyResult(user, kind){
   return addExp(user, expForResult(kind));
 }
 
-/* =========================================================
-   ハイ&ローのEXP(v4.0)
-   1ラウンド(＝1回の挑戦)ごとに参加分、さらに的中した回数ぶんを加算する。
-   ブラックジャックの1ラウンド平均(およそ30EXP)に近い水準になるよう、
-   参加10 + 的中1回につき12 とした(5連続的中で70EXP)。
-   ========================================================= */
-const HILO_EXP_ROUND = 10;
-const HILO_EXP_HIT   = 12;
-
-function applyHiloResult(user, { hits, cashed }){
-  user.hl_rounds = Number(user.hl_rounds || 0) + 1;
-  if (cashed) user.hl_wins = Number(user.hl_wins || 0) + 1;
-  else user.hl_losses = Number(user.hl_losses || 0) + 1;
-  return addExp(user, HILO_EXP_ROUND + HILO_EXP_HIT * Math.max(0, Number(hits) || 0));
-}
-
 /* チャンピオンモード終了時の結果反映
    rankKind: 'win'(1位) | 'draw'(1位タイ) | 'lose'(2〜4位 or 脱落) */
 function applyChampionResult(user, { rankKind, expGain }){
@@ -820,13 +783,6 @@ function publicUser(u){
     /* 今日のログインボーナスを受け取れるか(v3.2) */
     bonusReady: u.bonus_date !== jstDateKey(),
     bonusAdReady: u.bonus_date === jstDateKey() && u.bonus_ad_date !== jstDateKey(),
-    /* ハイ&ロー(v4.0) */
-    hlRounds: Number(u.hl_rounds || 0),
-    hlWins: Number(u.hl_wins || 0),
-    hlLosses: Number(u.hl_losses || 0),
-    hlTotalGain: Number(u.hl_total_gain || 0),
-    hlBestGain: Number(u.hl_best_gain || 0),
-    hlBestGainAt: u.hl_best_gain_at || null,
     /* マーブルレース(v4.1) */
     mrRaces: Number(u.mr_races || 0),
     mrHits: Number(u.mr_hits || 0),
@@ -914,334 +870,6 @@ function handValue(hand){
 
 function isBlackjack(hand){
   return hand.length === 2 && handValue(hand).total === 21;
-}
-
-/* =========================================================
-   4.5 ハイ&ロー エンジン(v4.0)
-
-   遊び方(本人と決めた仕様):
-     ・ベット額は固定 100 枚
-     ・場のカードより次のカードが「高い/低い」を当てる
-     ・同じ数字(ドロー)は負け扱いでベット没収
-     ・的中するたびに倍率が 1.5 倍ずつ積み上がる(グリード方式)
-     ・5 連続的中で上限に達し、強制的に確定(回収)される
-     ・カードは 52 枚のデッキを順に消費し、尽きたらシャッフルし直す
-     ・オンラインは「せーの」で全員同時に予想し、当てた人だけが残る
-
-   進行(オンライン):
-     pick(予想)→ reveal(めくって判定)→ 生存者がいれば pick に戻る
-     → 誰も残らなければ result(精算)→ 少し待って次のラウンドへ
-   1回目の予想を出すことが「ベットする」ことと同じ意味になるので、
-   参加したくないラウンドは何も押さなければ見送りになる。
-   ========================================================= */
-const HILO_BET        = 100;    // 固定ベット額
-const HILO_RATE       = 1.5;    // 的中1回ごとの倍率
-const HILO_MAX_STEPS  = 5;      // これだけ当てると強制確定
-const HILO_PICK_MS    = 15000;  // 予想の制限時間
-const HILO_REVEAL_MS  = 1600;   // めくってから次の予想までの間
-const HILO_RESULT_MS  = 3600;   // ラウンド結果を見せる時間
-const HILO_CPU_MS     = 1100;   // CPUが考えるふりをする時間
-const HILO_DECK_MIN   = 2;      // これ未満になったらシャッフルし直す
-const HILO_MIN_PLAYERS = 2;     // オンラインの開始に必要な人数
-
-/* 1組(52枚)のデッキを作る */
-function buildHiloDeck(){
-  const deck = [];
-  for (const su of SUITS)
-    for (const r of RANKS)
-      deck.push({ rank: r, mark: su.mark, red: su.red });
-  for (let i = deck.length - 1; i > 0; i--){
-    const j = crypto.randomInt(i + 1);
-    [deck[i], deck[j]] = [deck[j], deck[i]];
-  }
-  return deck;
-}
-
-/* A=0 … K=12。ハイ&ローではAが最弱、Kが最強 */
-function rankIndex(rank){ return RANKS.indexOf(rank); }
-
-/* デッキから1枚引く。尽きたら新しい52枚を作り直す */
-function hiloDraw(room){
-  const h = room.hilo;
-  if (!h.deck || h.deck.length < HILO_DECK_MIN){
-    h.deck = buildHiloDeck();
-    h.reshuffled = true;
-  }
-  return h.deck.pop();
-}
-
-/* n回的中したときの払い戻し(ベットを含む総額) */
-function hiloPayout(steps){
-  const n = Math.max(0, Math.min(Number(steps) || 0, HILO_MAX_STEPS));
-  if (n <= 0) return 0;
-  return Math.floor(HILO_BET * Math.pow(HILO_RATE, n));
-}
-
-/* 表示用の倍率表(クライアントのはしご表示に使う) */
-function hiloLadder(){
-  const out = [];
-  for (let i = 1; i <= HILO_MAX_STEPS; i++)
-    out.push({ step: i, payout: hiloPayout(i) });
-  return out;
-}
-
-/* 予想が当たったか。ドローは必ず外れ扱い */
-function hiloJudge(base, next, pick){
-  const a = rankIndex(base.rank), b = rankIndex(next.rank);
-  if (a === b) return false;                 // ドローは負け
-  return pick === 'high' ? b > a : b < a;
-}
-
-/* その場のカードで見て、確率的に有利な側を返す(CPU用) */
-function hiloBetterSide(base){
-  const a = rankIndex(base.rank);
-  const higher = (12 - a) * 4;
-  const lower  = a * 4;
-  if (higher === lower) return crypto.randomInt(2) === 0 ? 'high' : 'low';
-  return higher > lower ? 'high' : 'low';
-}
-
-function hiloClearTimers(room){
-  if (room.turnTimer){ clearTimeout(room.turnTimer); room.turnTimer = null; }
-  if (room.cpuTimer){ clearTimeout(room.cpuTimer); room.cpuTimer = null; }
-  if (room.hiloTimer){ clearTimeout(room.hiloTimer); room.hiloTimer = null; }
-}
-
-/* 1ラウンド開始。場のカードを1枚めくって予想を受け付ける */
-function startHiloRound(io, room){
-  hiloClearTimers(room);
-  room.round++;
-  const h = room.hilo;
-  h.reshuffled = false;
-  h.base = hiloDraw(room);
-  h.next = null;
-  h.step = 0;
-  h.lastHit = null;
-
-  for (const p of room.players){
-    p.hlStatus = 'idle';     // idle → alive → cashed / bust
-    p.hlPick = null;
-    p.hlSteps = 0;
-    p.hlStake = 0;
-    p.hlBet = 0;
-    p.result = null;
-    p.ready = false;
-  }
-
-  room.phase = 'pick';
-  room.message = '次のカードは HIGH? LOW?';
-  broadcast(io, room);
-  hiloStartPickTimer(io, room);
-  hiloScheduleCpu(io, room);
-}
-
-/* 予想の締め切り。時間内に押さなかった人は見送り/自動回収になる */
-function hiloStartPickTimer(io, room){
-  if (room.turnTimer){ clearTimeout(room.turnTimer); room.turnTimer = null; }
-  room.hlDeadline = Date.now() + HILO_PICK_MS;
-  room.turnTimer = setTimeout(() => {
-    room.turnTimer = null;
-    if (room.phase !== 'pick') return;
-    for (const p of room.players){
-      if (p.hlPick) continue;
-      /* まだ1回も当てていない人は「見送り」、
-         生き残っている人は取りこぼしを防ぐため自動で回収する */
-      if (p.hlStatus === 'alive') hiloCashOut(room, p, true);
-      else if (p.hlStatus === 'idle') p.hlStatus = 'skip';
-    }
-    hiloReveal(io, room);
-  }, HILO_PICK_MS);
-}
-
-/* CPUの手番。少し待ってから有利な側を選び、深追いしすぎない */
-function hiloScheduleCpu(io, room){
-  const cpus = room.players.filter(p => p.cpu &&
-    (p.hlStatus === 'idle' || p.hlStatus === 'alive') && !p.hlPick);
-  if (!cpus.length) return;
-  if (room.cpuTimer) clearTimeout(room.cpuTimer);
-  room.cpuTimer = setTimeout(() => {
-    room.cpuTimer = null;
-    if (room.phase !== 'pick') return;
-    for (const p of cpus){
-      if (p.hlPick) continue;
-      /* 積み上がるほど降りやすくする。上限の1歩手前ではほぼ降りない */
-      if (p.hlStatus === 'alive'){
-        const keep = [0.85, 0.70, 0.55, 0.45][p.hlSteps - 1];
-        if (typeof keep === 'number' && Math.random() > keep){
-          hiloCashOut(room, p, false);
-          continue;
-        }
-      }
-      if (p.hlStatus === 'idle'){
-        if (p.medal < HILO_BET) p.medal = CPU_REFILL;
-        p.medal -= HILO_BET;
-        p.hlBet = HILO_BET;
-        p.hlStatus = 'alive';
-      }
-      /* たまに外して人間らしくする */
-      p.hlPick = Math.random() < 0.15
-        ? (crypto.randomInt(2) === 0 ? 'high' : 'low')
-        : hiloBetterSide(room.hilo.base);
-    }
-    broadcast(io, room);
-    if (hiloEveryonePicked(room)) hiloReveal(io, room);
-  }, HILO_CPU_MS);
-}
-
-/* 予想待ちの人が残っていないか */
-function hiloEveryonePicked(room){
-  return room.players.every(p =>
-    p.hlPick || (p.hlStatus !== 'idle' && p.hlStatus !== 'alive'));
-}
-
-/* 回収(キャッシュアウト)。積み上げた分をそのまま受け取って降りる */
-function hiloCashOut(room, p, auto){
-  if (p.hlStatus !== 'alive') return;
-  p.hlStatus = 'cashed';
-  p.hlPick = null;
-  p.result = {
-    kind: 'cash', label: 'CASH OUT',
-    payout: p.hlStake, net: p.hlStake - p.hlBet,
-    steps: p.hlSteps, auto: !!auto
-  };
-}
-
-/* めくって判定する */
-function hiloReveal(io, room){
-  if (room.phase !== 'pick') return;
-  hiloClearTimers(room);
-  const h = room.hilo;
-
-  /* 誰も予想していないラウンドは、めくらずにそのまま終了する */
-  const picked = room.players.filter(p => p.hlPick);
-  if (!picked.length) return finishHiloRound(io, room);
-
-  room.phase = 'reveal';
-  h.next = hiloDraw(room);
-  h.step++;
-
-  let hits = 0;
-  for (const p of picked){
-    const ok = hiloJudge(h.base, h.next, p.hlPick);
-    p.hlLastPick = p.hlPick;
-    p.hlHit = ok;
-    if (ok){
-      hits++;
-      p.hlSteps++;
-      p.hlStake = hiloPayout(p.hlSteps);
-      p.hlStatus = 'alive';
-    } else {
-      p.hlStatus = 'bust';
-      p.hlStake = 0;
-      p.result = {
-        kind: 'bust', label: 'BUST',
-        payout: 0, net: -p.hlBet, steps: p.hlSteps
-      };
-    }
-    p.hlPick = null;
-  }
-
-  const same = rankIndex(h.base.rank) === rankIndex(h.next.rank);
-  room.message = same
-    ? '同じ数字! 全員はずれです'
-    : (hits > 0 ? hits + ' 人が的中!' : '全員はずれ…');
-  broadcast(io, room);
-
-  room.hiloTimer = setTimeout(() => {
-    room.hiloTimer = null;
-    hiloAfterReveal(io, room);
-  }, HILO_REVEAL_MS);
-}
-
-/* めくった後の後始末。上限到達者を確定させ、生存者がいれば次の予想へ */
-function hiloAfterReveal(io, room){
-  if (room.phase !== 'reveal') return;
-  const h = room.hilo;
-
-  /* めくったカードが次の「場のカード」になる */
-  h.base = h.next;
-  h.next = null;
-
-  /* 上限まで当てた人はここで強制確定 */
-  for (const p of room.players){
-    if (p.hlStatus === 'alive' && p.hlSteps >= HILO_MAX_STEPS){
-      hiloCashOut(room, p, false);
-      if (p.result) p.result.label = 'MAX WIN';
-    }
-  }
-
-  const alive = room.players.filter(p => p.hlStatus === 'alive');
-  if (!alive.length) return finishHiloRound(io, room);
-
-  room.phase = 'pick';
-  room.message = '続ける? それとも回収する?';
-  for (const p of room.players) p.hlPick = null;
-  broadcast(io, room);
-  hiloStartPickTimer(io, room);
-  hiloScheduleCpu(io, room);
-}
-
-/* ラウンドの精算。回収できた人にメダルを配り、記録を残す */
-async function finishHiloRound(io, room){
-  hiloClearTimers(room);
-  room.phase = 'result';
-
-  for (const p of room.players){
-    if (p.hlStatus === 'skip' || p.hlStatus === 'idle'){ p.result = null; continue; }
-    if (!p.result) continue;
-
-    p.medal += p.result.payout;
-
-    if (!p.cpu){
-      try {
-        const u = await db.findUser(p.name);
-        if (u){
-          u.medal += p.result.payout;
-          /* ランキングはハイ&ロー単独で集計する(v4.0) */
-          recordGain(u, p.result.payout - p.hlBet, 'hilo');
-          const up = applyHiloResult(u, {
-            hits: p.hlSteps, cashed: p.result.kind === 'cash'
-          });
-          await db.saveUser(u);
-          p.medal = u.medal;
-          p.level = u.level;
-          if (p.sid) io.to(p.sid).emit('account:update', { user: publicUser(u), levelUp: up });
-        }
-      } catch (e){ console.error('[hilo]', e.message); }
-    }
-  }
-
-  room.message = 'ラウンド終了';
-  broadcast(io, room);
-
-  /* 少し結果を見せてから、自動で次のラウンドへ進む。
-     参加したくないラウンドは何も押さなければ見送りになるので、
-     ここで待たせる必要がない */
-  room.hiloTimer = setTimeout(() => {
-    room.hiloTimer = null;
-    if (!rooms.has(room.id)) return;
-    if (room.phase !== 'result') return;
-    if (room.players.filter(p => !p.cpu && p.connected).length === 0) return;
-    startHiloRound(io, room);
-  }, HILO_RESULT_MS);
-}
-
-/* クライアントに送るハイ&ローの盤面 */
-function hiloState(room){
-  const h = room.hilo || {};
-  return {
-    bet: HILO_BET,
-    rate: HILO_RATE,
-    maxSteps: HILO_MAX_STEPS,
-    ladder: hiloLadder(),
-    base: h.base || null,
-    next: h.next || null,
-    step: h.step || 0,
-    deckLeft: h.deck ? h.deck.length : 0,
-    reshuffled: !!h.reshuffled,
-    deadline: room.phase === 'pick' ? (room.hlDeadline || null) : null,
-    pickMs: HILO_PICK_MS
-  };
 }
 
 /* =========================================================
@@ -1873,15 +1501,13 @@ function isTourney(mode){ return mode === 'champion' || mode === 'sprint'; }
 
 /* 部屋を作れるゲーム。マーブルレースは部屋を使わず
    常時開催の会場で遊ぶので、ここには含めない(v4.1) */
-const ROOM_GAMES = ['bj', 'hilo'];
+const ROOM_GAMES = ['bj'];
 
 function createRoom(opts){
-  /* v4.0: ハイ&ローの部屋はエンジョイ相当の1モードだけ。
-     チャンピオン/早抜けはブラックジャック専用のまま。
-     v4.1: 部屋を持たないゲームが指定されたらブラックジャックとして扱う */
+  /* v4.1: 部屋を持たないゲームが指定されたらブラックジャックとして扱う */
   const asked = normGame(opts.game);
   const game = ROOM_GAMES.includes(asked) ? asked : DEFAULT_GAME;
-  const mode = (game === 'bj' && ['champion', 'sprint'].includes(opts.mode)) ? opts.mode : 'enjoy';
+  const mode = ['champion', 'sprint'].includes(opts.mode) ? opts.mode : 'enjoy';
   const room = {
     id: makeRoomId(),
     game,
@@ -1892,12 +1518,6 @@ function createRoom(opts){
     cpuFill: mode === 'enjoy'
              && Number(opts.maxPlayers) >= MIN_HUMANS + 1
              && !!opts.cpuFill,
-    /* ハイ&ローの盤面(v4.0)。ブラックジャックの部屋では使わない */
-    hilo: game === 'hilo'
-      ? { deck: buildHiloDeck(), base: null, next: null, step: 0, reshuffled: false }
-      : null,
-    hiloTimer: null,
-    hlDeadline: null,
     championRounds: mode === 'champion'
       ? Math.min(Math.max(Number(opts.championRounds) || CHAMPION_ROUND_MIN,
                           CHAMPION_ROUND_MIN), CHAMPION_ROUND_MAX)
@@ -1930,7 +1550,6 @@ function destroyRoom(room){
   if (room.turnTimer) clearTimeout(room.turnTimer);
   if (room.cpuTimer) clearTimeout(room.cpuTimer);
   if (room.countdownTimer) clearTimeout(room.countdownTimer);
-  if (room.hiloTimer) clearTimeout(room.hiloTimer);   // v4.0
   rooms.delete(room.id);
 }
 
@@ -1990,7 +1609,6 @@ function roomState(room, forName, asSpectator){
   return {
     id: room.id,
     game: room.game || DEFAULT_GAME,
-    hilo: room.game === 'hilo' ? hiloState(room) : null,
     mode: room.mode,
     phase: room.phase,
     maxPlayers: room.maxPlayers,
@@ -2002,7 +1620,7 @@ function roomState(room, forName, asSpectator){
     isHost: !asSpectator && forName === room.hostName,
     isSpectator: !!asSpectator,
     spectatorCount: room.spectators.length,
-    minHumans: room.game === 'hilo' ? HILO_MIN_PLAYERS : MIN_HUMANS,
+    minHumans: MIN_HUMANS,
     humanCount: humanCount(room),
     allGuestsReady: guestsReady(room),
     round: room.round,
@@ -2032,14 +1650,6 @@ function roomState(room, forName, asSpectator){
       finished: !!p.finished,
       finishRank: p.finishRank || null,
       retired: !!p.retired,
-      /* ハイ&ロー(v4.0)。予想の内容は伏せずに公開する(全員同時に出すため) */
-      hlStatus: p.hlStatus || 'idle',
-      hlPick: p.hlPick || null,
-      hlLastPick: p.hlLastPick || null,
-      hlHit: typeof p.hlHit === 'boolean' ? p.hlHit : null,
-      hlSteps: p.hlSteps || 0,
-      hlStake: p.hlStake || 0,
-      hlBet: p.hlBet || 0,
       isYou: p.name === forName
     }))
   };
@@ -2083,7 +1693,6 @@ function fillCpuSeats(room){
       iconColor: 'slate',
       bet: 0, hand: [], done: false, surrendered: false, ready: false,
       doubled: false, allIn: false, streak: 0,
-      hlStatus: 'idle', hlPick: null, hlSteps: 0, hlStake: 0, hlBet: 0,
       result: null, connected: true, eliminated: false
     });
   }
@@ -2148,15 +1757,8 @@ function beginCountdown(io, room){
         room.round = 0;
         room.standings = null;
       }
-      /* v4.0: ゲームごとに開始処理を分ける */
-      if (room.game === 'hilo'){
-        room.round = 0;
-        room.hilo.deck = buildHiloDeck();
-        startHiloRound(io, room);
-      } else {
-        resetRound(room);
-        broadcast(io, room);
-      }
+      resetRound(room);
+      broadcast(io, room);
       broadcastLobby(io);
       return;
     }
@@ -2682,10 +2284,6 @@ function blankUserRow(username, pass_hash){
     bonus_date: null, bonus_ad_date: null,
     login_streak: 0, login_days: 0,
     created_at: new Date(),
-    /* ハイ&ロー(v4.0) */
-    hl_total_gain: 0, hl_best_gain: 0, hl_best_gain_at: null,
-    hl_day_key: null, hl_day_gain: 0, hl_day_best: 0,
-    hl_rounds: 0, hl_wins: 0, hl_losses: 0,
     /* マーブルレース(v4.1) */
     mr_total_gain: 0, mr_best_gain: 0, mr_best_gain_at: null,
     mr_day_key: null, mr_day_gain: 0, mr_day_best: 0,
@@ -3037,7 +2635,7 @@ async function pushNotice(username, kind, title, body){
 
 /* 勝ちで得たメダルを記録する。ログインボーナスや広告は対象外(v3.2)
    gain には「配当 - ベット」の純増分を渡すこと。
-   v4.0: ランキングをゲームごとに分けたので、game('bj' | 'hilo')も渡す */
+   v4.0: ランキングをゲームごとに分けたので、game('bj' | 'marble')も渡す */
 function recordGain(user, gain, game){
   const g = Math.floor(Number(gain) || 0);
   if (g <= 0) return;
@@ -3551,9 +3149,8 @@ io.on('connection', (socket) => {
     if (room.phase !== 'lobby') return;
 
     /* CPU補充の有無に関わらず、人のプレイヤーが2人以上いないと開始できない */
-    const needHumans = room.game === 'hilo' ? HILO_MIN_PLAYERS : MIN_HUMANS;
-    if (humanCount(room) < needHumans)
-      return socket.emit('room:error', '最低' + needHumans + '人のプレイヤーの参加が必要です');
+    if (humanCount(room) < MIN_HUMANS)
+      return socket.emit('room:error', '最低' + MIN_HUMANS + '人のプレイヤーの参加が必要です');
 
     /* ホスト以外の全員が準備完了になるまで開始できない */
     if (!guestsReady(room))
@@ -3574,8 +3171,7 @@ io.on('connection', (socket) => {
 
   socket.on('game:bet', async ({ amount } = {}) => {
     const room = findRoomBySid(socket.id);
-    if (!room || room.game === 'hilo') return;   // v4.0: ハイ&ローは固定ベット
-    if (room.phase !== 'bet') return;
+    if (!room || room.phase !== 'bet') return;
     const p = room.players.find(x => x.sid === socket.id);
     if (!p || p.ready) return;
 
@@ -3721,11 +3317,9 @@ io.on('connection', (socket) => {
     nextTurn(io, room);
   });
 
-  /* ブラックジャック専用(ハイ&ローは自動で次のラウンドへ進む) */
   socket.on('game:next', () => {
     const room = findRoomBySid(socket.id);
     if (!room || room.hostName !== name) return;
-    if (room.game === 'hilo') return;   // v4.0: 自動進行なので受け付けない
     if (room.phase === 'result'){
       resetRound(room);
       broadcast(io, room);
@@ -3741,68 +3335,6 @@ io.on('connection', (socket) => {
       broadcast(io, room);
       broadcastLobby(io);
     }
-  });
-
-  /* 大会を退出(観戦中でも可)。以降の経験値は加算されない */
-  /* =========================================================
-     ハイ&ロー(v4.0)
-     予想を出すこと自体が「100枚ベットする」ことと同じ扱い。
-     1回目(hlStatus === 'idle')のときだけメダルを引く。
-     ========================================================= */
-  socket.on('hilo:pick', async ({ pick } = {}) => {
-    const room = findRoomBySid(socket.id);
-    if (!room || room.game !== 'hilo' || room.phase !== 'pick') return;
-    const p = room.players.find(x => x.sid === socket.id);
-    if (!p || p.hlPick) return;
-    if (pick !== 'high' && pick !== 'low') return;
-
-    /* 2回目以降(すでに当てて生き残っている)は追加ベットなしで続行 */
-    if (p.hlStatus === 'alive'){
-      p.hlPick = pick;
-      broadcast(io, room);
-      if (hiloEveryonePicked(room)) hiloReveal(io, room);
-      return;
-    }
-    if (p.hlStatus !== 'idle') return;
-
-    /* 1回目はDBのメダルを正として100枚引く */
-    let u;
-    try { u = await db.findUser(p.name); }
-    catch (e){ console.error('[hilo:pick]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
-    if (!u) return socket.emit('room:error', 'アカウントが見つかりません');
-
-    if (u.medal < HILO_BET){
-      p.medal = u.medal;
-      broadcast(io, room);
-      socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
-      return socket.emit('room:error', 'メダルが足りません(100枚必要です)');
-    }
-    if (p.hlPick || p.hlStatus !== 'idle') return;   // 待っている間に確定していたら何もしない
-
-    u.medal -= HILO_BET;
-    try { await db.saveUser(u); }
-    catch (e){ console.error('[hilo:pick]', e.message); return socket.emit('room:error', '通信に失敗しました'); }
-
-    p.hlBet = HILO_BET;
-    p.hlStatus = 'alive';
-    p.hlPick = pick;
-    p.medal = u.medal;
-    p.level = u.level;
-    socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
-
-    broadcast(io, room);
-    if (hiloEveryonePicked(room)) hiloReveal(io, room);
-  });
-
-  /* 積み上げた分を確定して降りる */
-  socket.on('hilo:cash', () => {
-    const room = findRoomBySid(socket.id);
-    if (!room || room.game !== 'hilo' || room.phase !== 'pick') return;
-    const p = room.players.find(x => x.sid === socket.id);
-    if (!p || p.hlStatus !== 'alive' || p.hlPick) return;
-    hiloCashOut(room, p, false);
-    broadcast(io, room);
-    if (hiloEveryonePicked(room)) hiloReveal(io, room);
   });
 
   /* =========================================================
@@ -3926,6 +3458,7 @@ io.on('connection', (socket) => {
     broadcastMarble(io);
   });
 
+  /* 大会を退出(観戦中でも可)。以降の経験値は加算されない */
   socket.on('room:leaveChampionship', () => leaveRoom(socket));
 
   /* ---- フレンド招待(v3.0) ---- */
@@ -4055,8 +3588,6 @@ function makePlayer(socket){
     doubled: false, allIn: false, streak: 0,
     lobbyReady: false,
     result: null, connected: true, eliminated: false, eliminatedAtRound: null,
-    /* ハイ&ロー(v4.0) */
-    hlStatus: 'idle', hlPick: null, hlSteps: 0, hlStake: 0, hlBet: 0
   };
 }
 
@@ -4119,17 +3650,9 @@ function leaveRoom(socket){
 
   chatSystem(io, room, left.name + ' さんが退出しました');
 
-  if (room.game !== 'hilo' && room.phase === 'play'){
+  if (room.phase === 'play'){
     if (idx < room.activeIndex) room.activeIndex--;
     else if (idx === room.activeIndex){ room.activeIndex--; nextTurn(io, room); }
-  }
-
-  /* ハイ&ロー(v4.0): 抜けた人の予想を待ち続けないよう、
-     残った全員が選び終わっていればその場でめくる */
-  if (room.game === 'hilo' && room.phase === 'pick' && hiloEveryonePicked(room)){
-    broadcast(io, room);
-    broadcastLobby(io);
-    return hiloReveal(io, room);
   }
 
   broadcast(io, room);

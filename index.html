@@ -13,7 +13,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Betoria">
-<meta name="description" content="Betoria(ベトリア)は、ブラックジャックやハイ&ローをみんなで遊べる無料のオンラインカジノです。">
+<meta name="description" content="Betoria(ベトリア)は、ブラックジャックやマーブルレースをみんなで遊べる無料のオンラインカジノです。">
 <meta name="mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="./style.css">
 </head>
@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.6 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v4.7 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -107,7 +107,7 @@
         <span class="title-btn-icon">🃏</span>
         <span class="title-btn-text">
           <span class="title-btn-name">プレイ</span>
-          <span class="title-btn-desc">ブラックジャック / ハイ&amp;ロー / マーブルレース</span>
+          <span class="title-btn-desc">ブラックジャック / マーブルレース</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRankingBtn">
@@ -172,20 +172,7 @@
         </span>
       </button>
 
-      <button type="button" class="game-card" data-game="hilo">
-        <span class="game-card-art is-hilo"><span class="game-card-mark">▲▼</span></span>
-        <span class="game-card-body">
-          <span class="game-card-name">HIGH &amp; LOW</span>
-          <span class="game-card-jp">ハイ&amp;ロー</span>
-          <span class="game-card-desc">次のカードが高いか低いかを当てるだけ。当てるほど倍率が伸びる、引き際が勝負のゲーム。</span>
-          <span class="game-card-tags">
-            <span class="game-tag is-new">NEW</span>
-            <span class="game-tag">1〜4人</span>
-            <span class="game-tag">最大7.5倍</span>
-          </span>
-        </span>
-      </button>
-    </div>
+   </div>
   </section>
 
   <!-- ---------- ゲームごとのメニュー(v4.0) ---------- -->
@@ -495,57 +482,6 @@
     </section>
   </section>
 
-  <!-- ---------- ハイ&ロー(v4.0) ---------- -->
-  <section class="screen" id="screenHilo" hidden>
-
-    <div class="hilo-top">
-      <button type="button" class="back-btn is-exit" id="hiloLeaveBtn" title="退出" aria-label="退出">🚪</button>
-      <div class="hilo-top-chips">
-        <div class="hilo-chip" id="hiloRoundChip" hidden>
-          <span class="hilo-chip-key">ラウンド</span>
-          <span class="hilo-chip-val led" id="hiloRoundNum">1</span>
-        </div>
-        <div class="hilo-chip" id="hiloDeckChip">
-          <span class="hilo-chip-key">山札</span>
-          <span class="hilo-chip-val led" id="hiloDeckLeft">52</span>
-        </div>
-        <div class="hilo-chip is-timer" id="hiloTimerChip" hidden>
-          <span class="hilo-chip-key">のこり</span>
-          <span class="hilo-chip-val led" id="hiloTimerNum">15</span>
-        </div>
-      </div>
-      <button type="button" class="icon-btn" id="hiloRulesBtn" title="ルール">📖</button>
-    </div>
-
-    <div class="hilo-ladder" id="hiloLadder"></div>
-
-    <div class="hilo-board">
-      <div class="hilo-slot">
-        <span class="hilo-slot-cap">いまのカード</span>
-        <div class="hilo-card" id="hiloBaseCard"><span class="hilo-card-face">?</span></div>
-      </div>
-      <div class="hilo-vs" id="hiloVs">
-        <span class="hilo-vs-mark">▲<br>▼</span>
-      </div>
-      <div class="hilo-slot">
-        <span class="hilo-slot-cap">つぎのカード</span>
-        <div class="hilo-card is-back" id="hiloNextCard"><span class="hilo-card-face">?</span></div>
-      </div>
-    </div>
-
-    <div class="hilo-stake" id="hiloStake" hidden>
-      <span class="hilo-stake-cap">いまの獲得予定</span>
-      <span class="hilo-stake-val led" id="hiloStakeVal">0</span>
-      <span class="hilo-stake-unit">メダル</span>
-      <span class="hilo-stake-mult" id="hiloStakeMult">×1.5</span>
-    </div>
-
-    <div id="hiloMessageBar"><span id="hiloMessageText">HIGH か LOW を選んでください</span></div>
-
-    <div class="hilo-players" id="hiloPlayers"></div>
-
-  </section>
-
   <!-- ---------- マーブルレース(v4.1 / v4.2でUI刷新) ----------
        スマホの1画面に収まるよう、フェーズごとに見せるものを切り替える。
          投票受付中 … 出走表と投票券だけ(コースは出さない)
@@ -748,38 +684,6 @@
     <p class="wait-text" id="mrWaitText">レース中です…</p>
   </div>
 
-  <!-- ハイ&ローの操作(v4.0) -->
-  <div class="panel" id="hiloPickPanel" hidden>
-    <div class="hilo-pick-row">
-      <button type="button" class="btn btn-hilo-high" id="hiloHighBtn">
-        <span class="btn-main">▲ HIGH</span>
-        <span class="btn-sub" id="hiloHighSub">次は高い</span>
-      </button>
-      <button type="button" class="btn btn-hilo-low" id="hiloLowBtn">
-        <span class="btn-main">▼ LOW</span>
-        <span class="btn-sub" id="hiloLowSub">次は低い</span>
-      </button>
-    </div>
-    <button type="button" class="btn btn-hilo-cash" id="hiloCashBtn" hidden>
-      <span class="btn-main">回収する</span>
-      <span class="btn-sub" id="hiloCashSub">0 メダルを確定</span>
-    </button>
-    <p class="hilo-hint" id="hiloHint">1回目の予想が「100メダルのベット」になります。</p>
-  </div>
-
-  <div class="panel" id="hiloWaitPanel" hidden>
-    <p class="wait-text" id="hiloWaitText">ほかのプレイヤーを待っています…</p>
-  </div>
-
-  <div class="panel" id="hiloEndPanel" hidden>
-    <p class="single-end-title" id="hiloEndTitle">ゲームオーバー</p>
-    <p class="single-end-text" id="hiloEndText">-</p>
-    <div class="single-end-actions">
-      <button type="button" class="btn btn-ghost" id="hiloEndBackBtn">タイトルへ</button>
-      <button type="button" class="btn btn-primary" id="hiloEndRetryBtn">もう一度あそぶ</button>
-    </div>
-  </div>
-
   <div class="panel" id="singleEndPanel" hidden>
     <p class="single-end-title" id="singleEndTitle">ゲームクリア!</p>
     <p class="single-end-text" id="singleEndText">-</p>
@@ -907,18 +811,6 @@
         </div>
 
         <div class="sheet-section">
-          <h3>戦績(ハイ&amp;ロー)</h3>
-          <div class="stat-grid">
-            <div class="stat"><span class="stat-key">ラウンド</span><span class="stat-val led" id="hlPlays">0</span></div>
-            <div class="stat"><span class="stat-key">回収</span><span class="stat-val led" id="hlWins">0</span></div>
-            <div class="stat"><span class="stat-key">失敗</span><span class="stat-val led" id="hlLosses">0</span></div>
-            <div class="stat"><span class="stat-key">回収率</span><span class="stat-val led" id="hlRate">0%</span></div>
-            <div class="stat"><span class="stat-key">総獲得</span><span class="stat-val led" id="hlTotalGain">0</span></div>
-            <div class="stat"><span class="stat-key">一撃</span><span class="stat-val led" id="hlBestGain">0</span></div>
-          </div>
-        </div>
-
-        <div class="sheet-section">
           <h3>戦績(チャンピオンモード)</h3>
           <div class="stat-grid">
             <div class="stat"><span class="stat-key">プレイ数</span><span class="stat-val led" id="champPlays">0</span></div>
@@ -1020,7 +912,7 @@
         <ul class="rule-list">
           <li><b>お金は一切かかりません。</b>すべて無料で遊べる、オンラインカジノ風のゲームサイトです。</li>
           <li>ゲーム内の<b>メダル</b>はこのサイトの中だけのもので、現金や景品と交換することはできません。</li>
-          <li>いま遊べるゲームは <b>ブラックジャック</b> / <b>ハイ&amp;ロー</b> / <b>マーブルレース</b> の3種類です。</li>
+          <li>いま遊べるゲームは <b>ブラックジャック</b> と <b>マーブルレース</b> の2種類です。</li>
           <li>各ゲームの遊び方は、<b>タイトル → プレイ → ゲームを選ぶ → ルール</b> から見られます。ゲーム中の <b>📖</b> ボタンからも開けます。</li>
         </ul>
       </div>
@@ -1120,10 +1012,9 @@
       <button type="button" class="close-btn" id="rulesCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
-      <div class="seg seg-3" id="rulesGameTabs">
-        <button type="button" class="seg-btn is-on" data-ruleg="bj">♠ BJ</button>
-        <button type="button" class="seg-btn" data-ruleg="hilo">▲▼ ハイ&amp;ロー</button>
-        <button type="button" class="seg-btn" data-ruleg="marble">◉ レース</button>
+      <div class="seg seg-2" id="rulesGameTabs">
+        <button type="button" class="seg-btn is-on" data-ruleg="bj">♠ ブラックジャック</button>
+        <button type="button" class="seg-btn" data-ruleg="marble">◉ マーブルレース</button>
       </div>
       <p class="sheet-note">見たいゲームを選んでください。アカウント・メダル・フレンドはすべてのゲームで共通です。</p>
 
@@ -1170,61 +1061,6 @@
           <ul class="rule-list">
             <li>マーブルレースのランキングは<b>ほかのゲームとは別</b>に集計されます。</li>
             <li>1レースの払い戻し合計から投票額を引いた分が記録されます。</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="rules-group" id="rulesHilo" hidden>
-        <div class="sheet-section">
-          <h3>ハイ&amp;ローの基本</h3>
-          <ul class="rule-list">
-            <li>場に置かれたカードより、<b>次のカードが高いか低いか</b>を当てるゲームです。</li>
-            <li>強さは <b>A(いちばん弱い)→ 2 → 3 → … → Q → K(いちばん強い)</b> の順です。マークの違いは関係ありません。</li>
-            <li>ベットは<b>1回100メダル固定</b>です。<b>最初の予想を出すこと</b>が、そのままベットになります。</li>
-            <li><b>同じ数字が出た場合(ドロー)は負け扱い</b>で、ベットは没収されます。</li>
-            <li>カードは<b>1組52枚</b>を上から順に使います。使い切ると新しくシャッフルし直します(山札の残り枚数は画面上部に出ます)。</li>
-          </ul>
-        </div>
-        <div class="sheet-section">
-          <h3>配当(グリード方式)</h3>
-          <ul class="rule-list">
-            <li>当てるたびに倍率が <b>1.5倍ずつ</b> 積み上がります。</li>
-            <li>1回的中 <b>150</b> / 2回 <b>225</b> / 3回 <b>337</b> / 4回 <b>506</b> / 5回 <b>759</b> メダル(100メダルベット時)。</li>
-            <li>当てたあとは <b>「もう一度予想する」か「回収する」</b> を選べます。回収するとその時点の枚数が確定します。</li>
-            <li><b>1回でも外すと、積み上げた分はすべて没収</b>です。引き際が勝負です。</li>
-            <li><b>5回連続で的中すると上限</b>となり、自動的に回収(MAX WIN)になります。</li>
-          </ul>
-        </div>
-        <div class="sheet-section">
-          <h3>オンライン</h3>
-          <ul class="rule-list">
-            <li>全員が<b>同時に</b>予想を出し、当てた人だけが次に進みます。他の人の予想は画面に表示されます。</li>
-            <li>持ち時間は<b>15秒</b>です。時間切れになると、まだ参加していない人は<b>見送り</b>、勝ち残っている人は<b>自動で回収</b>されます。</li>
-            <li>全員の勝負がついたら、<b>自動で次のラウンド</b>が始まります。休みたいラウンドは何も押さなければ大丈夫です。</li>
-            <li>人のプレイヤーが<b>2人以上</b>必要です。3人以上の部屋では<b>CPUの自動補充</b>も使えます。</li>
-          </ul>
-        </div>
-        <div class="sheet-section">
-          <h3>シングルプレイ(練習モード)</h3>
-          <ul class="rule-list">
-            <li>開始のたびに<b>専用メダル1000枚</b>が配られます。<b>アカウントの所持メダルは増減しません</b>。</li>
-            <li>経験値・戦績・ランキングにも記録されません。ルールを覚えるための練習用です。</li>
-            <li>メダルが100枚を下回るとゲーム終了です。</li>
-          </ul>
-        </div>
-        <div class="sheet-section">
-          <h3>レベルと経験値</h3>
-          <ul class="rule-list">
-            <li>オンラインで1ラウンド遊ぶごとに <b>+10 EXP</b>。</li>
-            <li>さらに<b>的中1回につき +12 EXP</b>(5連続的中なら合計70EXP)。</li>
-            <li>外しても参加分のEXPは受け取れます。</li>
-          </ul>
-        </div>
-        <div class="sheet-section">
-          <h3>ランキング</h3>
-          <ul class="rule-list">
-            <li>ハイ&amp;ローのランキングは<b>ブラックジャックとは別</b>に集計されます。</li>
-            <li>対象は<b>オンライン</b>のみです。練習モードは含みません。</li>
           </ul>
         </div>
       </div>
@@ -1325,7 +1161,6 @@
           <li><b>総獲得枚数</b> … その日にラウンドで勝って得たメダルの合計です。</li>
           <li><b>一撃獲得枚数</b> … その日の中で、1ラウンドの勝利で得た最も多い枚数です。</li>
           <li>対象は<b>オンラインのエンジョイモード</b>です。ログインボーナス・広告・練習モード・大会メダルは含みません。</li>
-          <li>ランキングは<b>ゲームごとに別々</b>に集計されます(ブラックジャックとハイ&amp;ローは混ざりません)。</li>
           <li>集計は<b>0:00〜23:59</b>まで。結果は翌日の23:59まで「前日」で確認できます。一撃のみ<b>歴代</b>の記録も残ります。</li>
           <li>同じ枚数の場合は<b>同率順位</b>になります(1位・1位・3位のように表示)。</li>
           <li>前日のランキングに入賞していると、翌日<b>🔔通知</b>でお知らせが届きます。</li>
@@ -1443,13 +1278,18 @@
     </div>
     <div class="sheet-body">
       <div class="sheet-section">
+        <h3>v4.7</h3>
+        <ul class="rule-list">
+          <li><b>ハイ&amp;ローの提供を終了しました。</b>メダルが増えすぎてしまい、ゲームバランスを保てなかったためです。楽しんでいた方には申し訳ありません。</li>
+          <li>これにともない、ハイ&amp;ローのランキングと戦績も削除されました。<b>所持メダルはそのまま残ります</b>。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>v4.6</h3>
         <ul class="rule-list">
           <li>タイトル画面の「ルール」を<b>「ヘルプ」</b>に変更し、サイト全体の使い方をまとめました。各ゲームの遊び方は、これまでどおりゲームごとの「ルール」から見られます。</li>
           <li>退出ボタンを <b>🚪</b> に統一し、押したときに<b>確認画面</b>が出るようになりました。</li>
           <li>マーブルレースで、<b>参加者全員が投票を終えると締め切りが早まる</b>ようになりました。</li>
-          <li>マーブルレースで、<b>ゴールしたボールの順位が金色に光る</b>ようになりました。</li>
-          <li>開発者(hiro)の名前が<b>👑つきの金色</b>で表示されるようになりました。</li>
         </ul>
       </div>
       <div class="sheet-section">
@@ -1504,14 +1344,8 @@
         <h3>v4.0</h3>
         <ul class="rule-list">
           <li><b>サイト名が「Betoria(ベトリア)」になりました。</b>ブラックジャックだけでなく、いろいろなトランプゲームで遊べる<b>無料オンラインカジノ</b>を目指していきます。</li>
-          <li>タイトル画面に<b>🃏 ゲームを選ぶ</b>を追加しました。ここから遊ぶゲームを選びます。</li>
-          <li><b>▲▼ HIGH &amp; LOW(ハイ&amp;ロー)</b>を追加しました! 次のカードが高いか低いかを当てるだけのシンプルなゲームです。</li>
-          <li>ハイ&amp;ローは<b>1回100メダル固定</b>。当てるたびに倍率が<b>1.5倍ずつ</b>積み上がり、<b>5連続的中で最大759メダル</b>になります。</li>
-          <li>当てたあとは<b>「もう一度予想する」か「回収する」</b>を選べます。外すと積み上げた分はすべて没収なので、引き際が勝負です。</li>
-          <li>同じ数字が出た場合(ドロー)は<b>負け扱い</b>です。カードは<b>1組52枚</b>を順番に使い、尽きたらシャッフルし直します。</li>
-          <li>オンラインは全員が<b>同時に予想</b>し、当てた人だけが次に進みます。ラウンドは<b>自動で進行</b>するので、休みたいときは何も押さなければ見送りになります。</li>
-          <li><b>ランキングをゲームごとに分けました。</b>ブラックジャックとハイ&amp;ローの記録は混ざりません。これまでのブラックジャックの記録はそのまま残っています。</li>
-          <li>マイページにハイ&amp;ローの戦績を追加しました。</li>
+          <li>タイトル画面に<b>ゲーム選択</b>を追加しました。ここから遊ぶゲームを選びます。</li>
+          <li><b>ランキングをゲームごとに分けました。</b>これまでのブラックジャックの記録はそのまま残っています。</li>
         </ul>
       </div>
       <div class="sheet-section">
@@ -1809,10 +1643,9 @@
       <button type="button" class="close-btn" id="rankCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
-      <div class="seg seg-3" id="rankGameTabs">
-        <button type="button" class="seg-btn is-on" data-rgame="bj">♠ BJ</button>
-        <button type="button" class="seg-btn" data-rgame="hilo">▲▼ ハイ&amp;ロー</button>
-        <button type="button" class="seg-btn" data-rgame="marble">◉ レース</button>
+      <div class="seg seg-2" id="rankGameTabs">
+        <button type="button" class="seg-btn is-on" data-rgame="bj">♠ ブラックジャック</button>
+        <button type="button" class="seg-btn" data-rgame="marble">◉ マーブルレース</button>
       </div>
 
       <div class="seg seg-2" id="rankKindTabs">
