@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v4.7)
+   Betoria - server.js  (v4.6)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -18,7 +18,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.7.0';
+const APP_VERSION = '4.6.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -318,17 +318,16 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_streak  INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS login_days    INTEGER NOT NULL DEFAULT 0`);
 
-      /* ハイ&ローの列を削除する(v4.7)
-         ゲームごと廃止したため、専用の集計列も片付ける。
+      /* 使わなくなった列の後片付け。
          IF EXISTS なので、何度デプロイしても安全に空振りする。
-         この処理自体は将来消してしまってかまわない */
+         全環境に反映されたら、この処理自体は消してしまってかまわない */
       for (const col of ['hl_total_gain', 'hl_best_gain', 'hl_best_gain_at',
                          'hl_day_key', 'hl_day_gain', 'hl_day_best',
                          'hl_rounds', 'hl_wins', 'hl_losses']){
         await pool.query(`ALTER TABLE users DROP COLUMN IF EXISTS ${col}`);
       }
-      /* 日次ランキングに残っているハイ&ローの記録も消す */
-      await pool.query(`DELETE FROM rank_daily_v4 WHERE game='hilo'`);
+      /* 廃止したゲームの日次ランキングも消しておく */
+      await pool.query(`DELETE FROM rank_daily_v4 WHERE game NOT IN ('bj', 'marble')`);
 
       /* マーブルレース用の列(v4.1) */
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_total_gain   BIGINT  NOT NULL DEFAULT 0`);

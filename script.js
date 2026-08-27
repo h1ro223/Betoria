@@ -1100,14 +1100,13 @@ function showPanel(name){
   el.singleEndPanel.hidden = name !== 'single-end';
   el.tutorialPanel.hidden = name !== 'tutorial';
   el.tutorialEndPanel.hidden = name !== 'tutorial-end';
-  /* ハイ&ロー(v4.0) */
   /* マーブルレース(v4.1) */
   el.mrBetPanel.hidden  = name !== 'mr-bet';
   el.mrWaitPanel.hidden = name !== 'mr-wait';
   /* チュートリアルでは、見せるだけの操作ボタンとガイドを同時に出す(v3.3)。
      実際の表示可否は showTutorialButtons() が決める */
   if (name === 'tutorial' && tutorial.active) el.actionPanel.hidden = true;
-  /* 操作パネルはゲーム画面とハイ&ロー画面の両方で使う(v4.0) */
+  /* 操作パネルはゲーム画面とマーブルレース画面で使う */
   el.controls.hidden    = (screen !== 'game' && screen !== 'marble')
                           || name === 'none';
 }
@@ -1132,7 +1131,7 @@ function showScreen(name){
   el.controls.hidden = (name !== 'game' && name !== 'marble');
   /* v3.2: シングルは専用メダルで完結するので広告は出さない。
      大会系(チャンピオン/早抜け)と観戦中も対象外。
-     v4.0: ハイ&ローのオンラインでも広告でメダルを増やせる */
+     v4.1: マーブルレースでも広告でメダルを増やせる */
   el.adBtn.hidden = !((name === 'game' || name === 'marble')
                       && view.mode === 'online'
                       && !view.spectating && view.onlineMode === 'enjoy');
@@ -2294,7 +2293,6 @@ const single = {
 
 /* シングル中は専用メダル、それ以外はアカウント(またはゲスト)のメダルを見る */
 function isSingleGame(){
-  /* v4.0: ハイ&ローのシングルも「練習メダル」で動く */
   return view.mode === 'single' && screen === 'game';
 }
 
@@ -3305,7 +3303,7 @@ function setConn(state, text){
 }
 
 /* ロビーの表示を、選んでいるゲームに合わせて整える(v4.0)
-   ハイ&ローにはチャンピオン/早抜けが無いので、モード選択ごと隠す */
+   ゲームごとに表示する名前を差し替える */
 function syncLobbyForGame(){
   const info = gameInfo(view.game);
   el.lobbyTitle.textContent = info.name + ' - オンライン';
