@@ -1,9 +1,10 @@
 /* =========================================================
-   Betoria - server.js  (v4.6)
+   Betoria - server.js  (v5.0)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
      ・MARBLE RACE(マーブルレース)  ← v4.1 で追加
+     ・SLOT(スロット / アイムジャグラーEX 6号機準拠)  ← v5.0 で追加
    Render(無料枠)向け  Express + Socket.io + PostgreSQL
    DATABASE_URL が無い場合はメモリ保存で動作します(ローカル検証用)
    ========================================================= */
@@ -18,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '4.6.0';
+const APP_VERSION = '5.0.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -63,7 +64,7 @@ function shortDate(key){
    「どのゲームの記録か」を必ず持ち歩く。
    ランキングはゲームごとに完全に分ける(本人の希望)。
    ========================================================= */
-const GAMES = ['bj', 'marble'];
+const GAMES = ['bj', 'marble', 'slot'];
 const DEFAULT_GAME = 'bj';
 function normGame(g){ return GAMES.includes(g) ? g : DEFAULT_GAME; }
 
@@ -78,6 +79,10 @@ const RANK_FIELDS = {
   marble: {
     total: 'mr_total_gain', best: 'mr_best_gain', bestAt: 'mr_best_gain_at',
     dayKey: 'mr_day_key', dayGain: 'mr_day_gain', dayBest: 'mr_day_best'
+  },
+  slot: {
+    total: 'sl_total_gain', best: 'sl_best_gain', bestAt: 'sl_best_gain_at',
+    dayKey: 'sl_day_key', dayGain: 'sl_day_gain', dayBest: 'sl_day_best'
   }
 };
 /* サイトのオーナー(開発者)のアカウント名。
@@ -85,7 +90,7 @@ const RANK_FIELDS = {
 const OWNER_NAME = process.env.OWNER_NAME || 'hiro';
 
 const GAME_LABEL = {
-  bj: 'ブラックジャック', marble: 'マーブルレース'
+  bj: 'ブラックジャック', marble: 'マーブルレース', slot: 'スロット'
 };
 
 /* アカウントアイコンの色(v3.0)。クライアントの ICON_COLORS と必ず揃えること */
@@ -260,6 +265,9 @@ const db = (() => {
                /* マーブルレース(v4.1) */
                'mr_total_gain, mr_best_gain, mr_best_gain_at, mr_day_key, mr_day_gain, mr_day_best, ' +
                'mr_races, mr_hits, mr_misses, ' +
+               /* スロット(v5.0) */
+               'sl_total_gain, sl_best_gain, sl_best_gain_at, sl_day_key, sl_day_gain, sl_day_best, ' +
+               'sl_games, sl_bb, sl_rb, ' +
                /* 同時ログイン制限(v4.2) */
                'session_id';
 
@@ -327,7 +335,7 @@ const db = (() => {
         await pool.query(`ALTER TABLE users DROP COLUMN IF EXISTS ${col}`);
       }
       /* 廃止したゲームの日次ランキングも消しておく */
-      await pool.query(`DELETE FROM rank_daily_v4 WHERE game NOT IN ('bj', 'marble')`);
+      await pool.query(`DELETE FROM rank_daily_v4 WHERE game NOT IN ('bj', 'marble', 'slot')`);
 
       /* マーブルレース用の列(v4.1) */
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_total_gain   BIGINT  NOT NULL DEFAULT 0`);
@@ -339,6 +347,17 @@ const db = (() => {
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_races        INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_hits         INTEGER NOT NULL DEFAULT 0`);
       await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS mr_misses       INTEGER NOT NULL DEFAULT 0`);
+
+      /* スロット用の列(v5.0) */
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_total_gain   BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_best_gain    BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_best_gain_at TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_day_key      TEXT`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_day_gain     BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_day_best     BIGINT  NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_games        INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_bb           INTEGER NOT NULL DEFAULT 0`);
+      await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS sl_rb           INTEGER NOT NULL DEFAULT 0`);
 
       /* いま有効なログインの識別子(v4.2)
          同じアカウントに2台からログインできないようにするために使う。
@@ -419,7 +438,8 @@ const db = (() => {
       await pool.query(
         `INSERT INTO users(${COLS}) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
           $17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
-          $28,$29,$30,$31,$32,$33,$34,$35,$36,$37)`,
+          $28,$29,$30,$31,$32,$33,$34,$35,$36,
+          $37,$38,$39,$40,$41,$42,$43,$44,$45,$46)`,
         [row.username, row.pass_hash, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
          row.champ_plays, row.champ_wins, row.champ_losses, row.champ_draws, row.last_login,
@@ -433,6 +453,10 @@ const db = (() => {
          row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
          row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
          row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0,
+         /* スロット(v5.0) */
+         row.sl_total_gain || 0, row.sl_best_gain || 0, row.sl_best_gain_at || null,
+         row.sl_day_key || null, row.sl_day_gain || 0, row.sl_day_best || 0,
+         row.sl_games || 0, row.sl_bb || 0, row.sl_rb || 0,
          row.session_id || null]);
       return row;
     },
@@ -448,7 +472,10 @@ const db = (() => {
          mr_total_gain=$26, mr_best_gain=$27, mr_best_gain_at=$28,
          mr_day_key=$29, mr_day_gain=$30, mr_day_best=$31,
          mr_races=$32, mr_hits=$33, mr_misses=$34,
-         session_id=$35
+         sl_total_gain=$35, sl_best_gain=$36, sl_best_gain_at=$37,
+         sl_day_key=$38, sl_day_gain=$39, sl_day_best=$40,
+         sl_games=$41, sl_bb=$42, sl_rb=$43,
+         session_id=$44
          WHERE username=$1`,
         [row.username, row.medal, row.level, row.exp,
          row.rounds, row.wins, row.losses, row.pushes, row.bj,
@@ -462,6 +489,10 @@ const db = (() => {
          row.mr_total_gain || 0, row.mr_best_gain || 0, row.mr_best_gain_at || null,
          row.mr_day_key || null, row.mr_day_gain || 0, row.mr_day_best || 0,
          row.mr_races || 0, row.mr_hits || 0, row.mr_misses || 0,
+         /* スロット(v5.0) */
+         row.sl_total_gain || 0, row.sl_best_gain || 0, row.sl_best_gain_at || null,
+         row.sl_day_key || null, row.sl_day_gain || 0, row.sl_day_best || 0,
+         row.sl_games || 0, row.sl_bb || 0, row.sl_rb || 0,
          row.session_id || null]);
       return row;
     },
@@ -1481,6 +1512,679 @@ function applyMarbleResult(user, hit){
 }
 
 /* =========================================================
+   4.5 スロット(アイムジャグラーEX 6号機準拠)  ★v5.0で追加
+   ---------------------------------------------------------
+   ホールに6台。誰でも好きな空き台に座って打てる(先着順)。
+   設定1〜6は台ごとに毎日0:00で振り直す。プレイヤーには一切見せない。
+
+   ■ ズルできない作りにするための約束(重要)
+     ・小役/ボーナスの抽選は「レバーON」の瞬間にサーバーが決める(実機と同じ)
+     ・クライアントは「どの位置で停止ボタンを押したか」を送るだけ
+     ・スベリ(最大4コマ)の計算と停止位置の決定はサーバーが行う
+     ・払い出し・コイン・メダルの増減はすべてサーバーが持つ
+     つまりクライアントを改造しても、できるのは「完璧な目押し」までで、
+     出ない台が出るようにはならない。
+
+   ■ コイン(20スロ)
+     貸出1回 = 所持メダル1000枚 → スロット用コイン50枚
+     精算するとコインは 1枚 = メダル20枚 で所持メダルに戻る
+   ========================================================= */
+
+/* ---- リール配列 (index0 = 一番上に見えるコマ) ---- */
+const SL_SYM = { GRAPE: 1, CHERRY: 2, CLOWN: 3, BELL: 4, REPLAY: 5, BAR: 6, SEVEN: 7 };
+const SL_REEL_DATA = [
+  [4,7,5,1,5,1,6,2,1,5,1,7,3,1,5,1,2,6,1,5,1], // 左
+  [5,7,1,2,5,4,1,2,5,6,1,2,5,4,1,2,5,6,1,2,3], // 中
+  [1,7,6,4,5,1,3,4,5,1,3,4,5,1,3,4,5,1,3,4,5]  // 右
+];
+const SL_KOMA = 21;
+
+/* 有効5ライン: 各リールの行(0=上,1=中,2=下) */
+const SL_LINES = [
+  [0,0,0], [1,1,1], [2,2,2], [0,1,2], [2,1,0]
+];
+
+/* 設定別確率(index0 = 設定1)。6号機アイムジャグラーEX準拠 */
+const SL_SETTINGS = [
+  { bb: 1/273.1, rb: 1/439.8, grape: 1/6.02 },
+  { bb: 1/269.7, rb: 1/399.6, grape: 1/6.02 },
+  { bb: 1/269.7, rb: 1/331.0, grape: 1/6.02 },
+  { bb: 1/259.0, rb: 1/315.1, grape: 1/6.02 },
+  { bb: 1/259.0, rb: 1/255.0, grape: 1/6.02 },
+  { bb: 1/255.0, rb: 1/255.0, grape: 1/5.85 }
+];
+const SL_P_REPLAY = 1/7.298;
+const SL_P_CHERRY = 1/38.1;
+const SL_P_BELL   = 1/1092.3;
+const SL_P_CLOWN  = 1/1092.3;
+/* 中段チェリー(BB確定・BB確率の内数) */
+const slRareCherryProb = s => (s <= 3 ? 1/2184.53 : 1/1820.44);
+const SL_CHERRY_DUP_RATE = 0.25;  // ボーナス当選時にチェリーが重複する割合(概算)
+
+/* 停止目標図柄(null=不問)。BB=7/7/7、RB=7/7/BAR */
+const SL_TARGETS = {
+  GRAPE:      [1, 1, 1],
+  BELL:       [4, 4, 4],
+  CLOWN:      [3, 3, 3],
+  REPLAY:     [5, 5, 5],
+  CHERRY:     [2, null, null],
+  RARECHERRY: [2, null, null],
+  BB:         [7, 7, 7],
+  RB:         [7, 7, 6]
+};
+
+/* 設定の振り分け。既定は均等(どの台も設定1〜6が同じ確率)。
+   実際のホールのように低設定を厚くしたい場合は [40,25,15,10,6,4] のように重みを変える。
+   変えたら必ず t_theory.js で全体の還元率を測り直すこと */
+const SL_SETTING_WEIGHTS = [1, 1, 1, 1, 1, 1];
+
+/* 重みに従って設定を1つ選ぶ */
+function slPickSetting(){
+  const total = SL_SETTING_WEIGHTS.reduce((a, b) => a + b, 0);
+  let r = crypto.randomInt(total);
+  for (let i = 0; i < SL_SETTING_WEIGHTS.length; i++){
+    r -= SL_SETTING_WEIGHTS[i];
+    if (r < 0) return i + 1;
+  }
+  return 1;
+}
+
+const SL_MACHINES   = 6;      // ホールの台数
+const SL_MAX_SLIP   = 4;      // 最大4コマ引き込み
+const SL_PEKA_FIRST = 0.15;   // 先ペカ(レバーON時点灯)の割合。残り85%は後ペカ
+const SL_BB_LIMIT   = 280;    // BB: 280枚を超える払い出しで終了
+const SL_RB_LIMIT   = 98;     // RB: 98枚を超える払い出しで終了
+const SL_PAY_CAP    = 15;     // 1ゲームの払い出し上限
+const SL_CREDIT_MAX = 50;     // クレジット上限
+const SL_RENT_MEDAL = 1000;   // 貸出1回で使う所持メダル
+const SL_RENT_COIN  = 50;     // 貸出1回で得られるコイン(= 1枚20メダル。20スロ)
+
+/* 精算のレート(重要)。ここを貸出と同じ20にしてはいけない。
+   このスロットは実機の確率をそのまま使っているため、還元率は
+     設定1=98.5% 2=99.7% 3=101.5% 4=103.4% 5=106.0% 6=107.9%
+   となり、設定1〜6を均等に振ると全体で 102.8% になる。
+   等価交換にすると、打てば打つほどメダルが増え続けてしまう
+   (ハイ&ローを 1.28倍 で撤去したときと同じ問題)。
+   実際のホールと同じく「貸出20円・換金19円」の非等価にして、
+   全体で 102.8% × 19/20 = およそ 97.7% に収めている。
+   数字を触るときは必ず t_theory.js で全体の還元率を測り直すこと */
+const SL_COIN_VALUE = 19;     // 精算時のコイン1枚あたりのメダル
+const SL_OFFLINE_MS = 10 * 60 * 1000;  // 切断から自動退席までの猶予(10分)
+const SL_SWEEP_MS   = 30 * 1000;       // 自動退席の見回り間隔
+const SL_ROOM       = 'slot-hall';     // ロビーの配信先
+
+/* EXP。1ゲームでは増えすぎるので、ボーナスを引いたときだけ配る */
+const SL_EXP_BB = 40;
+const SL_EXP_RB = 20;
+
+/* 0以上1未満の乱数。予測できないように crypto で作る */
+function slRandom(){ return crypto.randomInt(1000000) / 1000000; }
+
+const slMod  = (n, m) => ((n % m) + m) % m;
+const slModK = n => slMod(n, SL_KOMA);
+
+/* 指定位置に停めたときに窓に見える3コマ */
+function slWindowCol(reelIdx, pos){
+  const d = SL_REEL_DATA[reelIdx];
+  return [d[slModK(pos)], d[slModK(pos + 1)], d[slModK(pos + 2)]];
+}
+
+/* 窓の全ラインを評価して成立役を返す */
+function slEvalWins(cols){
+  const wins = [];
+  SL_LINES.forEach((rows, i) => {
+    const s = [cols[0][rows[0]], cols[1][rows[1]], cols[2][rows[2]]];
+    if (s[0] === SL_SYM.CHERRY) wins.push({ role: 'CHERRY', line: i });
+    if (s[0] === s[1] && s[1] === s[2]){
+      if      (s[0] === SL_SYM.GRAPE)  wins.push({ role: 'GRAPE',  line: i });
+      else if (s[0] === SL_SYM.BELL)   wins.push({ role: 'BELL',   line: i });
+      else if (s[0] === SL_SYM.CLOWN)  wins.push({ role: 'CLOWN',  line: i });
+      else if (s[0] === SL_SYM.REPLAY) wins.push({ role: 'REPLAY', line: i });
+      else if (s[0] === SL_SYM.SEVEN)  wins.push({ role: 'BB',     line: i });
+    }
+    if (s[0] === SL_SYM.SEVEN && s[1] === SL_SYM.SEVEN && s[2] === SL_SYM.BAR)
+      wins.push({ role: 'RB', line: i });
+  });
+  return wins;
+}
+
+/* 払い出し枚数。ブドウは複数ライン成立でも1回分だけ(実機準拠)
+   ブドウ 3BET=8枚 / 2BET=14枚 / 1BET=8枚 */
+function slPayoutFor(wins, bet, cherryUnit){
+  let total = 0, grapePaid = false;
+  const cUnit = (cherryUnit === undefined) ? (bet === 3 ? 1 : 7) : cherryUnit;
+  for (const w of wins){
+    switch (w.role){
+      case 'GRAPE':
+        if (!grapePaid){ total += (bet === 2 ? 14 : 8); grapePaid = true; }
+        break;
+      case 'BELL':  total += 14;    break;
+      case 'CLOWN': total += 10;    break;
+      case 'CHERRY':total += cUnit; break;
+    }
+  }
+  return Math.min(total, SL_PAY_CAP);
+}
+
+/* チェリー1ラインあたりの払い出し枚数 */
+function slCherryUnitFor(bet, cols, inBonus){
+  if (bet === 3) return 1;
+  /* 非ボーナス時の1BET連チェリーは1枚×2ライン=2枚。2BETは7枚×2ライン=14枚 */
+  if (bet === 1 && !inBonus && slCenterCherryLinked(cols[0], cols[1])) return 1;
+  return 7;
+}
+
+/* ---- 単チェリー判定 ----
+   実機の「単チェリー」= 順押しで左にチェリーが露出しているのに、
+   中リールの真横・斜めにチェリーが繋がっていない停止形。
+   この形が出た時点でボーナス成立が確定する。 */
+function slCherryRows(col){
+  const rows = [];
+  if (!col) return rows;
+  for (let r = 0; r < 3; r++) if (col[r] === SL_SYM.CHERRY) rows.push(r);
+  return rows;
+}
+function slCenterCherryLinked(col0, col1){
+  if (!col0 || !col1) return false;
+  const c0 = slCherryRows(col0), c1 = slCherryRows(col1);
+  return c0.some(r => c1.some(r2 => Math.abs(r2 - r) <= 1));
+}
+function slIsSoloCherry(cols, order){
+  if (!cols || !cols[0] || !cols[1]) return false;
+  if (!order || order.length !== 3) return false;
+  if (!(order[0] === 0 && order[1] === 1 && order[2] === 2)) return false; // 順押し限定
+  if (!cols[0].includes(SL_SYM.CHERRY)) return false;
+  return !slCenterCherryLinked(cols[0], cols[1]);
+}
+
+/* ---- 停止制御(最大4コマ引き込み + 蹴飛ばし) ---- */
+
+/* 図柄symを行rowに置ける停止位置の一覧 */
+function slAlignSet(reelIdx, sym, row, avoidCherry){
+  const set = [];
+  for (let t = 0; t < SL_KOMA; t++){
+    if (SL_REEL_DATA[reelIdx][t] !== sym) continue;
+    const p = slModK(t - row);
+    if (avoidCherry && reelIdx === 0 && slWindowCol(0, p).includes(SL_SYM.CHERRY)) continue;
+    set.push(p);
+  }
+  return set;
+}
+
+/* どのタイミングで押しても4コマ以内に引き込めるか */
+function slCoversAllPresses(setArr){
+  if (setArr.length === 0) return false;
+  const s = [...setArr].sort((a, b) => a - b);
+  for (let i = 0; i < s.length; i++){
+    const gap = (i === s.length - 1) ? (s[0] + SL_KOMA - s[i]) : (s[i + 1] - s[i]);
+    if (gap > SL_MAX_SLIP + 1) return false;
+  }
+  return true;
+}
+
+/* 押された位置から実際に停める位置を決める。
+   g はそのゲームの状態(フラグ・停止済みリール・押し順) */
+function slChooseStopPosition(g, reelIdx, curPos){
+  const stopped = g.cols;
+  const nStopped = stopped.filter(Boolean).length;
+
+  /* 狙う役: 小役優先 → なければ保持中のボーナス。
+     ボーナスはGOGO!CHANCE点灯中のみ揃えられる(未点灯なら蹴飛ばす) */
+  const aimableBonus = g.lampLit ? g.bonusFlag : null;
+  const flagRole = g.smallFlag || aimableBonus || null;
+  const allowed = new Set();
+  if (g.smallFlag){
+    allowed.add(g.smallFlag);
+    if (g.smallFlag === 'RARECHERRY') allowed.add('CHERRY');
+  } else if (aimableBonus) allowed.add(aimableBonus);
+
+  const target = flagRole ? SL_TARGETS[flagRole] : null;
+
+  let base = Math.floor(curPos);
+  if (curPos - base < 0.2) base = base - 1;   // 最低限の移動距離を確保
+  const candidates = [];
+  for (let s = 0; s <= SL_MAX_SLIP; s++) candidates.push({ slip: s, p: slModK(base - s) });
+
+  const scoreOf = (cand) => {
+    const col = slWindowCol(reelIdx, cand.p);
+    const cols = stopped.slice();
+    cols[reelIdx] = col;
+
+    if (nStopped === 2){
+      /* 第3停止: 完成形を厳密に判定する */
+      const wins = slEvalWins(cols);
+      const badWins = wins.filter(w => !allowed.has(w.role));
+      const flagHit = flagRole && wins.some(w =>
+        flagRole === 'RARECHERRY' ? (w.role === 'CHERRY' && w.line === 1) : w.role === flagRole);
+      if (badWins.length > 0) return 1000 + badWins.length * 10;  // 蹴飛ばす
+      if (flagHit) return 0;
+      return 10;
+    }
+
+    /* 第1・第2停止 */
+    let penalty = 0;
+    /* 単チェリー制御(順押しの第2停止=中リールのみ)。
+       重複当選なら「繋がらない形(=単チェリー)」、非重複なら「繋がる形」を優先する */
+    if (reelIdx === 1 && cols[0] && cols[0].includes(SL_SYM.CHERRY) &&
+        g.pressOrder.length === 1 && g.pressOrder[0] === 0 &&
+        (g.smallFlag === 'CHERRY' || g.smallFlag === 'RARECHERRY')){
+      if (slCenterCherryLinked(cols[0], col) === !!g.dupCherry) penalty += 40;
+    }
+    if (!allowed.has('CHERRY') && cols[0]){
+      /* チェリーは左リールだけで成立が決まるので、左停止時点で必ず避ける */
+      if (cols[0].includes(SL_SYM.CHERRY)) penalty = 500;
+    }
+    if (!target) return penalty + 10;
+
+    const avoidCherry = !allowed.has('CHERRY');
+    let live = 0, guaranteed = 0;
+    const lineSet = (flagRole === 'RARECHERRY') ? [SL_LINES[1]] : SL_LINES;
+    lineSet.forEach(rows => {
+      let ok = true;
+      for (let c = 0; c < 3; c++){
+        const t = target[c];
+        if (t == null) continue;
+        const cc = cols[c];
+        if (!cc) continue;
+        if (cc[rows[c]] !== t){ ok = false; break; }
+      }
+      if (!ok) return;
+      live++;
+      let sure = true;
+      for (let c = 0; c < 3; c++){
+        if (cols[c]) continue;
+        const t = target[c];
+        if (t == null) continue;
+        if (!slCoversAllPresses(slAlignSet(c, t, rows[c], avoidCherry))){ sure = false; break; }
+      }
+      if (sure) guaranteed++;
+    });
+    /* ブドウは引き込みが保証された形をすべて同格に扱う(出目のバリエーション用) */
+    if (flagRole === 'GRAPE') return penalty + (guaranteed > 0 ? 0 : 100);
+    return penalty + (guaranteed > 0 ? 0 : 100) + (10 - live);
+  };
+
+  let bestScore = Infinity;
+  for (const cand of candidates){
+    cand.score = scoreOf(cand);
+    if (cand.score < bestScore) bestScore = cand.score;
+  }
+  const bestList = candidates.filter(c => c.score === bestScore);
+  if (flagRole === 'GRAPE' && bestList.length > 1){
+    return bestList[crypto.randomInt(bestList.length)].p;
+  }
+  return bestList[0].p;   // 通常は最小スベリ
+}
+
+/* ---------------------------------------------------------
+   ホールの台
+   --------------------------------------------------------- */
+function makeSlotMachine(no){
+  return {
+    no,
+    setting: slPickSetting(),   // プレイヤーには絶対に見せない
+    dayKey: jstDateKey(),
+
+    /* 座席 */
+    seat: null,          // username | null
+    sid: null,           // 接続中のソケット。切断中は null
+    level: 1,
+    iconColor: DEFAULT_ICON_COLOR,
+    offlineAt: 0,        // 切断した時刻(0=接続中)
+
+    /* 台データ(0:00でリセット。着席していなくても全員に見せる) */
+    bb: 0, rb: 0, startG: 0, totalG: 0,
+
+    /* 手持ち。実機と同じで、クレジットは50枚が上限。
+       あふれた分は下皿(tray)に出る。BETはクレジットから引き、
+       足りなければ下皿から自動で補充する(実機で下皿から入れる操作にあたる) */
+    credit: 0,           // クレジット(0〜50)
+    tray: 0,             // 下皿のコイン(上限なし)
+    invested: 0,         // この着席で投入したメダル総額(精算時の収支計算用)
+
+    /* ゲーム進行 */
+    phase: 'idle',       // idle | spin
+    bet: 0,
+    replayPending: 0,
+    cols: [null, null, null],
+    pressOrder: [],
+    smallFlag: null,
+    bonusFlag: null,     // 'BB' | 'RB' | null(成立して未消化のボーナス)
+    dupCherry: false,
+    lampLit: false,      // GOGO!CHANCE 点灯中
+    lampPending: false,  // 後ペカ待ち
+    rareLamp: false,     // 中段チェリー(レインボー)
+    inBonus: false,
+    bonusType: null,
+    bonusPaid: 0,
+    bonusLog: []         // 直近のボーナス履歴
+  };
+}
+
+const slotHall = [];
+for (let i = 1; i <= SL_MACHINES; i++) slotHall.push(makeSlotMachine(i));
+
+/* 台番号から台を引く */
+function slotById(no){
+  const n = Math.floor(Number(no));
+  return slotHall.find(m => m.no === n) || null;
+}
+/* その人が座っている台(1人1台まで) */
+function slotOf(name){
+  return slotHall.find(m => m.seat === name) || null;
+}
+
+/* コインを入れる。クレジットを50枚まで埋めて、あふれた分は下皿へ。
+   ここを Math.min で切り捨てると払い出しが消えてしまうので必ずこの関数を通すこと */
+function slAddCoin(m, n){
+  const add = Math.max(0, Math.floor(n));
+  if (!add) return;
+  const room = Math.max(0, SL_CREDIT_MAX - m.credit);
+  const toCredit = Math.min(room, add);
+  m.credit += toCredit;
+  m.tray   += add - toCredit;
+}
+
+/* いま使えるコインの合計 */
+function slCoinTotal(m){ return m.credit + m.tray; }
+
+/* BETに使うコインを取り出す。クレジット優先、足りなければ下皿から補う */
+function slTakeCoin(m, n){
+  const want = Math.max(0, Math.floor(n));
+  const use  = Math.min(want, slCoinTotal(m));
+  if (!use) return 0;
+  const fromCredit = Math.min(m.credit, use);
+  m.credit -= fromCredit;
+  m.tray   -= (use - fromCredit);
+  return use;
+}
+
+/* 合成確率。ボーナス0回のときは「---」にしたいので null を返す */
+function slCombinedRate(m){
+  const hit = m.bb + m.rb;
+  if (!hit || !m.totalG) return null;
+  return m.totalG / hit;
+}
+
+/* ロビーに出す台情報。設定だけは絶対に含めないこと */
+function slotLobby(){
+  return {
+    machines: slotHall.map(m => ({
+      no: m.no,
+      seat: m.seat,                    // null なら空席
+      level: m.seat ? m.level : null,
+      iconColor: m.seat ? m.iconColor : null,
+      offline: !!(m.seat && !m.sid),   // 切断中(10分で自動退席)
+      bb: m.bb, rb: m.rb,
+      startG: m.startG, totalG: m.totalG,
+      rate: slCombinedRate(m)
+    })),
+    owner: OWNER_NAME
+  };
+}
+
+function broadcastSlotLobby(io){
+  io.to(SL_ROOM).emit('slot:lobby', slotLobby());
+}
+
+/* 着席している本人にだけ送る台の状態 */
+function slotState(m){
+  return {
+    no: m.no,
+    credit: m.credit,
+    tray: m.tray,
+    coins: slCoinTotal(m),
+    bet: m.bet,
+    replayPending: m.replayPending,
+    phase: m.phase,
+    lampLit: m.lampLit,
+    rareLamp: m.rareLamp,
+    inBonus: m.inBonus,
+    bonusType: m.bonusType,
+    bonusPaid: m.bonusPaid,
+    bb: m.bb, rb: m.rb,
+    startG: m.startG, totalG: m.totalG,
+    rate: slCombinedRate(m),
+    invested: m.invested,
+    bonusLog: m.bonusLog.slice(-50)
+  };
+}
+
+function sendSlotState(io, m){
+  if (m.sid) io.to(m.sid).emit('slot:state', slotState(m));
+}
+
+/* ---------------------------------------------------------
+   0:00 の設定変更。全台リセットして、座っている人は強制退席
+   --------------------------------------------------------- */
+async function resetSlotHall(io){
+  const key = jstDateKey();
+  for (const m of slotHall){
+    /* 座っている人がいれば精算してから降ろす */
+    if (m.seat){
+      try { await cashOutSlot(io, m, 'reset'); }
+      catch (e){ console.error('[slot] 0時精算に失敗:', e.message); }
+    }
+    const fresh = makeSlotMachine(m.no);
+    fresh.dayKey = key;
+    Object.assign(m, fresh);
+  }
+  broadcastSlotLobby(io);
+  console.log('[slot] 設定を振り直しました(' + key + ')');
+}
+
+/* ---------------------------------------------------------
+   精算(退席)
+   reason: 'manual'(精算ボタン) | 'offline'(10分経過) | 'reset'(0:00)
+   --------------------------------------------------------- */
+async function cashOutSlot(io, m, reason){
+  const name = m.seat;
+  if (!name) return null;
+
+  const coins  = slCoinTotal(m);
+  const medal  = coins * SL_COIN_VALUE;
+  const invest = m.invested;
+  const sid    = m.sid;
+
+  /* 先に席を空ける。DBアクセス中に別の人が座れるようにしておく */
+  const keep = { bb: m.bb, rb: m.rb, startG: m.startG, totalG: m.totalG,
+                 setting: m.setting, dayKey: m.dayKey, bonusLog: m.bonusLog };
+  Object.assign(m, makeSlotMachine(m.no), keep);
+
+  let user = null;
+  try {
+    const u = await db.findUser(name);
+    if (u){
+      u.medal = Number(u.medal || 0) + medal;
+      /* ランキングは精算時の収支(戻り - 投入)で1回だけ記録する */
+      recordGain(u, medal - invest, 'slot');
+      await db.saveUser(u);
+      user = publicUser(u);
+    }
+  } catch (e){ console.error('[slot] 精算:', e.message); }
+
+  if (sid){
+    io.to(sid).emit('slot:cashout', {
+      reason, coins, medal, invest, gain: medal - invest, user
+    });
+    const sock = io.sockets.sockets.get(sid);
+    if (sock) sock.leave(SL_ROOM + ':' + m.no);
+  } else if (reason === 'offline'){
+    /* 切断中に流れた場合は、次にログインしたときポップアップで知らせる */
+    pushNotice(name, 'slot',
+      'スロットを自動退席しました',
+      'オフラインになって10分が経過したため、スロットは自動退席しました。' +
+      'コイン ' + coins + '枚 を ' + medal + 'メダルとして精算しています。');
+  }
+
+  broadcastSlotLobby(io);
+  return { coins, medal };
+}
+
+/* テストから内部の状態を確かめるための入り口。
+   SLOT_TEST_HOOKS=1 を付けて起動したときだけ有効になる。
+   本番(Render)では環境変数を設定しないので、外からは一切触れない */
+if (process.env.SLOT_TEST_HOOKS === '1'){
+  global.__slotTestHooks = {
+    hall:  () => slotHall,
+    reset: () => resetSlotHall(io),
+    sweep: () => slotSweep(io)
+  };
+}
+
+/* Renderがスリープして 0:00 のタイマーが飛んだ場合の保険。
+   台の日付キーが今日とずれていたら、その場で振り直す */
+let slotResetting = false;
+function slotDayGuard(){
+  if (slotResetting) return;
+  const key = jstDateKey();
+  if (slotHall.every(m => m.dayKey === key)) return;
+  slotResetting = true;
+  resetSlotHall(io)
+    .catch(e => console.error('[slot] 振り直しに失敗:', e.message))
+    .finally(() => { slotResetting = false; });
+}
+
+/* 切断したまま10分たった人を降ろす見回り */
+function slotSweep(io){
+  const now = Date.now();
+  for (const m of slotHall){
+    if (!m.seat || m.sid) continue;
+    if (!m.offlineAt || now - m.offlineAt < SL_OFFLINE_MS) continue;
+    cashOutSlot(io, m, 'offline').catch(e => console.error('[slot]', e.message));
+  }
+}
+
+/* ---------------------------------------------------------
+   1ゲームの進行
+   --------------------------------------------------------- */
+
+/* BETできる上限。ボーナス中は2枚、通常は3枚 */
+function slBetCap(m){ return m.inBonus ? 2 : 3; }
+
+/* レバーON。ここで当たりが決まる(実機と同じ) */
+function slLeverOn(m){
+  m.cols = [null, null, null];
+  m.pressOrder = [];
+  m.rareLamp = false;
+
+  if (m.inBonus){
+    m.smallFlag = 'GRAPE';       // ボーナス中は毎ゲームブドウ
+    m.dupCherry = false;
+  } else {
+    const sp = SL_SETTINGS[m.setting - 1];
+    let newBonus = false, rareHit = false, dupCherry = false;
+
+    if (!m.bonusFlag){
+      const r = slRandom();
+      if (r < sp.bb){
+        m.bonusFlag = 'BB'; newBonus = true;
+        if (r < slRareCherryProb(m.setting)) rareHit = true;              // 中段チェリー(BB内数)
+        else if (slRandom() < SL_CHERRY_DUP_RATE) dupCherry = true;       // チェリー重複BB
+      } else if (r < sp.bb + sp.rb){
+        m.bonusFlag = 'RB'; newBonus = true;
+        if (slRandom() < SL_CHERRY_DUP_RATE) dupCherry = true;            // チェリー重複RB
+      }
+    }
+
+    /* 小役抽選 */
+    if (rareHit){
+      m.smallFlag = 'RARECHERRY';
+      m.rareLamp = true;
+    } else if (dupCherry){
+      m.smallFlag = 'CHERRY';
+    } else {
+      const r2 = slRandom();
+      let acc = 0;
+      m.smallFlag = null;
+      if      (r2 < (acc += sp.grape))     m.smallFlag = 'GRAPE';
+      else if (r2 < (acc += SL_P_REPLAY))  m.smallFlag = 'REPLAY';
+      else if (r2 < (acc += SL_P_CHERRY))  m.smallFlag = 'CHERRY';
+      else if (r2 < (acc += SL_P_BELL))    m.smallFlag = 'BELL';
+      else if (r2 < (acc += SL_P_CLOWN))   m.smallFlag = 'CLOWN';
+    }
+    m.dupCherry = !!(dupCherry || rareHit);
+
+    /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%) */
+    if (newBonus && !m.lampLit){
+      if (slRandom() < SL_PEKA_FIRST) m.lampLit = true;   // 先ペカ
+      else m.lampPending = true;                          // 後ペカ(第3停止離しで点灯)
+    }
+  }
+
+  m.phase = 'spin';
+  m.totalG++;
+  if (!m.inBonus) m.startG++;
+}
+
+/* 3リール停止後の判定。払い出しとボーナス開始・終了をまとめて行う */
+function slResolveGame(m){
+  const cols = m.cols;
+  const wins = slEvalWins(cols);
+  const bet  = m.bet;
+
+  /* リプレイ */
+  const hasReplay = wins.some(w => w.role === 'REPLAY');
+
+  /* ボーナス図柄が揃ったか */
+  const bbAligned = wins.some(w => w.role === 'BB');
+  const rbAligned = wins.some(w => w.role === 'RB');
+
+  let pay = 0;
+  if (!bbAligned && !rbAligned && !hasReplay){
+    const cUnit = slCherryUnitFor(bet, cols, m.inBonus);
+    pay = slPayoutFor(wins, bet, cUnit);
+  }
+
+  /* 後ペカ: 第3停止を離した時点で点灯する。
+     単チェリー形が出たときは、抽選結果に関わらず必ず点灯させる(実機準拠) */
+  let pekaNow = false;
+  if (!m.inBonus && m.bonusFlag && !m.lampLit){
+    if (m.lampPending) pekaNow = true;
+    else if (slIsSoloCherry(cols, m.pressOrder)) pekaNow = true;
+  }
+  if (pekaNow){ m.lampLit = true; m.lampPending = false; }
+
+  /* ボーナス開始 */
+  let started = null;
+  if (bbAligned || rbAligned){
+    m.inBonus   = true;
+    m.bonusType = bbAligned ? 'BB' : 'RB';
+    m.bonusPaid = 0;
+    m.bonusFlag = null;
+    m.lampLit   = false;
+    m.lampPending = false;
+    if (bbAligned) m.bb++; else m.rb++;
+    m.bonusLog.push({ type: m.bonusType, at: m.startG, g: m.totalG });
+    if (m.bonusLog.length > 200) m.bonusLog.shift();
+    m.startG = 0;                 // スタートG数は当選ではなく消化開始でリセットする
+    started = m.bonusType;
+  }
+
+  /* ボーナス中の払い出しと終了判定 */
+  let ended = null;
+  if (m.inBonus && !started){
+    m.bonusPaid += pay;
+    const limit = m.bonusType === 'BB' ? SL_BB_LIMIT : SL_RB_LIMIT;
+    if (m.bonusPaid > limit){
+      ended = { type: m.bonusType, paid: m.bonusPaid };
+      m.inBonus = false;
+      m.bonusType = null;
+      m.bonusPaid = 0;
+    }
+  }
+
+  /* 払い出し。クレジットが満杯なら下皿に出る(枚数は絶対に減らさない) */
+  if (pay > 0) slAddCoin(m, pay);
+
+  m.replayPending = hasReplay ? bet : 0;
+  m.bet = 0;
+  m.phase = 'idle';
+
+  return { wins, pay, hasReplay, started, ended, peka: pekaNow, rare: m.rareLamp };
+}
+
+/* =========================================================
    5. ルーム管理
    ========================================================= */
 const ROOM_ID_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 紛らわしい文字は除外
@@ -2287,6 +2991,10 @@ function blankUserRow(username, pass_hash){
     mr_total_gain: 0, mr_best_gain: 0, mr_best_gain_at: null,
     mr_day_key: null, mr_day_gain: 0, mr_day_best: 0,
     mr_races: 0, mr_hits: 0, mr_misses: 0,
+    /* スロット(v5.0) */
+    sl_total_gain: 0, sl_best_gain: 0, sl_best_gain_at: null,
+    sl_day_key: null, sl_day_gain: 0, sl_day_best: 0,
+    sl_games: 0, sl_bb: 0, sl_rb: 0,
     /* 同時ログイン制限(v4.2) */
     session_id: null
   };
@@ -2791,6 +3499,8 @@ function scheduleMidnight(){
        何があっても必ず再予約する(v3.2 修正) */
     try {
       await catchUpSettle();
+      /* スロットの設定を振り直す(v5.0)。座っている人は精算して降ろす */
+      await resetSlotHall(io);
       /* 接続中の全員に日付が変わったことを伝える */
       for (const [, sock] of io.of('/').sockets) sock.emit('day:changed', { date: jstDateKey() });
     } catch (e){
@@ -3340,6 +4050,207 @@ io.on('connection', (socket) => {
      マーブルレース(v4.1)
      会場はサーバーに1つだけ。部屋を作らず、入ったらすぐ参加できる。
      ========================================================= */
+  /* =========================================================
+     スロット(v5.0)
+     台は6台の早い者勝ち。1人が同時に座れるのは1台まで。
+     抽選と停止位置の決定はすべてここ(サーバー)で行う。
+     ========================================================= */
+
+  /* ホールを覗く。座らなくても台データは見られる */
+  socket.on('slot:lobby', () => {
+    socket.join(SL_ROOM);
+    socket.emit('slot:lobby', slotLobby());
+    /* 切断前に座っていた台があれば、そのまま戻す(10分以内の復帰) */
+    const mine = slotOf(name);
+    if (mine){
+      mine.sid = socket.id;
+      mine.offlineAt = 0;
+      socket.join(SL_ROOM + ':' + mine.no);
+      socket.emit('slot:resume', slotState(mine));
+      broadcastSlotLobby(io);
+    }
+  });
+
+  socket.on('slot:leaveLobby', () => {
+    socket.leave(SL_ROOM);
+  });
+
+  /* 着席する */
+  socket.on('slot:sit', async (payload) => {
+    /* payload に null を送られると ({no}={}) では例外になるため、必ずここで受け止める */
+    const { no } = (payload || {});
+    const m = slotById(no);
+    if (!m) return socket.emit('room:error', 'その台はありません');
+
+    /* 1人1台まで。別のタブや端末から座り直そうとした場合はここで弾く */
+    const already = slotOf(name);
+    if (already && already.no !== m.no)
+      return socket.emit('room:error', already.no + '番台でプレイ中です');
+    if (already && already.no === m.no){
+      /* 同じ台に座り直した(リロードなど)。接続だけ差し替える */
+      already.sid = socket.id;
+      already.offlineAt = 0;
+      socket.join(SL_ROOM + ':' + m.no);
+      socket.emit('slot:sat', slotState(already));
+      return broadcastSlotLobby(io);
+    }
+    if (m.seat) return socket.emit('room:error', 'その台は使用中です');
+
+    /* ほかのゲームに参加中なら抜けてもらう */
+    if (findAnyRoom(socket.id)) leaveRoom(socket);
+    if (marble.watchers.has(name)){
+      marble.watchers.delete(name);
+      marble.tickets.delete(name);
+      socket.leave(MR_ROOM);
+      broadcastMarble(io);
+    }
+    await refreshSocketUser(socket);
+
+    m.seat      = name;
+    m.sid       = socket.id;
+    m.offlineAt = 0;
+    m.level     = socket.data.level;
+    m.iconColor = socket.data.iconColor || DEFAULT_ICON_COLOR;
+
+    socket.join(SL_ROOM);
+    socket.join(SL_ROOM + ':' + m.no);
+    socket.emit('slot:sat', slotState(m));
+    broadcastSlotLobby(io);
+  });
+
+  /* 貸出。所持メダル1000枚 → コイン50枚 */
+  socket.on('slot:rent', async () => {
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'idle') return socket.emit('room:error', 'いまは貸出できません');
+    /* 借りすぎ防止。手持ちが1000枚(=メダル2万枚)を超えていたら断る */
+    if (slCoinTotal(m) >= 1000)
+      return socket.emit('room:error', 'コインを持ちすぎています。精算してください');
+
+    try {
+      const u = await db.findUser(name);
+      if (!u) return;
+      if (Number(u.medal || 0) < SL_RENT_MEDAL)
+        return socket.emit('room:error', 'メダルが足りません(' + SL_RENT_MEDAL + '枚必要です)');
+
+      u.medal = Number(u.medal) - SL_RENT_MEDAL;
+      await db.saveUser(u);
+
+      slAddCoin(m, SL_RENT_COIN);
+      m.invested += SL_RENT_MEDAL;
+
+      socket.emit('account:update', { user: publicUser(u), levelUp: 0 });
+      sendSlotState(io, m);
+    } catch (e){
+      console.error('[slot] 貸出:', e.message);
+      socket.emit('room:error', '貸出に失敗しました');
+    }
+  });
+
+  /* BET。n を省略するとMAXBET */
+  socket.on('slot:bet', (payload) => {
+    const { n } = (payload || {});
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'idle') return;
+    if (m.replayPending > 0) return;          // リプレイ中はBETできない
+
+    const cap  = slBetCap(m);
+    const want = (n === undefined || n === null) ? cap : Math.floor(Number(n) || 0);
+    if (!Number.isFinite(want) || want < 1) return;
+
+    /* ボーナス中は1枚がけを受け付けない(実機準拠) */
+    if (m.inBonus && want < 2 && n !== undefined) return;
+
+    const add = Math.min(want, cap - m.bet, slCoinTotal(m));
+    if (add <= 0) return;
+    slTakeCoin(m, add);
+    m.bet += add;
+    sendSlotState(io, m);
+  });
+
+  /* レバーON。ここで当たりが決まる */
+  socket.on('slot:lever', () => {
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'idle') return;
+
+    /* リプレイなら自動で同じ枚数が入る */
+    if (m.replayPending > 0){
+      m.bet = m.replayPending;
+      m.replayPending = 0;
+    }
+    if (m.bet < 1) return socket.emit('room:error', 'メダルをBETしてください');
+    if (m.inBonus && m.bet < 2) return socket.emit('room:error', 'MAXBETしてください');
+
+    slLeverOn(m);
+    /* フラグの中身は絶対に返さないこと。返すのは「回り始めた」ことだけ */
+    socket.emit('slot:spin', { bet: m.bet, totalG: m.totalG, startG: m.startG });
+    sendSlotState(io, m);
+    broadcastSlotLobby(io);
+  });
+
+  /* 停止ボタン。押した位置を受け取り、スベリを計算して停止位置を返す */
+  socket.on('slot:stop', (payload) => {
+    const { reel, pos } = (payload || {});
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'spin') return;
+
+    const idx = Math.floor(Number(reel));
+    if (!Number.isInteger(idx) || idx < 0 || idx > 2) return;
+    if (m.cols[idx]) return;                    // 停止済み
+
+    const p = Number(pos);
+    if (!Number.isFinite(p)) return;
+    const cur = slMod(p, SL_KOMA);
+
+    const stopPos = slChooseStopPosition(m, idx, cur);
+    m.cols[idx] = slWindowCol(idx, stopPos);
+    m.pressOrder.push(idx);
+
+    socket.emit('slot:stopped', { reel: idx, pos: stopPos });
+
+    if (m.pressOrder.length < 3) return;
+
+    /* 3つ止まったので結果を出す */
+    const r = slResolveGame(m);
+    socket.emit('slot:result', {
+      wins: r.wins, pay: r.pay, replay: r.hasReplay,
+      started: r.started, ended: r.ended,
+      peka: r.peka, rare: r.rare,
+      lampLit: m.lampLit
+    });
+    sendSlotState(io, m);
+    broadcastSlotLobby(io);
+
+    /* ボーナスを引いたときだけEXPを配る */
+    if (r.started){
+      (async () => {
+        try {
+          const u = await db.findUser(name);
+          if (!u) return;
+          const up = addExp(u, r.started === 'BB' ? SL_EXP_BB : SL_EXP_RB);
+          await db.saveUser(u);
+          io.to(socket.id).emit('account:update', { user: publicUser(u), levelUp: up });
+        } catch (e){ console.error('[slot] EXP:', e.message); }
+      })();
+    }
+  });
+
+  /* 精算して退席する */
+  socket.on('slot:cashout', async () => {
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'idle') return socket.emit('room:error', 'リールが回っています');
+    if (m.bet > 0){
+      /* BETしたぶんは手元に戻してから精算する */
+      slAddCoin(m, m.bet);
+      m.bet = 0;
+    }
+    await cashOutSlot(io, m, 'manual');
+  });
+
   socket.on('marble:join', async () => {
     /* ほかのゲームの部屋にいるなら、そちらから抜けてもらう */
     if (findAnyRoom(socket.id)) leaveRoom(socket);
@@ -3554,6 +4465,16 @@ io.on('connection', (socket) => {
       maybeRushMarble(io);
       broadcastMarble(io);
     }
+    /* スロット(v5.0): ここでは席を空けない。
+       10分以内に戻ってくればそのまま続きから打てるようにするため、
+       切断した時刻だけ記録しておく。実際に降ろすのは slotSweep() の役目 */
+    const sm = slotOf(name);
+    if (sm && sm.sid === socket.id){
+      sm.sid = null;
+      sm.offlineAt = Date.now();
+      broadcastSlotLobby(io);
+    }
+
     /* 切断した瞬間を最終ログインとして残す(次に見たとき「◯分前」が正しくなる) */
     try {
       const u = await db.findUser(name);
@@ -3691,6 +4612,10 @@ db.init()
     /* スリープ中に日付をまたいでいた場合の取りこぼしをここで拾う(v3.2) */
     await catchUpSettle();
     scheduleMidnight();
+    /* スロット(v5.0): 切断したまま10分たった人を降ろす見回りを回す。
+       スリープから復帰したときに日付が変わっていたら設定も振り直す */
+    slotDayGuard();
+    setInterval(() => { slotSweep(io); slotDayGuard(); }, SL_SWEEP_MS);
     server.listen(PORT, () => console.log('[server] v' + APP_VERSION + ' listening on ' + PORT));
   })
   .catch((e) => { console.error('[db] 初期化に失敗:', e); process.exit(1); });

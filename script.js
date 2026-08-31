@@ -417,6 +417,60 @@ const el = {
   /* ---- v4.1 マーブルレース ---- */
   screenMarble: $('screenMarble'),
   mrLeaveBtn: $('mrLeaveBtn'),
+
+  /* スロット(v5.0) */
+  screenSlotHall: $('screenSlotHall'),
+  screenSlot: $('screenSlot'),
+  slotHallBackBtn: $('slotHallBackBtn'),
+  slHall: $('slHall'),
+  slHallCount: $('slHallCount'),
+  slLeaveBtn: $('slLeaveBtn'),
+  slRulesBtn: $('slRulesBtn'),
+  slMachineNo: $('slMachineNo'),
+  slCoinNum: $('slCoinNum'),
+  slDataBB: $('slDataBB'),
+  slDataRB: $('slDataRB'),
+  slDataStart: $('slDataStart'),
+  slDataTotal: $('slDataTotal'),
+  slDataRate: $('slDataRate'),
+  slReelWindow: $('slReelWindow'),
+  slReel0: $('slReel0'),
+  slReel1: $('slReel1'),
+  slReel2: $('slReel2'),
+  slBetLamp1: $('slBetLamp1'),
+  slBetLamp2: $('slBetLamp2'),
+  slBetLamp3: $('slBetLamp3'),
+  slLampStart: $('slLampStart'),
+  slLampReplay: $('slLampReplay'),
+  slLampWait: $('slLampWait'),
+  slLampInsert: $('slLampInsert'),
+  slGogo: $('slGogo'),
+  slGogoOff: $('slGogoOff'),
+  slGogoOn: $('slGogoOn'),
+  slGogoRainbow: $('slGogoRainbow'),
+  slSegCredit: $('slSegCredit'),
+  slSegCount: $('slSegCount'),
+  slSegPayout: $('slSegPayout'),
+  slMsg: $('slMsg'),
+  slRentBtn: $('slRentBtn'),
+  slBet1Btn: $('slBet1Btn'),
+  slMaxBetBtn: $('slMaxBetBtn'),
+  slCashoutBtn: $('slCashoutBtn'),
+  slDataBtn: $('slDataBtn'),
+  slLever: $('slLever'),
+  slStop0: $('slStop0'),
+  slStop1: $('slStop1'),
+  slStop2: $('slStop2'),
+  slotDataOverlay: $('slotDataOverlay'),
+  slotDataCloseBtn: $('slotDataCloseBtn'),
+  slGraphCanvas: $('slGraphCanvas'),
+  slStatBB: $('slStatBB'),
+  slStatRB: $('slStatRB'),
+  slStatRate: $('slStatRate'),
+  slStatAvg: $('slStatAvg'),
+  slStatDiff: $('slStatDiff'),
+  slHistory: $('slHistory'),
+  rulesSlot: $('rulesSlot'),
   mrRulesBtn: $('mrRulesBtn'),
   mrRaceNo: $('mrRaceNo'),
   mrPhaseChip: $('mrPhaseChip'),
@@ -1127,6 +1181,8 @@ function showScreen(name){
   el.screenChampionEnd.hidden = name !== 'championEnd';
   el.screenGame.hidden  = name !== 'game';
   el.screenMarble.hidden = name !== 'marble';          // v4.1
+  el.screenSlotHall.hidden = name !== 'slotHall';      // v5.0
+  el.screenSlot.hidden = name !== 'slot';              // v5.0
 
   el.controls.hidden = (name !== 'game' && name !== 'marble');
   /* v3.2: シングルは専用メダルで完結するので広告は出さない。
@@ -1140,7 +1196,7 @@ function showScreen(name){
     el.adBtn.hidden = true;
     el.roundChip.hidden = true;
   }
-  el.medalReadout.hidden = !(name === 'game' || name === 'marble' || account.user);
+  el.medalReadout.hidden = !(name === 'game' || name === 'marble' || name === 'slot' || account.user);
   el.brandBtn.disabled = name === 'title';
 
   updateRoundChip();
@@ -1215,6 +1271,15 @@ const GAME_INFO = {
     singleDesc: '',
     tutorial: false,
     /* 部屋を作らず、常時開催の会場に入るだけ(v4.1) */
+    hall: true
+  },
+  slot: {
+    name: 'SLOT',
+    jp: 'スロット',
+    desc: '6台のうち好きな台に座って打つ本格的なパチスロです。設定は毎日0:00に変わります。台選びと目押しの腕がものを言います。',
+    singleDesc: '',
+    tutorial: false,
+    /* 部屋を作らず、ホールで台を選ぶ(v5.0) */
     hall: true
   }
 };
@@ -1927,6 +1992,7 @@ function setRulesGame(g){
     b.classList.toggle('is-on', b.dataset.ruleg === next));
   el.rulesBj.hidden = next !== 'bj';
   el.rulesMarble.hidden = next !== 'marble';
+  el.rulesSlot.hidden = next !== 'slot';        // v5.0
 }
 
 /* ルールを開く。指定が無ければ、いま選んでいるゲームを出す */
@@ -3313,6 +3379,8 @@ function syncLobbyForGame(){
 async function enterOnline(){
   /* マーブルレースはロビーを経由せず、直接会場に入る(v4.1) */
   if (view.game === 'marble') return enterMarble();
+  /* スロットは部屋ではなくホール(台選び)へ入る(v5.0) */
+  if (view.game === 'slot') return enterSlotHall();
   if (!account.user){
     toast('オンラインプレイにはログインが必要です');
     openOverlay(el.accountOverlay);
@@ -3451,6 +3519,16 @@ function connectSocket(){
     forceLogout(((d && d.reason) || '別の端末でログインされました') +
                 '。\nこの端末からはログアウトしました。');
   });
+
+  /* スロット(v5.0) */
+  sock.on('slot:lobby',   onSlotLobby);
+  sock.on('slot:sat',     onSlotSat);
+  sock.on('slot:resume',  onSlotResume);
+  sock.on('slot:state',   onSlotState);
+  sock.on('slot:spin',    onSlotSpin);
+  sock.on('slot:stopped', onSlotStopped);
+  sock.on('slot:result',  onSlotResult);
+  sock.on('slot:cashout', onSlotCashout);
 
   /* マーブルレース(v4.1) */
   sock.on('marble:state', onMarbleState);
@@ -4045,6 +4123,582 @@ const chat = { open: false, unread: 0, log: [], floatTimers: [] };
 
 /* いまのチャットがマーブルレースの会場チャットかどうか(v4.5)。
    会場は部屋を持たないので、送信先のイベント名が変わる */
+
+/* =========================================================
+   スロット (v5.0)
+   ---------------------------------------------------------
+   実機のパチスロと同じで、当たりはレバーを叩いた瞬間にサーバーが決める。
+   ここ(クライアント)がやるのは次の3つだけ。
+     ・リールを回して見せる
+     ・停止ボタンを押した「位置」をサーバーに送る
+     ・サーバーが返してきた停止位置までリールを滑らせて止める
+   当選役はクライアントに一切届かないので、ここをいじっても出玉は変わらない。
+   ========================================================= */
+
+const SL_KOMA = 21;
+const SL_SYM_IMG = {
+  1: './slot/Reel/Grape.png',
+  2: './slot/Reel/Cherry.png',
+  3: './slot/Reel/Clown.png',
+  4: './slot/Reel/Bell.png',
+  5: './slot/Reel/Replay.png',
+  6: './slot/Reel/BAR.png',
+  7: './slot/Reel/7.png'
+};
+/* リール配列。サーバーの SL_REEL_DATA と必ず同じにすること。
+   見た目を作るためだけに持っている(抽選には一切使わない) */
+const SL_REEL_DATA = [
+  [4,7,5,1,5,1,6,2,1,5,1,7,3,1,5,1,2,6,1,5,1],
+  [5,7,1,2,5,4,1,2,5,6,1,2,5,4,1,2,5,6,1,2,3],
+  [1,7,6,4,5,1,3,4,5,1,3,4,5,1,3,4,5,1,3,4,5]
+];
+
+const SL_REV_MS      = 780;   // リール1回転にかかる時間(約77rpm)
+const SL_STOP_GATE_MS= 350;   // レバーONから停止ボタンを押せるようになるまで
+const SL_STOP_MIN_MS = 120;   // 停止操作の最小間隔(同時押し対策)
+const SL_COIN_VALUE  = 19;    // 精算レート。サーバーの SL_COIN_VALUE と合わせる
+const SL_RENT_MEDAL  = 1000;  // 貸出に必要な所持メダル
+
+const slot = {
+  joined: false,      // ホールを見ているか
+  seated: false,      // 台に座っているか
+  no: 0,              // 座っている台番号
+  lobby: null,        // ホールの一覧
+  st: null,           // 自分の台の状態(サーバーから来たもの)
+  phase: 'idle',      // idle | spin
+  spinning: [false, false, false],
+  stopped: [false, false, false],
+  pending: [false, false, false],   // 停止要求を出して返事待ち
+  lastStopAt: 0,
+  gateAt: 0,
+  gateTimer: 0,
+  reels: [],
+  raf: 0,
+  payout: 0,
+  /* データ表示モード用。着席してからの記録 */
+  log: [],            // 差枚の推移
+  diff: 0,            // 現在差枚
+  betSum: 0,          // 投入した枚数の合計
+  paySum: 0,          // 払い出された枚数の合計
+  bonusLog: []
+};
+
+/* 1コマぶんの高さ(描画に使う) */
+function slCellMetrics(){
+  const win = el.slReelWindow;
+  const h = win ? win.clientHeight : 186;
+  /* 窓に3コマ + 上下に少し覗く。実機の見え方に寄せてある */
+  const cellH = Math.max(28, Math.round(h / 3.48));
+  const gap   = Math.round(cellH * 0.10);
+  return { cellH, gap, unit: cellH + gap };
+}
+
+/* リールの帯を組み立てる。1周ぶんを3セット並べて、途切れなく回して見せる */
+function slBuildStrip(idx){
+  const { cellH, gap } = slCellMetrics();
+  const reel = el['slReel' + idx];
+  if (!reel) return;
+  const strip = reel.querySelector('.sl-strip');
+  strip.style.setProperty('--sl-cellH', cellH + 'px');
+  strip.style.setProperty('--sl-cellGap', gap + 'px');
+  let html = '';
+  for (let rep = 0; rep < 3; rep++){
+    for (let i = 0; i < SL_KOMA; i++){
+      const sym = SL_REEL_DATA[idx][i];
+      html += '<div class="sl-cell" style="height:' + cellH + 'px;margin-bottom:' + gap + 'px">' +
+              '<img src="' + SL_SYM_IMG[sym] + '" alt="" draggable="false"></div>';
+    }
+  }
+  strip.innerHTML = html;
+}
+
+function slBuildAllStrips(){
+  for (let i = 0; i < 3; i++) slBuildStrip(i);
+  slDrawReels();
+}
+
+/* 位置posのときの帯の縦位置を求めて反映する */
+function slDrawReel(idx){
+  const r = slot.reels[idx];
+  if (!r) return;
+  const reel = el['slReel' + idx];
+  if (!reel) return;
+  const strip = reel.querySelector('.sl-strip');
+  const { unit } = slCellMetrics();
+  /* 真ん中のセットを使う。posが増えるほど帯は上へ動く */
+  const p = ((r.pos % SL_KOMA) + SL_KOMA) % SL_KOMA;
+  const y = -(SL_KOMA + p) * unit;
+  strip.style.transform = 'translateY(' + y + 'px)';
+}
+function slDrawReels(){ for (let i = 0; i < 3; i++) slDrawReel(i); }
+
+/* 毎フレーム、回っているリールを進める */
+function slTick(now){
+  slot.raf = 0;
+  let moving = false;
+  for (let i = 0; i < 3; i++){
+    const r = slot.reels[i];
+    if (!r || !r.spin) continue;
+    moving = true;
+    const dt = now - (r.last || now);
+    r.last = now;
+    r.pos += (dt / SL_REV_MS) * SL_KOMA;
+    if (r.pos >= SL_KOMA) r.pos -= SL_KOMA;
+
+    /* 停止位置が決まっていて、そこを通り過ぎるなら止める */
+    if (r.target != null){
+      const cur = ((r.pos % SL_KOMA) + SL_KOMA) % SL_KOMA;
+      const d = ((r.target - cur) % SL_KOMA + SL_KOMA) % SL_KOMA;
+      if (d < 0.9){
+        r.pos = r.target;
+        r.spin = false;
+        r.target = null;
+        slot.spinning[i] = false;
+        slot.stopped[i] = true;
+        audio.play('chip');
+        slSyncStopButtons();
+      }
+    }
+    slDrawReel(i);
+  }
+  if (moving) slot.raf = requestAnimationFrame(slTick);
+}
+function slStartLoop(){
+  if (!slot.raf) slot.raf = requestAnimationFrame(slTick);
+}
+
+/* ---------- ホール(台選び) ---------- */
+
+async function enterSlotHall(){
+  if (!account.user){
+    toast('スロットで遊ぶにはログインが必要です');
+    openOverlay(el.accountOverlay);
+    return;
+  }
+  slot.joined = true;
+  showScreen('slotHall');
+  el.slHall.innerHTML = '<p class="empty-note">読み込み中…</p>';
+  try {
+    const sock = await ensureSocket();
+    if (!slot.joined) return;
+    sock.emit('slot:lobby');
+  } catch {
+    el.slHall.innerHTML = '<p class="empty-note">接続できませんでした</p>';
+  }
+}
+
+function leaveSlotHall(){
+  slot.joined = false;
+  if (online.socket && online.socket.connected) online.socket.emit('slot:leaveLobby');
+  showScreen('gameSelect');
+}
+
+function renderSlotHall(){
+  const d = slot.lobby;
+  if (!d || !el.slHall) return;
+  const busy = d.machines.filter(m => m.seat).length;
+  el.slHallCount.textContent = d.machines.length + '台中 ' + busy + '台プレイ中';
+
+  el.slHall.innerHTML = d.machines.map(m => {
+    const mine = account.user && m.seat === account.user.username;
+    const badge = !m.seat ? '<span class="sl-badge is-open">空席</span>'
+                : m.offline ? '<span class="sl-badge is-off">離席中</span>'
+                : '<span class="sl-badge is-busy">プレイ中</span>';
+    const who = m.seat
+      ? '<span>' + nameHTML(m.seat) + '</span>'
+      : '<span class="sl-empty">だれでも座れます</span>';
+    const rate = m.rate ? '1/' + m.rate.toFixed(1) : '1/---';
+    const canSit = !m.seat || mine;
+    return '<div class="sl-machine' + (mine ? ' is-mine' : '') + '">' +
+      '<div class="sl-machine-head">' +
+        '<span class="sl-machine-no">' + m.no + '<small>番台</small></span>' + badge +
+      '</div>' +
+      '<div class="sl-machine-user">' + who + '</div>' +
+      '<div class="sl-machine-data">' +
+        '<div class="sl-row"><span class="sl-k">BB</span><span class="sl-v is-bb">' + m.bb + '</span></div>' +
+        '<div class="sl-row"><span class="sl-k">RB</span><span class="sl-v is-rb">' + m.rb + '</span></div>' +
+        '<div class="sl-row"><span class="sl-k">スタート</span><span class="sl-v">' + m.startG + '</span></div>' +
+        '<div class="sl-row"><span class="sl-k">総回転</span><span class="sl-v">' + m.totalG + '</span></div>' +
+        '<div class="sl-row is-wide"><span class="sl-k">合成確率</span><span class="sl-v">' + rate + '</span></div>' +
+      '</div>' +
+      '<button type="button" class="btn' + (canSit ? ' primary' : '') + '" data-sit="' + m.no + '"' +
+        (canSit ? '' : ' disabled') + '>' +
+        (mine ? '台に戻る' : canSit ? '着席する' : '使用中') +
+      '</button>' +
+    '</div>';
+  }).join('');
+}
+
+/* ---------- 台に座る ---------- */
+
+function slSit(no){
+  if (!online.socket || !online.socket.connected) return;
+  online.socket.emit('slot:sit', { no });
+}
+
+/* 着席したときの初期化。台のデータは引き継ぐが、
+   差枚などの「自分の記録」はここから数え直す */
+function slEnterMachine(st){
+  slot.seated = true;
+  slot.no = st.no;
+  slot.st = st;
+  slot.phase = st.phase || 'idle';
+  slot.spinning = [false, false, false];
+  slot.stopped = [true, true, true];
+  slot.pending = [false, false, false];
+  slot.payout = 0;
+  slot.reels = [0, 1, 2].map(i => ({ pos: i * 7, spin: false, target: null, last: 0 }));
+
+  showScreen('slot');
+  slBuildAllStrips();
+  slRenderAll();
+}
+
+/* ---------- 画面の更新 ---------- */
+
+function slRenderAll(){
+  const st = slot.st;
+  if (!st) return;
+
+  el.slMachineNo.textContent = st.no;
+  el.slCoinNum.textContent = (st.coins != null ? st.coins : st.credit);
+
+  el.slDataBB.textContent = st.bb;
+  el.slDataRB.textContent = st.rb;
+  el.slDataStart.textContent = st.startG;
+  el.slDataTotal.textContent = st.totalG;
+  el.slDataRate.textContent = st.rate ? '1/' + st.rate.toFixed(1) : '1/---';
+
+  el.slSegCredit.textContent = st.credit;
+  el.slSegPayout.textContent = slot.payout;
+  el.slSegCount.textContent = st.inBonus
+    ? Math.max(0, (st.bonusType === 'BB' ? 294 : 112) - st.bonusPaid)
+    : '---';
+
+  /* BETランプ */
+  for (let i = 1; i <= 3; i++){
+    el['slBetLamp' + i].classList.toggle('is-on', st.bet >= i);
+  }
+  /* 状態ランプ */
+  el.slLampStart.classList.toggle('is-on', st.phase === 'spin');
+  el.slLampReplay.classList.toggle('is-on', st.replayPending > 0);
+  el.slLampInsert.classList.toggle('is-on', st.phase === 'idle' && st.bet === 0 && st.credit === 0);
+
+  /* GOGO!CHANCE */
+  const lit = !!st.lampLit, rainbow = !!st.rareLamp && lit;
+  el.slGogoOff.hidden = lit;
+  el.slGogoOn.hidden = !lit || rainbow;
+  el.slGogoRainbow.hidden = !rainbow;
+  el.slGogo.classList.toggle('is-lit', lit && !rainbow);
+  el.slGogo.classList.toggle('is-rainbow', rainbow);
+
+  slSyncButtons();
+}
+
+/* ボタンの押せる・押せないを揃える */
+function slSyncButtons(){
+  const st = slot.st;
+  if (!st) return;
+  const idle = slot.phase === 'idle';
+  const coins = (st.coins != null ? st.coins : st.credit);
+  const cap = st.inBonus ? 2 : 3;
+
+  el.slRentBtn.disabled = !idle;
+  el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 || st.bet >= cap || st.inBonus;
+  el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 || (coins < 1 && st.bet === 0) || st.bet >= cap;
+  el.slCashoutBtn.disabled = !idle;
+
+  const canLever = idle && (st.bet >= (st.inBonus ? 2 : 1) || st.replayPending > 0);
+  el.slLever.classList.toggle('is-off', !canLever);
+  slSyncStopButtons();
+}
+
+function slSyncStopButtons(){
+  const spinning = slot.phase === 'spin';
+  /* レバーONから少しの間は停止を受け付けない(実機のウェイト)。
+     この間もボタンが光っていると「押したのに止まらない」と感じるので、
+     ウェイト中は消灯させて押せないようにする */
+  const gated = performance.now() < slot.gateAt;
+  for (let i = 0; i < 3; i++){
+    const btn = el['slStop' + i];
+    if (!btn) continue;
+    const live = spinning && !gated && !slot.stopped[i] && !slot.pending[i];
+    btn.disabled = !live;
+    btn.classList.toggle('is-live', live);
+  }
+  /* WAITランプはウェイト中だけ点ける */
+  if (el.slLampWait) el.slLampWait.classList.toggle('is-on', spinning && gated);
+}
+
+function slMsg(text){ if (el.slMsg) el.slMsg.textContent = text; }
+
+/* ---------- 操作 ---------- */
+
+function slRent(){
+  if (!online.socket) return;
+  online.socket.emit('slot:rent');
+  audio.play('chip');
+}
+function slBet(n){
+  if (!online.socket) return;
+  online.socket.emit('slot:bet', n === undefined ? {} : { n });
+  audio.play('chip');
+}
+function slLever(){
+  const st = slot.st;
+  if (!st || slot.phase !== 'idle') return;
+  if (!(st.bet >= (st.inBonus ? 2 : 1) || st.replayPending > 0)){
+    slMsg('メダルをBETしてください');
+    return;
+  }
+  if (!online.socket) return;
+
+  /* 見た目だけ先に回し始める。結果はサーバーが決めるので、
+     ここで先に回してもズルにはならない(押した位置は実時間で送る) */
+  el.slLever.classList.add('is-pulled');
+  setTimeout(() => el.slLever.classList.remove('is-pulled'), 160);
+  online.socket.emit('slot:lever');
+  audio.play('button');
+}
+
+function slStop(idx){
+  if (slot.phase !== 'spin') return;
+  if (slot.stopped[idx] || slot.pending[idx]) return;
+  const now = performance.now();
+  if (now - slot.lastStopAt < SL_STOP_MIN_MS) return;
+  if (now < slot.gateAt) return;
+  slot.lastStopAt = now;
+  slot.pending[idx] = true;
+  slSyncStopButtons();
+  /* いまリールが何コマ目にいるかを送る。ここからサーバーがスベリを決める */
+  const pos = slot.reels[idx] ? slot.reels[idx].pos : 0;
+  online.socket.emit('slot:stop', { reel: idx, pos });
+}
+
+async function slCashout(){
+  if (slot.phase !== 'idle') return;
+  const st = slot.st;
+  const coins = st ? (st.coins != null ? st.coins : st.credit) + st.bet : 0;
+  const ok = await askConfirm({
+    title: '精算して席を立ちますか?',
+    text: 'コイン ' + coins + '枚 を ' + (coins * SL_COIN_VALUE).toLocaleString() + ' メダルとして受け取ります。',
+    warn: '席を立つと、この台は他の人が座れるようになります。',
+    okText: '精算する'
+  });
+  if (!ok) return;
+  if (online.socket) online.socket.emit('slot:cashout');
+}
+
+/* ---------- サーバーからの受信 ---------- */
+
+function onSlotLobby(d){
+  slot.lobby = d;
+  if (screen === 'slotHall') renderSlotHall();
+}
+
+function onSlotSat(st){
+  slot.log = [];
+  slot.diff = 0;
+  slot.betSum = 0;
+  slot.paySum = 0;
+  slot.bonusLog = st.bonusLog || [];
+  slEnterMachine(st);
+  slMsg('メダルを借りてゲームスタート!');
+  audio.play('join');
+}
+
+/* 切断から戻ってきたとき */
+function onSlotResume(st){
+  slot.bonusLog = st.bonusLog || [];
+  slEnterMachine(st);
+  slMsg('前に打っていた ' + st.no + '番台に戻りました');
+  toast(st.no + '番台に戻りました');
+}
+
+function onSlotState(st){
+  slot.st = st;
+  slot.bonusLog = st.bonusLog || slot.bonusLog;
+  if (screen === 'slot') slRenderAll();
+}
+
+/* レバーON。3つのリールを回し始める */
+function onSlotSpin(d){
+  slot.phase = 'spin';
+  slot.stopped = [false, false, false];
+  slot.pending = [false, false, false];
+  slot.payout = 0;
+  slot.gateAt = performance.now() + SL_STOP_GATE_MS;
+  slot.betSum += (d && d.bet) || 0;
+
+  const now = performance.now();
+  for (let i = 0; i < 3; i++){
+    const r = slot.reels[i];
+    r.spin = true; r.target = null; r.last = now;
+  }
+  slStartLoop();
+  slMsg('');
+  el.slReelWindow.classList.remove('is-win');
+  slSyncStopButtons();
+  /* ウェイトが明けた瞬間にボタンを点ける */
+  clearTimeout(slot.gateTimer);
+  slot.gateTimer = setTimeout(slSyncStopButtons, SL_STOP_GATE_MS + 10);
+}
+
+/* サーバーが決めた停止位置。ここまで滑らせて止める */
+function onSlotStopped(d){
+  const i = d.reel;
+  if (!slot.reels[i]) return;
+  slot.pending[i] = false;
+  slot.reels[i].target = d.pos;
+  slStartLoop();
+}
+
+/* 3つ止まったあとの結果 */
+function onSlotResult(d){
+  slot.phase = 'idle';
+  slot.payout = d.pay || 0;
+  slot.paySum += d.pay || 0;
+  slot.diff = slot.paySum - slot.betSum;
+  slot.log.push(slot.diff);
+  if (slot.log.length > 5000) slot.log.shift();
+
+  if (d.pay > 0){
+    el.slReelWindow.classList.add('is-win');
+    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
+    audio.play('chip');
+  }
+  if (d.peka){
+    audio.play('win');
+    slMsg('GOGO! CHANCE 点灯!');
+  } else if (d.started){
+    audio.play('win');
+    slMsg(d.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
+    slot.bonusLog.push({ type: d.started, at: 0, g: slot.st ? slot.st.totalG : 0 });
+  } else if (d.ended){
+    slMsg(d.ended.type + ' 終了  ' + d.ended.paid + '枚獲得');
+  } else if (d.replay){
+    slMsg('リプレイ');
+  } else if (d.pay > 0){
+    slMsg(d.pay + '枚 払い出し');
+  } else {
+    slMsg('');
+  }
+  slSyncStopButtons();
+}
+
+/* 精算した(自分で押した場合も、0時や自動退席の場合もここに来る) */
+function onSlotCashout(d){
+  slot.seated = false;
+  slot.phase = 'idle';
+  for (const r of slot.reels) { r.spin = false; r.target = null; }
+  if (slot.raf){ cancelAnimationFrame(slot.raf); slot.raf = 0; }
+
+  const gain = d.gain || 0;
+  const sign = gain >= 0 ? '+' : '';
+  if (d.reason === 'reset'){
+    toast('0時になったため精算しました(' + sign + gain.toLocaleString() + 'メダル)');
+  } else if (d.reason === 'offline'){
+    toast('自動退席しました(' + sign + gain.toLocaleString() + 'メダル)');
+  } else {
+    toast('精算しました  コイン' + d.coins + '枚 → ' +
+          d.medal.toLocaleString() + 'メダル(' + sign + gain.toLocaleString() + ')');
+  }
+  if (d.user) setAccount(d.user);
+
+  /* ホールに戻す */
+  if (screen === 'slot'){
+    slot.joined = true;
+    showScreen('slotHall');
+    if (online.socket && online.socket.connected) online.socket.emit('slot:lobby');
+  }
+}
+
+/* ---------- データ表示モード ---------- */
+
+function openSlotData(){
+  slRenderData();
+  openOverlay(el.slotDataOverlay);
+}
+
+function slRenderData(){
+  const st = slot.st;
+  const g = st ? st.totalG : 0;
+  const bb = st ? st.bb : 0;
+  const rb = st ? st.rb : 0;
+
+  el.slStatBB.textContent = bb ? '1/' + (g / bb).toFixed(1) : '1/---';
+  el.slStatRB.textContent = rb ? '1/' + (g / rb).toFixed(1) : '1/---';
+  el.slStatRate.textContent = slot.betSum
+    ? (slot.paySum / slot.betSum * 100).toFixed(1) + '%' : '---%';
+  el.slStatAvg.textContent = (bb + rb) ? Math.round(g / (bb + rb)) : '---';
+  const d = slot.diff;
+  el.slStatDiff.textContent = (d >= 0 ? '+' : '') + d;
+
+  slDrawGraph();
+  slRenderHistory();
+}
+
+/* 差枚グラフ */
+function slDrawGraph(){
+  const cv = el.slGraphCanvas;
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+
+  /* 目盛り */
+  const data = slot.log;
+  let max = 500, min = -500;
+  for (const v of data){ if (v > max) max = v; if (v < min) min = v; }
+  const pad = 28;
+  const y0 = (v) => pad + (max - v) / (max - min) * (H - pad * 2);
+
+  ctx.strokeStyle = 'rgba(255,255,255,.12)';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, y0(0)); ctx.lineTo(W - pad, y0(0)); ctx.stroke();
+
+  ctx.fillStyle = 'rgba(243,238,226,.55)';
+  ctx.font = '11px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('+' + max, 4, y0(max) + 10);
+  ctx.fillText(String(min), 4, y0(min) - 2);
+  ctx.fillText('0', 4, y0(0) - 3);
+
+  if (data.length < 2){
+    ctx.fillStyle = 'rgba(243,238,226,.4)';
+    ctx.textAlign = 'center';
+    ctx.fillText('まだデータがありません', W / 2, H / 2);
+    return;
+  }
+
+  ctx.strokeStyle = '#35FF6E';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  data.forEach((v, i) => {
+    const x = pad + i / (data.length - 1) * (W - pad * 2);
+    const y = y0(v);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+}
+
+function slRenderHistory(){
+  const list = slot.bonusLog || [];
+  if (!list.length){
+    el.slHistory.innerHTML = '<p class="empty-note">まだボーナスがありません</p>';
+    return;
+  }
+  el.slHistory.innerHTML = list.slice().reverse().map((b, i) => {
+    const no = list.length - i;
+    const cls = b.type === 'BB' ? 'is-bb' : 'is-rb';
+    return '<div class="sl-hist-row">' +
+      '<span class="sl-hist-no">' + no + '</span>' +
+      '<span class="sl-hist-type ' + cls + '">' + b.type + '</span>' +
+      '<span class="sl-hist-g">' + b.at + 'G</span>' +
+    '</div>';
+  }).join('');
+}
+
 function chatIsMarble(){ return screen === 'marble' && marble.joined; }
 
 function chatAvailable(){
@@ -6073,6 +6727,62 @@ el.rankGameTabs.addEventListener('click', (e) => {
   setRankGame(b.dataset.rgame);
 });
 /* ルールのゲーム切り替え(v4.0) */
+
+/* ---------- スロットの操作を配線する (v5.0) ---------- */
+
+el.slotHallBackBtn.addEventListener('click', () => { audio.play('button'); leaveSlotHall(); });
+
+/* ホールの「着席する」ボタン */
+el.slHall.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-sit]');
+  if (!btn || btn.disabled) return;
+  audio.play('button');
+  slSit(Number(btn.dataset.sit));
+});
+
+el.slLeaveBtn.addEventListener('click', () => { audio.play('button'); slCashout(); });
+el.slRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('slot'); });
+
+el.slRentBtn.addEventListener('click', () => slRent());
+el.slBet1Btn.addEventListener('click', () => slBet(1));
+el.slMaxBetBtn.addEventListener('click', () => slBet());
+el.slCashoutBtn.addEventListener('click', () => { audio.play('button'); slCashout(); });
+el.slDataBtn.addEventListener('click', () => { audio.play('button'); openSlotData(); });
+el.slotDataCloseBtn.addEventListener('click', () => closeOverlay(el.slotDataOverlay));
+
+/* レバー。押した瞬間に反応させたいので pointerdown で拾う */
+el.slLever.addEventListener('pointerdown', (e) => { e.preventDefault(); slLever(); });
+
+/* 停止ボタン。指を離すのを待たず、触れた瞬間に止める(実機と同じ感覚にする) */
+for (let i = 0; i < 3; i++){
+  const btn = el['slStop' + i];
+  if (!btn) continue;
+  btn.addEventListener('pointerdown', (e) => { e.preventDefault(); slStop(i); });
+}
+
+/* キーボード操作(PC向け) */
+document.addEventListener('keydown', (e) => {
+  if (screen !== 'slot') return;
+  if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  /* オーバーレイが開いているときは触らせない */
+  if (!el.slotDataOverlay.hidden || !el.rulesOverlay.hidden || !el.confirmOverlay.hidden) return;
+
+  switch (e.key){
+    case ' ': case 'Spacebar': e.preventDefault(); slLever(); break;
+    case 'ArrowLeft':  e.preventDefault(); slStop(0); break;
+    case 'ArrowDown':  e.preventDefault(); slStop(1); break;
+    case 'ArrowRight': e.preventDefault(); slStop(2); break;
+    case 'ArrowUp':    e.preventDefault(); slBet();   break;
+    case '1':          e.preventDefault(); slBet(1);  break;
+    case 'Insert':     e.preventDefault(); slRent();  break;
+  }
+});
+
+/* 画面の幅が変わったらリールを組み直す(コマの高さが変わるため) */
+window.addEventListener('resize', () => {
+  if (screen === 'slot') slBuildAllStrips();
+});
+
 el.rulesGameTabs.addEventListener('click', (e) => {
   const b = e.target.closest('.seg-btn');
   if (!b) return;

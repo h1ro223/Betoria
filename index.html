@@ -172,6 +172,20 @@
         </span>
       </button>
 
+      <button type="button" class="game-card" data-game="slot">
+        <span class="game-card-art is-slot"><span class="game-card-mark">7</span></span>
+        <span class="game-card-body">
+          <span class="game-card-name">SLOT</span>
+          <span class="game-card-jp">スロット</span>
+          <span class="game-card-desc">6台のうち好きな台に座って打つ、本格的なパチスロです。設定は毎日0:00に変わります。目押しの腕と台選びがものを言います。</span>
+          <span class="game-card-tags">
+            <span class="game-tag is-new">NEW</span>
+            <span class="game-tag">6台・先着順</span>
+            <span class="game-tag">1人でOK</span>
+          </span>
+        </span>
+      </button>
+
    </div>
   </section>
 
@@ -556,6 +570,116 @@
       </div>
     </div>
 
+  </section>
+
+  <!-- ---------- スロット: ホール(台選び) (v5.0) ---------- -->
+  <section class="screen" id="screenSlotHall" hidden>
+    <div class="setup-head">
+      <button type="button" class="back-btn" id="slotHallBackBtn">◀ もどる</button>
+      <h2>スロット</h2>
+    </div>
+
+    <p class="screen-note">
+      好きな台を選んで座ってください。台は全員で共有していて、先に座った人が優先です。
+      <strong>設定は台ごとに毎日0:00で変わります。</strong>どの台がどの設定かは公開していません。
+    </p>
+
+    <div class="sl-hall-bar">
+      <span class="sl-hall-count" id="slHallCount">-</span>
+      <span class="sl-hall-note">設定は毎日0:00に変更</span>
+    </div>
+
+    <div class="sl-hall" id="slHall"></div>
+  </section>
+
+  <!-- ---------- スロット: 実機画面 (v5.0) ---------- -->
+  <section class="screen" id="screenSlot" hidden>
+
+    <div class="sl-top">
+      <button type="button" class="back-btn is-exit" id="slLeaveBtn" title="精算してやめる" aria-label="精算してやめる">🚪</button>
+      <div class="sl-top-chips">
+        <div class="sl-chip"><span class="sl-chip-key">台</span><span class="sl-chip-val led" id="slMachineNo">1</span></div>
+        <div class="sl-chip"><span class="sl-chip-key">コイン</span><span class="sl-chip-val led" id="slCoinNum">0</span></div>
+      </div>
+      <button type="button" class="icon-btn" id="slRulesBtn" title="ルール">📖</button>
+    </div>
+
+    <!-- 台データ表示器(実機の上部データランプ相当) -->
+    <div class="sl-data">
+      <div class="sl-data-cell"><span class="sl-data-key is-bb">BB</span><span class="sl-data-val led" id="slDataBB">0</span></div>
+      <div class="sl-data-cell"><span class="sl-data-key is-rb">RB</span><span class="sl-data-val led" id="slDataRB">0</span></div>
+      <div class="sl-data-cell"><span class="sl-data-key">スタート</span><span class="sl-data-val led" id="slDataStart">0</span></div>
+      <div class="sl-data-cell is-wide"><span class="sl-data-key">総回転数</span><span class="sl-data-val led" id="slDataTotal">0</span></div>
+      <div class="sl-data-cell is-wide"><span class="sl-data-key">合成確率</span><span class="sl-data-val led" id="slDataRate">1/---</span></div>
+    </div>
+
+    <!-- 筐体 -->
+    <div class="sl-cabinet">
+
+      <div class="sl-panel-top">
+        <span class="sl-panel-sub">LET'S PLAY EXCITING GAME</span>
+        <span class="sl-panel-main">BIG CHANCE!</span>
+        <span class="sl-panel-777">7 7 7</span>
+      </div>
+
+      <div class="sl-reel-frame">
+        <div class="sl-bet-lamps">
+          <span class="sl-bet-lamp" id="slBetLamp3">3</span>
+          <span class="sl-bet-lamp" id="slBetLamp2">2</span>
+          <span class="sl-bet-lamp" id="slBetLamp1">1</span>
+        </div>
+        <div class="sl-reel-window" id="slReelWindow">
+          <div class="sl-reel" id="slReel0"><div class="sl-strip"></div><div class="sl-shade"></div></div>
+          <div class="sl-reel" id="slReel1"><div class="sl-strip"></div><div class="sl-shade"></div></div>
+          <div class="sl-reel" id="slReel2"><div class="sl-strip"></div><div class="sl-shade"></div></div>
+        </div>
+        <div class="sl-state-lamps">
+          <span class="sl-state-lamp" id="slLampStart">Start</span>
+          <span class="sl-state-lamp" id="slLampReplay">Replay</span>
+          <span class="sl-state-lamp" id="slLampWait">Wait</span>
+          <span class="sl-state-lamp" id="slLampInsert">Insert<br>Medals</span>
+        </div>
+      </div>
+
+      <div class="sl-under">
+        <div class="sl-gogo" id="slGogo">
+          <img id="slGogoOff" src="./slot/GOGO/GOGOCHANCE_0.png" alt="GOGO!CHANCE" draggable="false">
+          <img id="slGogoOn"  src="./slot/GOGO/GOGOCHANCE_1.png" alt="" draggable="false" hidden>
+          <img id="slGogoRainbow" src="./slot/GOGO/GOGOCHANCE_2.png" alt="" draggable="false" hidden>
+        </div>
+        <div class="sl-seg">
+          <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCredit">0</span><span class="sl-seg-label">CREDIT</span></div>
+          <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCount">---</span><span class="sl-seg-label">COUNT</span></div>
+          <div class="sl-seg-box"><span class="sl-seg-value" id="slSegPayout">0</span><span class="sl-seg-label">PAY OUT</span></div>
+        </div>
+      </div>
+
+      <div class="sl-msg" id="slMsg">メダルを借りてゲームスタート!</div>
+    </div>
+
+    <!-- 操作パネル -->
+    <div class="sl-controls">
+      <div class="sl-ctrl-row is-top">
+        <button type="button" class="sl-sub-btn" id="slRentBtn">貸出<small>1000メダル</small></button>
+        <button type="button" class="sl-sub-btn" id="slBet1Btn">1BET</button>
+        <button type="button" class="sl-sub-btn is-max" id="slMaxBetBtn">MAX<br>BET</button>
+        <button type="button" class="sl-sub-btn" id="slCashoutBtn">精算</button>
+        <button type="button" class="sl-sub-btn is-gear" id="slDataBtn">📊</button>
+      </div>
+      <div class="sl-ctrl-row is-main">
+        <div class="sl-lever" id="slLever">
+          <div class="sl-lever-stick"></div>
+          <div class="sl-lever-ball"></div>
+          <span class="sl-lever-label">LEVER</span>
+        </div>
+        <div class="sl-stop-btns">
+          <button type="button" class="sl-stop-btn" id="slStop0" data-reel="0"><span></span></button>
+          <button type="button" class="sl-stop-btn" id="slStop1" data-reel="1"><span></span></button>
+          <button type="button" class="sl-stop-btn" id="slStop2" data-reel="2"><span></span></button>
+        </div>
+      </div>
+      <div class="sl-key-guide">PC: [Space]レバー / [←][↓][→]ストップ / [↑]MAXBET / [1]1BET / [Insert]貸出</div>
+    </div>
   </section>
 
 </main>
@@ -1010,9 +1134,10 @@
       <button type="button" class="close-btn" id="rulesCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
-      <div class="seg seg-2" id="rulesGameTabs">
+      <div class="seg seg-3" id="rulesGameTabs">
         <button type="button" class="seg-btn is-on" data-ruleg="bj">♠ ブラックジャック</button>
         <button type="button" class="seg-btn" data-ruleg="marble">◉ マーブルレース</button>
+        <button type="button" class="seg-btn" data-ruleg="slot">7 スロット</button>
       </div>
       <p class="sheet-note">見たいゲームを選んでください。アカウント・メダル・フレンドはすべてのゲームで共通です。</p>
 
@@ -1059,6 +1184,46 @@
           <ul class="rule-list">
             <li>マーブルレースのランキングは<b>ほかのゲームとは別</b>に集計されます。</li>
             <li>1レースの払い戻し合計から投票額を引いた分が記録されます。</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="rules-group" id="rulesSlot" hidden>
+        <div class="sheet-section">
+          <h3>スロットの基本</h3>
+          <ul class="rule-list">
+            <li>ホールに<b>6台</b>並んでいます。好きな空き台に座って打ってください。<b>先に座った人が優先</b>で、同時に座れるのは1人1台までです。</li>
+            <li>実機のパチスロと同じで、<b>レバーを叩いた瞬間に当たりが決まります</b>。そのあとリールをどう止めるかは、揃えられるかどうかだけの話です。</li>
+            <li>抽選も停止も<b>すべてサーバー側で処理しています</b>。画面をいじっても結果は変わりません。</li>
+            <li>台の<b>設定(1〜6)は毎日0:00に変わります</b>。どの台がどの設定かは公開していません。</li>
+            <li>0:00になると<b>全員がいったん降ろされて自動精算</b>され、台のデータもリセットされます。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>コインとメダル</h3>
+          <ul class="rule-list">
+            <li><b>貸出</b>を押すと、所持メダル<b>1000枚</b>がスロット用のコイン<b>50枚</b>になります。</li>
+            <li>コインが尽きても、席に座ったままなら<b>メダルがある限り何度でも借りられます</b>。</li>
+            <li><b>精算</b>を押すと席を立ち、手元のコインが<b>1枚あたり19メダル</b>で所持メダルに戻ります。</li>
+            <li>借りるときは20メダル、戻すときは19メダルです。実際のホールと同じで<b>差があります</b>。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>遊び方</h3>
+          <ul class="rule-list">
+            <li><b>MAXBET</b>(3枚)を押してから<b>レバー</b>を叩き、<b>3つの停止ボタン</b>で左から順に止めます。</li>
+            <li>ブドウやリプレイは自動で引き込まれますが、<b>チェリーとボーナスは目押しが必要</b>です。</li>
+            <li><b>GOGO!CHANCEが光ったらボーナス確定</b>です。光っている間に7を狙って揃えてください。光っていないと揃いません。</li>
+            <li>ボーナスは<b>BB(ビッグ)</b>と<b>RB(レギュラー)</b>の2種類です。BBのほうが大きく増えます。</li>
+            <li>ランプは<b>レバーを叩いた瞬間</b>に光ることもあれば、<b>3つ目を止めて手を離した瞬間</b>に光ることもあります。</li>
+          </ul>
+        </div>
+        <div class="sheet-section">
+          <h3>台の選び方</h3>
+          <ul class="rule-list">
+            <li>座る前でも、各台の<b>BB回数・RB回数・スタートG数・総回転数・合成確率</b>が見られます。</li>
+            <li>合成確率が良い台ほど設定が高い可能性がありますが、<b>短い回転数では当てになりません</b>。</li>
+            <li>設定が高いほど有利ですが、<b>低い設定を引けば普通に負けます</b>。無理のない範囲で遊んでください。</li>
           </ul>
         </div>
       </div>
@@ -1194,6 +1359,36 @@
     </div>
   </div>
 </div>
+<!-- ---------- スロット: データ表示モード (v5.0) ---------- -->
+<div class="overlay" id="slotDataOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="データ表示">
+    <div class="sheet-head">
+      <h2>データ表示</h2>
+      <button type="button" class="close-btn" id="slotDataCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+
+      <h3 class="block-title">差枚推移</h3>
+      <div class="sl-graph" id="slGraph">
+        <canvas id="slGraphCanvas" width="640" height="260"></canvas>
+      </div>
+
+      <h3 class="block-title">実戦データ</h3>
+      <div class="sl-stats">
+        <div class="sl-stat"><span class="sl-stat-key">BB確率(実測)</span><span class="sl-stat-val led" id="slStatBB">1/---</span></div>
+        <div class="sl-stat"><span class="sl-stat-key">RB確率(実測)</span><span class="sl-stat-val led" id="slStatRB">1/---</span></div>
+        <div class="sl-stat"><span class="sl-stat-key">出玉率</span><span class="sl-stat-val led" id="slStatRate">---%</span></div>
+        <div class="sl-stat"><span class="sl-stat-key">ボーナス平均G</span><span class="sl-stat-val led" id="slStatAvg">---</span></div>
+        <div class="sl-stat"><span class="sl-stat-key">現在差枚</span><span class="sl-stat-val led" id="slStatDiff">+0</span></div>
+      </div>
+
+      <h3 class="block-title">ボーナス履歴</h3>
+      <div class="sl-history" id="slHistory"></div>
+
+    </div>
+  </div>
+</div>
+
 <div class="overlay" id="settingsOverlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="設定">
     <div class="sheet-head">
