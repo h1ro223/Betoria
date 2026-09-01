@@ -427,12 +427,20 @@ const el = {
   slLeaveBtn: $('slLeaveBtn'),
   slRulesBtn: $('slRulesBtn'),
   slMachineNo: $('slMachineNo'),
-  slCoinNum: $('slCoinNum'),
   slDataBB: $('slDataBB'),
   slDataRB: $('slDataRB'),
   slDataStart: $('slDataStart'),
   slDataTotal: $('slDataTotal'),
   slDataRate: $('slDataRate'),
+  slSettingsBtn: $('slSettingsBtn'),
+  slConnChip: $('slConnChip'),
+  slConnDot: $('slConnDot'),
+  slConnText: $('slConnText'),
+  slotSettingsOverlay: $('slotSettingsOverlay'),
+  slotSettingsCloseBtn: $('slotSettingsCloseBtn'),
+  slOptMsgBar: $('slOptMsgBar'),
+  slOptOneBet: $('slOptOneBet'),
+  slOptEasyLever: $('slOptEasyLever'),
   slBonusGraph: $('slBonusGraph'),
   slWCoin: $('slWCoin'),
   slWInvest: $('slWInvest'),
@@ -1305,14 +1313,15 @@ function openGameMenu(g){
   /* チュートリアルがあるのはブラックジャックだけ */
   el.gmTutorialBtn.hidden = !info.tutorial;
 
-  /* マーブルレースは部屋を作らないので、
-     シングルを隠してオンラインのボタンを「レース会場へ」にする(v4.1) */
+  /* マーブルレースとスロットは部屋を作らないので、
+     シングルを隠してオンラインのボタンの文言を変える(v4.1 / v5.0) */
   const hall = !!info.hall;
   el.gmSingleBtn.hidden = hall;
   el.gmOnlineBtn.querySelector('.title-btn-name').textContent =
-    hall ? 'レース会場へ' : 'オンラインプレイ';
+    !hall ? 'オンラインプレイ' : (g === 'slot' ? '台を選ぶ' : 'レース会場へ');
   el.gmOnlineBtn.querySelector('.title-btn-desc').textContent =
-    hall ? '常時開催。1人でもすぐ遊べます' : '部屋を作って友達と対戦';
+    !hall ? '部屋を作って友達と対戦'
+          : (g === 'slot' ? '6台から好きな台を選んで打つ' : '常時開催。1人でもすぐ遊べます');
   el.gmOnlineBtn.querySelector('.title-btn-icon').textContent = hall ? '🏁' : '🌐';
 
   showScreen('gameMenu');
@@ -3530,10 +3539,10 @@ function connectSocket(){
   sock.on('slot:sat',     onSlotSat);
   sock.on('slot:resume',  onSlotResume);
   sock.on('slot:state',   onSlotState);
-  sock.on('slot:spin',    onSlotSpin);
-  sock.on('slot:stopped', onSlotStopped);
-  sock.on('slot:result',  onSlotResult);
   sock.on('slot:cashout', onSlotCashout);
+  /* 接続の状態を上部に出す(v5.1) */
+  sock.on('connect',    () => slSetConn('on'));
+  sock.on('disconnect', () => slSetConn('off'));
 
   /* マーブルレース(v4.1) */
   sock.on('marble:state', onMarbleState);
@@ -4158,11 +4167,433 @@ const SL_REEL_DATA = [
   [1,7,6,4,5,1,3,4,5,1,3,4,5,1,3,4,5,1,3,4,5]
 ];
 
+
+/* =========================================================
+   スロットの中身 (v5.1)
+   ---------------------------------------------------------
+   v5.0 まではサーバーが当たりを決めていたが、
+   停止ボタンを押してから止まるまでの間が大きかったため、
+   v5.1 でジャグラーシミュレーターと同じ「ブラウザ側で決める」作りに戻した。
+   押した瞬間に計算して、そのまま止める。
+
+   ※ このため、開発者ツールを開けば当たりや設定を覗ける状態になっている。
+      友達うちで遊ぶ前提での割り切り。広く公開するなら作りを戻すこと。
+   ========================================================= */
+const SL_SYM = { GRAPE: 1, CHERRY: 2, CLOWN: 3, BELL: 4, REPLAY: 5, BAR: 6, SEVEN: 7 };
+
+/* 有効5ライン: 各リールの行(0=上, 1=中, 2=下)。server.js と同じにすること */
+const SL_LINES = [
+  [0,0,0], [1,1,1], [2,2,2], [0,1,2], [2,1,0]
+];
+
+/* 設定別確率(index0 = 設定1)。6号機アイムジャグラーEX準拠 */
+const SL_SETTINGS = [
+  { bb: 1/273.1, rb: 1/439.8, grape: 1/6.02 },
+  { bb: 1/269.7, rb: 1/399.6, grape: 1/6.02 },
+  { bb: 1/269.7, rb: 1/331.0, grape: 1/6.02 },
+  { bb: 1/259.0, rb: 1/315.1, grape: 1/6.02 },
+  { bb: 1/259.0, rb: 1/255.0, grape: 1/6.02 },
+  { bb: 1/255.0, rb: 1/255.0, grape: 1/5.85 }
+];
+const SL_P_REPLAY = 1/7.298;
+const SL_P_CHERRY = 1/38.1;
+const SL_P_BELL   = 1/1092.3;
+const SL_P_CLOWN  = 1/1092.3;
+/* 中段チェリー(BB確定・BB確率の内数) */
+const slRareCherryProb = s => (s <= 3 ? 1/2184.53 : 1/1820.44);
+const SL_CHERRY_DUP_RATE = 0.25;  // ボーナス当選時にチェリーが重複する割合(概算)
+
+/* 停止目標図柄(null=不問)。BB=7/7/7、RB=7/7/BAR */
+const SL_TARGETS = {
+  GRAPE:      [1, 1, 1],
+  BELL:       [4, 4, 4],
+  CLOWN:      [3, 3, 3],
+  REPLAY:     [5, 5, 5],
+  CHERRY:     [2, null, null],
+  RARECHERRY: [2, null, null],
+  BB:         [7, 7, 7],
+  RB:         [7, 7, 6]
+};
+
+/* 設定の振り分けはサーバー側(server.js の slPickSetting)が受け持つ。
+   台に座ったときに 1〜6 の数字だけ受け取る */
+
+/* 台の決まりごと。server.js 側と必ず同じ数字にすること */
+const SL_MAX_SLIP   = 4;      // 最大4コマ引き込み
+const SL_PEKA_FIRST = 0.15;   // 先ペカ(レバーON時点灯)の割合。残り85%は後ペカ
+const SL_BB_LIMIT   = 280;    // BB: 280枚を超える払い出しで終了
+const SL_RB_LIMIT   = 98;     // RB: 98枚を超える払い出しで終了
+const SL_PAY_CAP    = 15;     // 1ゲームの払い出し上限
+const SL_CREDIT_MAX = 50;     // クレジット上限
+
+
+/* 0以上1未満の乱数 */
+function slRandom(){ return Math.random(); }
+
+const slMod  = (n, m) => ((n % m) + m) % m;
+const slModK = n => slMod(n, SL_KOMA);
+
+/* 指定位置に停めたときに窓に見える3コマ */
+function slWindowCol(reelIdx, pos){
+  const d = SL_REEL_DATA[reelIdx];
+  return [d[slModK(pos)], d[slModK(pos + 1)], d[slModK(pos + 2)]];
+}
+
+/* 窓の全ラインを評価して成立役を返す */
+function slEvalWins(cols){
+  const wins = [];
+  SL_LINES.forEach((rows, i) => {
+    const s = [cols[0][rows[0]], cols[1][rows[1]], cols[2][rows[2]]];
+    if (s[0] === SL_SYM.CHERRY) wins.push({ role: 'CHERRY', line: i });
+    if (s[0] === s[1] && s[1] === s[2]){
+      if      (s[0] === SL_SYM.GRAPE)  wins.push({ role: 'GRAPE',  line: i });
+      else if (s[0] === SL_SYM.BELL)   wins.push({ role: 'BELL',   line: i });
+      else if (s[0] === SL_SYM.CLOWN)  wins.push({ role: 'CLOWN',  line: i });
+      else if (s[0] === SL_SYM.REPLAY) wins.push({ role: 'REPLAY', line: i });
+      else if (s[0] === SL_SYM.SEVEN)  wins.push({ role: 'BB',     line: i });
+    }
+    if (s[0] === SL_SYM.SEVEN && s[1] === SL_SYM.SEVEN && s[2] === SL_SYM.BAR)
+      wins.push({ role: 'RB', line: i });
+  });
+  return wins;
+}
+
+/* 払い出し枚数。ブドウは複数ライン成立でも1回分だけ(実機準拠)
+   ブドウ 3BET=8枚 / 2BET=14枚 / 1BET=8枚 */
+function slPayoutFor(wins, bet, cherryUnit){
+  let total = 0, grapePaid = false;
+  const cUnit = (cherryUnit === undefined) ? (bet === 3 ? 1 : 7) : cherryUnit;
+  for (const w of wins){
+    switch (w.role){
+      case 'GRAPE':
+        if (!grapePaid){ total += (bet === 2 ? 14 : 8); grapePaid = true; }
+        break;
+      case 'BELL':  total += 14;    break;
+      case 'CLOWN': total += 10;    break;
+      case 'CHERRY':total += cUnit; break;
+    }
+  }
+  return Math.min(total, SL_PAY_CAP);
+}
+
+/* チェリー1ラインあたりの払い出し枚数 */
+function slCherryUnitFor(bet, cols, inBonus){
+  if (bet === 3) return 1;
+  /* 非ボーナス時の1BET連チェリーは1枚×2ライン=2枚。2BETは7枚×2ライン=14枚 */
+  if (bet === 1 && !inBonus && slCenterCherryLinked(cols[0], cols[1])) return 1;
+  return 7;
+}
+
+/* ---- 単チェリー判定 ----
+   実機の「単チェリー」= 順押しで左にチェリーが露出しているのに、
+   中リールの真横・斜めにチェリーが繋がっていない停止形。
+   この形が出た時点でボーナス成立が確定する。 */
+function slCherryRows(col){
+  const rows = [];
+  if (!col) return rows;
+  for (let r = 0; r < 3; r++) if (col[r] === SL_SYM.CHERRY) rows.push(r);
+  return rows;
+}
+function slCenterCherryLinked(col0, col1){
+  if (!col0 || !col1) return false;
+  const c0 = slCherryRows(col0), c1 = slCherryRows(col1);
+  return c0.some(r => c1.some(r2 => Math.abs(r2 - r) <= 1));
+}
+function slIsSoloCherry(cols, order){
+  if (!cols || !cols[0] || !cols[1]) return false;
+  if (!order || order.length !== 3) return false;
+  if (!(order[0] === 0 && order[1] === 1 && order[2] === 2)) return false; // 順押し限定
+  if (!cols[0].includes(SL_SYM.CHERRY)) return false;
+  return !slCenterCherryLinked(cols[0], cols[1]);
+}
+
+/* ---- 停止制御(最大4コマ引き込み + 蹴飛ばし) ---- */
+
+/* 図柄symを行rowに置ける停止位置の一覧 */
+function slAlignSet(reelIdx, sym, row, avoidCherry){
+  const set = [];
+  for (let t = 0; t < SL_KOMA; t++){
+    if (SL_REEL_DATA[reelIdx][t] !== sym) continue;
+    const p = slModK(t - row);
+    if (avoidCherry && reelIdx === 0 && slWindowCol(0, p).includes(SL_SYM.CHERRY)) continue;
+    set.push(p);
+  }
+  return set;
+}
+
+/* どのタイミングで押しても4コマ以内に引き込めるか */
+function slCoversAllPresses(setArr){
+  if (setArr.length === 0) return false;
+  const s = [...setArr].sort((a, b) => a - b);
+  for (let i = 0; i < s.length; i++){
+    const gap = (i === s.length - 1) ? (s[0] + SL_KOMA - s[i]) : (s[i + 1] - s[i]);
+    if (gap > SL_MAX_SLIP + 1) return false;
+  }
+  return true;
+}
+
+/* 押された位置から実際に停める位置を決める。
+   g はそのゲームの状態(フラグ・停止済みリール・押し順) */
+function slChooseStopPosition(g, reelIdx, curPos){
+  const stopped = g.cols;
+  const nStopped = stopped.filter(Boolean).length;
+
+  /* 狙う役: 小役優先 → なければ保持中のボーナス。
+     ボーナスはGOGO!CHANCE点灯中のみ揃えられる(未点灯なら蹴飛ばす) */
+  const aimableBonus = g.lampLit ? g.bonusFlag : null;
+  const flagRole = g.smallFlag || aimableBonus || null;
+  const allowed = new Set();
+  if (g.smallFlag){
+    allowed.add(g.smallFlag);
+    if (g.smallFlag === 'RARECHERRY') allowed.add('CHERRY');
+  } else if (aimableBonus) allowed.add(aimableBonus);
+
+  const target = flagRole ? SL_TARGETS[flagRole] : null;
+
+  let base = Math.floor(curPos);
+  if (curPos - base < 0.2) base = base - 1;   // 最低限の移動距離を確保
+  const candidates = [];
+  for (let s = 0; s <= SL_MAX_SLIP; s++) candidates.push({ slip: s, p: slModK(base - s) });
+
+  const scoreOf = (cand) => {
+    const col = slWindowCol(reelIdx, cand.p);
+    const cols = stopped.slice();
+    cols[reelIdx] = col;
+
+    if (nStopped === 2){
+      /* 第3停止: 完成形を厳密に判定する */
+      const wins = slEvalWins(cols);
+      const badWins = wins.filter(w => !allowed.has(w.role));
+      const flagHit = flagRole && wins.some(w =>
+        flagRole === 'RARECHERRY' ? (w.role === 'CHERRY' && w.line === 1) : w.role === flagRole);
+      if (badWins.length > 0) return 1000 + badWins.length * 10;  // 蹴飛ばす
+      if (flagHit) return 0;
+      return 10;
+    }
+
+    /* 第1・第2停止 */
+    let penalty = 0;
+    /* 単チェリー制御(順押しの第2停止=中リールのみ)。
+       重複当選なら「繋がらない形(=単チェリー)」、非重複なら「繋がる形」を優先する */
+    if (reelIdx === 1 && cols[0] && cols[0].includes(SL_SYM.CHERRY) &&
+        g.pressOrder.length === 1 && g.pressOrder[0] === 0 &&
+        (g.smallFlag === 'CHERRY' || g.smallFlag === 'RARECHERRY')){
+      if (slCenterCherryLinked(cols[0], col) === !!g.dupCherry) penalty += 40;
+    }
+    if (!allowed.has('CHERRY') && cols[0]){
+      /* チェリーは左リールだけで成立が決まるので、左停止時点で必ず避ける */
+      if (cols[0].includes(SL_SYM.CHERRY)) penalty = 500;
+    }
+    if (!target) return penalty + 10;
+
+    const avoidCherry = !allowed.has('CHERRY');
+    let live = 0, guaranteed = 0;
+    const lineSet = (flagRole === 'RARECHERRY') ? [SL_LINES[1]] : SL_LINES;
+    lineSet.forEach(rows => {
+      let ok = true;
+      for (let c = 0; c < 3; c++){
+        const t = target[c];
+        if (t == null) continue;
+        const cc = cols[c];
+        if (!cc) continue;
+        if (cc[rows[c]] !== t){ ok = false; break; }
+      }
+      if (!ok) return;
+      live++;
+      let sure = true;
+      for (let c = 0; c < 3; c++){
+        if (cols[c]) continue;
+        const t = target[c];
+        if (t == null) continue;
+        if (!slCoversAllPresses(slAlignSet(c, t, rows[c], avoidCherry))){ sure = false; break; }
+      }
+      if (sure) guaranteed++;
+    });
+    /* ブドウは引き込みが保証された形をすべて同格に扱う(出目のバリエーション用) */
+    if (flagRole === 'GRAPE') return penalty + (guaranteed > 0 ? 0 : 100);
+    return penalty + (guaranteed > 0 ? 0 : 100) + (10 - live);
+  };
+
+  let bestScore = Infinity;
+  for (const cand of candidates){
+    cand.score = scoreOf(cand);
+    if (cand.score < bestScore) bestScore = cand.score;
+  }
+  const bestList = candidates.filter(c => c.score === bestScore);
+  if (flagRole === 'GRAPE' && bestList.length > 1){
+    return bestList[Math.floor(Math.random() * bestList.length)].p;
+  }
+  return bestList[0].p;   // 通常は最小スベリ
+}
+
+
+/* BETできる上限。ボーナス中は2枚、通常は3枚 */
+function slBetCap(m){ return m.inBonus ? 2 : 3; }
+
+/* レバーON。ここで当たりが決まる(実機と同じ) */
+function slLeverOn(m){
+  m.cols = [null, null, null];
+  m.pressOrder = [];
+  m.rareLamp = false;
+
+  if (m.inBonus){
+    m.smallFlag = 'GRAPE';       // ボーナス中は毎ゲームブドウ
+    m.dupCherry = false;
+  } else {
+    const sp = SL_SETTINGS[m.setting - 1];
+    let newBonus = false, rareHit = false, dupCherry = false;
+
+    if (!m.bonusFlag){
+      const r = slRandom();
+      if (r < sp.bb){
+        m.bonusFlag = 'BB'; newBonus = true;
+        if (r < slRareCherryProb(m.setting)) rareHit = true;              // 中段チェリー(BB内数)
+        else if (slRandom() < SL_CHERRY_DUP_RATE) dupCherry = true;       // チェリー重複BB
+      } else if (r < sp.bb + sp.rb){
+        m.bonusFlag = 'RB'; newBonus = true;
+        if (slRandom() < SL_CHERRY_DUP_RATE) dupCherry = true;            // チェリー重複RB
+      }
+    }
+
+    /* 小役抽選 */
+    if (rareHit){
+      m.smallFlag = 'RARECHERRY';
+      m.rareLamp = true;
+    } else if (dupCherry){
+      m.smallFlag = 'CHERRY';
+    } else {
+      const r2 = slRandom();
+      let acc = 0;
+      m.smallFlag = null;
+      if      (r2 < (acc += sp.grape))     m.smallFlag = 'GRAPE';
+      else if (r2 < (acc += SL_P_REPLAY))  m.smallFlag = 'REPLAY';
+      else if (r2 < (acc += SL_P_CHERRY))  m.smallFlag = 'CHERRY';
+      else if (r2 < (acc += SL_P_BELL))    m.smallFlag = 'BELL';
+      else if (r2 < (acc += SL_P_CLOWN))   m.smallFlag = 'CLOWN';
+    }
+    m.dupCherry = !!(dupCherry || rareHit);
+
+    /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%) */
+    if (newBonus && !m.lampLit){
+      if (slRandom() < SL_PEKA_FIRST) m.lampLit = true;   // 先ペカ
+      else m.lampPending = true;                          // 後ペカ(第3停止離しで点灯)
+    }
+  }
+
+  m.phase = 'spin';
+  m.totalG++;
+  if (!m.inBonus) m.startG++;
+}
+
+/* 3リール停止後の判定。払い出しとボーナス開始・終了をまとめて行う */
+function slResolveGame(m){
+  const cols = m.cols;
+  const wins = slEvalWins(cols);
+  const bet  = m.bet;
+
+  /* リプレイ */
+  const hasReplay = wins.some(w => w.role === 'REPLAY');
+
+  /* ボーナス図柄が揃ったか */
+  const bbAligned = wins.some(w => w.role === 'BB');
+  const rbAligned = wins.some(w => w.role === 'RB');
+
+  let pay = 0;
+  if (!bbAligned && !rbAligned && !hasReplay){
+    const cUnit = slCherryUnitFor(bet, cols, m.inBonus);
+    pay = slPayoutFor(wins, bet, cUnit);
+  }
+
+  /* 後ペカ: 第3停止を離した時点で点灯する。
+     単チェリー形が出たときは、抽選結果に関わらず必ず点灯させる(実機準拠) */
+  let pekaNow = false;
+  if (!m.inBonus && m.bonusFlag && !m.lampLit){
+    if (m.lampPending) pekaNow = true;
+    else if (slIsSoloCherry(cols, m.pressOrder)) pekaNow = true;
+  }
+  if (pekaNow){ m.lampLit = true; m.lampPending = false; }
+
+  /* ボーナス開始 */
+  let started = null;
+  if (bbAligned || rbAligned){
+    m.inBonus   = true;
+    m.bonusType = bbAligned ? 'BB' : 'RB';
+    m.bonusPaid = 0;
+    m.bonusFlag = null;
+    m.lampLit   = false;
+    m.lampPending = false;
+    if (bbAligned) m.bb++; else m.rb++;
+    m.bonusLog.push({ type: m.bonusType, at: m.startG, g: m.totalG });
+    if (m.bonusLog.length > 200) m.bonusLog.shift();
+    m.startG = 0;                 // スタートG数は当選ではなく消化開始でリセットする
+    started = m.bonusType;
+  }
+
+  /* ボーナス中の払い出しと終了判定 */
+  let ended = null;
+  if (m.inBonus && !started){
+    m.bonusPaid += pay;
+    const limit = m.bonusType === 'BB' ? SL_BB_LIMIT : SL_RB_LIMIT;
+    if (m.bonusPaid > limit){
+      ended = { type: m.bonusType, paid: m.bonusPaid };
+      m.inBonus = false;
+      m.bonusType = null;
+      m.bonusPaid = 0;
+    }
+  }
+
+  /* 払い出しの枚数は結果として返すだけ。
+     実際のコインの増減はサーバーが持っているので、ここでは足さない
+     (二重に足すと画面とサーバーで食い違う) */
+
+  m.replayPending = hasReplay ? bet : 0;
+  m.bet = 0;
+  m.phase = 'idle';
+
+  return { wins, pay, hasReplay, started, ended, peka: pekaNow, rare: m.rareLamp };
+}
+
+
+/* 1ゲームぶんの状態。サーバーの台オブジェクトと同じ形にしてあるので、
+   slLeverOn() や slChooseStopPosition() をそのまま使える */
+function slNewGameState(setting){
+  return {
+    setting: setting || 1,
+    bb: 0, rb: 0, startG: 0, totalG: 0,
+    credit: 0, tray: 0, invested: 0,
+    phase: 'idle', bet: 0, replayPending: 0,
+    cols: [null, null, null], pressOrder: [],
+    smallFlag: null, bonusFlag: null, dupCherry: false,
+    lampLit: false, lampPending: false, rareLamp: false,
+    inBonus: false, bonusType: null, bonusPaid: 0,
+    bonusLog: []
+  };
+}
+
 const SL_REV_MS      = 780;   // リール1回転にかかる時間(約77rpm)
-const SL_STOP_GATE_MS= 350;   // レバーONから停止ボタンを押せるようになるまで
-const SL_STOP_MIN_MS = 120;   // 停止操作の最小間隔(同時押し対策)
+const SL_STOP_GATE_MS= 190;   // レバーONから停止ボタンを押せるようになるまで(実機のウェイト)
+const SL_STOP_MIN_MS = 60;    // 停止操作の最小間隔(同じ指の二度押しを弾くだけ)
+const SL_SLIP_MS     = 38;    // 1コマ滑るのにかける時間(実機の見え方に合わせてある)
 const SL_COIN_VALUE  = 19;    // 精算レート。サーバーの SL_COIN_VALUE と合わせる
 const SL_RENT_MEDAL  = 1000;  // 貸出に必要な所持メダル
+
+/* スロットの設定(v5.1)。ジャグラーシミュレーターにあったものを移植した */
+const slotOpt = {
+  msgBar:       store.get('bj4_slMsgBar') !== '0',   // 既定ON
+  oneBetOnLamp: store.get('bj4_slOneBet') === '1',
+  easyLever:    store.get('bj4_slEasyLever') === '1'
+};
+function saveSlotOpt(){
+  store.set('bj4_slMsgBar', slotOpt.msgBar ? '1' : '0');
+  store.set('bj4_slOneBet', slotOpt.oneBetOnLamp ? '1' : '0');
+  store.set('bj4_slEasyLever', slotOpt.easyLever ? '1' : '0');
+}
+function applySlotOpt(){
+  if (el.slMsg) el.slMsg.hidden = !slotOpt.msgBar;
+  if (el.slOptMsgBar)  el.slOptMsgBar.checked  = slotOpt.msgBar;
+  if (el.slOptOneBet)  el.slOptOneBet.checked  = slotOpt.oneBetOnLamp;
+  if (el.slOptEasyLever) el.slOptEasyLever.checked = slotOpt.easyLever;
+}
 
 const slot = {
   joined: false,      // ホールを見ているか
@@ -4180,6 +4611,8 @@ const slot = {
   reels: [],
   raf: 0,
   payout: 0,
+  g: null,            // 台の中身(抽選・停止判定はここを見て行う)
+  setting: 1,
   /* データ表示モード用。着席してからの記録 */
   log: [],            // 差枚の推移
   diff: 0,            // 現在差枚
@@ -4253,7 +4686,9 @@ function slDrawReel(idx){
 }
 function slDrawReels(){ for (let i = 0; i < 3; i++) slDrawReel(i); }
 
-/* 毎フレーム、回っているリールを進める */
+/* 毎フレーム、回っているリールを進める。
+   実機は図柄が「上から下」へ流れるので、posは減る向きに動かす。
+   停止するときは、決まったコマ数ぶんだけ滑らせてから止める */
 function slTick(now){
   slot.raf = 0;
   let moving = false;
@@ -4261,24 +4696,27 @@ function slTick(now){
     const r = slot.reels[i];
     if (!r || !r.spin) continue;
     moving = true;
-    const dt = now - (r.last || now);
+    const dt = Math.min(50, now - (r.last || now));
     r.last = now;
-    r.pos += (dt / SL_REV_MS) * SL_KOMA;
-    if (r.pos >= SL_KOMA) r.pos -= SL_KOMA;
 
-    /* 停止位置が決まっていて、そこを通り過ぎるなら止める */
-    if (r.target != null){
-      const cur = ((r.pos % SL_KOMA) + SL_KOMA) % SL_KOMA;
-      const d = ((r.target - cur) % SL_KOMA + SL_KOMA) % SL_KOMA;
-      if (d < 0.9){
+    if (r.remain != null){
+      /* 停止中。残りのコマ数を減らしていき、0になったらぴたりと止める */
+      const step = dt / SL_SLIP_MS;
+      r.remain -= step;
+      if (r.remain <= 0.001){
         r.pos = r.target;
         r.spin = false;
+        r.remain = null;
         r.target = null;
         slot.spinning[i] = false;
         slot.stopped[i] = true;
         audio.play('chip');
         slSyncStopButtons();
+      } else {
+        r.pos = slMod(r.target + r.remain, SL_KOMA);
       }
+    } else {
+      r.pos = slMod(r.pos - (dt / SL_REV_MS) * SL_KOMA, SL_KOMA);
     }
     slDrawReel(i);
   }
@@ -4363,12 +4801,31 @@ function slEnterMachine(st){
   slot.seated = true;
   slot.no = st.no;
   slot.st = st;
-  slot.phase = st.phase || 'idle';
+  slot.setting = st.setting || 1;
+  slot.phase = 'idle';
   slot.spinning = [false, false, false];
   slot.stopped = [true, true, true];
   slot.pending = [false, false, false];
   slot.payout = 0;
-  slot.reels = [0, 1, 2].map(i => ({ pos: i * 7, spin: false, target: null, last: 0 }));
+  slot.reels = [0, 1, 2].map(i => ({ pos: i * 7, spin: false, target: null, remain: null, last: 0 }));
+
+  /* 台の中身を作る。抽選と停止判定はこれを見て行う */
+  slot.g = slNewGameState(st.setting || 1);
+  slot.g.bb = st.bb; slot.g.rb = st.rb;
+  slot.g.startG = st.startG; slot.g.totalG = st.totalG;
+  slot.g.credit = st.credit; slot.g.tray = st.tray || 0;
+  slot.g.lampLit = !!st.lampLit;
+  slot.g.bonusLog = (st.bonusLog || []).slice();
+  slot.bonusLog = slot.g.bonusLog;
+  /* 前の続きから打てるよう、ランプが点いていればフラグも戻す */
+  if (st.lampLit && !st.inBonus) slot.g.bonusFlag = st.bonusFlag || 'BB';
+  slot.g.inBonus = !!st.inBonus;
+  slot.g.bonusType = st.bonusType || null;
+  slot.g.bonusPaid = st.bonusPaid || 0;
+  slot.g.replayPending = st.replayPending || 0;
+
+  applySlotOpt();
+  slSetConn(online.socket && online.socket.connected ? 'on' : 'off');
 
   showScreen('slot');
   /* 画面が出てからでないとリールの幅が測れないので、描画のあとに組み立てる */
@@ -4381,21 +4838,33 @@ function slEnterMachine(st){
 
 function slRenderAll(){
   const st = slot.st;
+  const g  = slot.g;
   if (!st) return;
   const coins = (st.coins != null ? st.coins : st.credit);
+  /* BETやボーナスの状態は、押した瞬間に見た目へ出したいので手元の g を優先する */
+  const bet     = g ? g.bet : st.bet;
+  const inBonus = g ? g.inBonus : st.inBonus;
+  const bonusType = g ? g.bonusType : st.bonusType;
+  const bonusPaid = g ? g.bonusPaid : st.bonusPaid;
+  const lampLit = g ? g.lampLit : st.lampLit;
+  const rareLamp= g ? g.rareLamp : st.rareLamp;
+  const bb = g ? g.bb : st.bb;
+  const rb = g ? g.rb : st.rb;
+  const startG = g ? g.startG : st.startG;
+  const totalG = g ? g.totalG : st.totalG;
+  const rate = (bb + rb) && totalG ? totalG / (bb + rb) : null;
 
-  el.slMachineNo.textContent = st.no;
-  el.slCoinNum.textContent = coins;
+  el.slMachineNo.textContent = st.no + '番台';
 
   /* データカウンター */
-  el.slDataBB.textContent = st.bb;
-  el.slDataRB.textContent = st.rb;
-  el.slDataStart.textContent = st.startG;
-  el.slDataTotal.textContent = st.totalG;
-  el.slDataRate.textContent = st.rate ? '1/' + st.rate.toFixed(1) : '1/---';
+  el.slDataBB.textContent = bb;
+  el.slDataRB.textContent = rb;
+  el.slDataStart.textContent = startG;
+  el.slDataTotal.textContent = totalG;
+  el.slDataRate.textContent = rate ? '1/' + rate.toFixed(1) : '1/---';
 
   /* 情報バー。回収は「いま精算したら戻ってくるメダル」 */
-  const back = (coins + st.bet) * SL_COIN_VALUE;
+  const back = (coins + bet) * SL_COIN_VALUE;
   const diff = back - st.invested;
   el.slWCoin.textContent   = coins;
   el.slWInvest.textContent = st.invested.toLocaleString();
@@ -4406,23 +4875,23 @@ function slRenderAll(){
   /* 7セグ */
   el.slSegCredit.textContent = st.credit;
   el.slSegPayout.textContent = slot.payout;
-  el.slSegCount.textContent = st.inBonus
-    ? Math.max(0, (st.bonusType === 'BB' ? 294 : 112) - st.bonusPaid)
+  el.slSegCount.textContent = inBonus
+    ? Math.max(0, (bonusType === 'BB' ? 294 : 112) - bonusPaid)
     : '---';
 
   /* BETランプ */
   for (let i = 1; i <= 3; i++){
-    el['slBetLamp' + i].classList.toggle('is-on', st.bet >= i);
+    el['slBetLamp' + i].classList.toggle('is-on', bet >= i);
   }
-  /* 状態ランプ。Insert Medals はメダルが無いときに点滅させる(実機と同じ) */
-  el.slLampStart.classList.toggle('is-on', st.phase === 'spin');
+  /* 状態ランプ。Insert Medals はコインが無いときに点滅させる(実機と同じ) */
+  el.slLampStart.classList.toggle('is-on', slot.phase === 'spin');
   el.slLampReplay.classList.toggle('is-on', st.replayPending > 0);
-  const needCoin = st.phase === 'idle' && st.bet === 0 && coins === 0 && st.replayPending === 0;
+  const needCoin = slot.phase === 'idle' && bet === 0 && coins === 0 && st.replayPending === 0;
   el.slLampInsert.classList.toggle('is-blink', needCoin);
   el.slLampInsert.classList.toggle('is-on', false);
 
   /* GOGO!CHANCE */
-  const lit = !!st.lampLit, rainbow = !!st.rareLamp && lit;
+  const lit = !!lampLit, rainbow = !!rareLamp && lit;
   el.slGogoOff.hidden = lit;
   el.slGogoOn.hidden = !lit;
   el.slGogoRainbow.hidden = !rainbow;
@@ -4459,21 +4928,27 @@ function slRenderBonusGraph(){
 
 /* ボタンの押せる・押せないを揃える */
 function slSyncButtons(){
-  const st = slot.st;
+  const st = slot.st, g = slot.g;
   if (!st) return;
   const idle = slot.phase === 'idle';
   const coins = (st.coins != null ? st.coins : st.credit);
-  const cap = st.inBonus ? 2 : 3;
+  const bet = g ? g.bet : st.bet;
+  const inBonus = g ? g.inBonus : st.inBonus;
+  const lampLit = g ? g.lampLit : st.lampLit;
+  let cap = inBonus ? 2 : 3;
+  if (slotOpt.oneBetOnLamp && lampLit && !inBonus) cap = 1;
 
   /* メダルが足りないのに押せてしまうと「押したのに借りられない」ので、
      足りないときは最初から押せなくしておく */
   const medal = account.user ? Number(account.user.medal || 0) : 0;
   el.slRentBtn.disabled = !idle || medal < SL_RENT_MEDAL;
-  el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 || st.bet >= cap || st.inBonus;
-  el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 || (coins < 1 && st.bet === 0) || st.bet >= cap;
+  el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 || bet >= cap || inBonus;
+  el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 || (coins < 1 && bet === 0) || bet >= cap;
   el.slCashoutBtn.disabled = !idle;
 
-  const canLever = idle && (st.bet >= (st.inBonus ? 2 : 1) || st.replayPending > 0);
+  /* 簡単レバーモードのときは、BET前でもレバーを引ける */
+  const canLever = idle && (bet >= (inBonus ? 2 : 1) || st.replayPending > 0 ||
+                            (slotOpt.easyLever && coins >= 1));
   el.slLever.classList.toggle('is-off', !canLever);
   slSyncStopButtons();
 }
@@ -4504,40 +4979,156 @@ function slRent(){
   online.socket.emit('slot:rent');
   audio.play('chip');
 }
-function slBet(n){
-  if (!online.socket) return;
-  online.socket.emit('slot:bet', n === undefined ? {} : { n });
-  audio.play('chip');
-}
-function slLever(){
-  const st = slot.st;
-  if (!st || slot.phase !== 'idle') return;
-  if (!(st.bet >= (st.inBonus ? 2 : 1) || st.replayPending > 0)){
-    slMsg('メダルをBETしてください');
-    return;
-  }
-  if (!online.socket) return;
 
-  /* 見た目だけ先に回し始める。結果はサーバーが決めるので、
-     ここで先に回してもズルにはならない(押した位置は実時間で送る) */
+/* BET。nを省略するとMAXBET。
+   コインの出し入れはサーバーが持っているので、押した内容をそのまま送る。
+   ただし見た目はすぐ変えたいので、手元の状態も同時に進める */
+function slBet(n){
+  const g = slot.g, st = slot.st;
+  if (!g || !st || slot.phase !== 'idle') return;
+  if (st.replayPending > 0) return;
+
+  let cap = slBetCap(g);
+  /* 設定「GOGO!CHANCE中は1BETのみ」。点灯中はMAXBETを押しても1枚だけ入れる */
+  if (slotOpt.oneBetOnLamp && g.lampLit && !g.inBonus) cap = 1;
+  const want = (n === undefined || n === null) ? cap : Math.floor(Number(n) || 0);
+  if (!Number.isFinite(want) || want < 1) return;
+  if (g.inBonus && want < 2 && n !== undefined) return;
+
+  const coins = (st.coins != null ? st.coins : st.credit);
+  const add = Math.min(want, cap - g.bet, coins);
+  if (add <= 0) return;
+
+  g.bet += add;
+  online.socket.emit('slot:bet', n === undefined ? { n: cap } : { n: add });
+  audio.play('chip');
+  slRenderAll();
+}
+
+/* レバーON。ここで当たりが決まり、すぐリールが回り出す */
+function slLever(){
+  const g = slot.g, st = slot.st;
+  if (!g || !st || slot.phase !== 'idle') return;
+
+  /* 簡単レバーモード。BETしていない状態でレバーを引いたら、
+     MAXBETしてからレバーを引いたことにする */
+  if (g.bet === 0 && st.replayPending === 0 && slotOpt.easyLever){
+    slBet();
+    if (g.bet === 0) return;   // コインが足りなかった
+  }
+
+  if (st.replayPending > 0){ g.bet = st.replayPending; }
+  if (g.bet < 1){ slMsg('メダルをBETしてください'); return; }
+  if (g.inBonus && g.bet < 2){ slMsg('MAXBETしてください'); return; }
+
   el.slLever.classList.add('is-pulled');
   setTimeout(() => el.slLever.classList.remove('is-pulled'), 160);
-  online.socket.emit('slot:lever');
-  audio.play('button');
+
+  /* 抽選(実機の内部抽選と同じ。レバーを叩いた瞬間に決まる) */
+  slLeverOn(g);
+
+  slot.phase = 'spin';
+  slot.stopped = [false, false, false];
+  slot.pending = [false, false, false];
+  slot.payout = 0;
+  slot.gateAt = performance.now() + SL_STOP_GATE_MS;
+  slot.betSum += g.bet;
+
+  const now = performance.now();
+  for (let i = 0; i < 3; i++){
+    const r = slot.reels[i];
+    r.spin = true; r.target = null; r.remain = null; r.last = now;
+  }
+  slStartLoop();
+  slMsg('');
+  el.slReelWindow.classList.remove('is-win');
+
+  /* 台のデータはサーバーにも残しておく(他の人のホール表示に出るため) */
+  if (online.socket) online.socket.emit('slot:spin', { bet: g.bet });
+
+  slSyncStopButtons();
+  clearTimeout(slot.gateTimer);
+  slot.gateTimer = setTimeout(slSyncStopButtons, SL_STOP_GATE_MS + 10);
+  slRenderAll();
 }
 
+/* 停止ボタン。押した瞬間にここで停止位置を決めて、そのまま止める */
 function slStop(idx){
-  if (slot.phase !== 'spin') return;
-  if (slot.stopped[idx] || slot.pending[idx]) return;
+  const g = slot.g;
+  if (!g || slot.phase !== 'spin') return;
+  if (slot.stopped[idx] || g.cols[idx]) return;
   const now = performance.now();
   if (now - slot.lastStopAt < SL_STOP_MIN_MS) return;
   if (now < slot.gateAt) return;
   slot.lastStopAt = now;
-  slot.pending[idx] = true;
+
+  const r = slot.reels[idx];
+  if (!r) return;
+  const cur = slMod(r.pos, SL_KOMA);
+  const stopPos = slChooseStopPosition(g, idx, cur);
+
+  g.cols[idx] = slWindowCol(idx, stopPos);
+  g.pressOrder.push(idx);
+
+  /* 何コマ滑るかを出して、そのぶんだけ動かしてから止める */
+  r.target = stopPos;
+  r.remain = slMod(cur - stopPos, SL_KOMA);
+  if (r.remain > SL_MAX_SLIP + 0.5) r.remain = slMod(r.remain, 1);
+  slStartLoop();
   slSyncStopButtons();
-  /* いまリールが何コマ目にいるかを送る。ここからサーバーがスベリを決める */
-  const pos = slot.reels[idx] ? slot.reels[idx].pos : 0;
-  online.socket.emit('slot:stop', { reel: idx, pos });
+
+  if (g.pressOrder.length < 3) return;
+
+  /* 3つとも押し終えたので結果を出す */
+  const res = slResolveGame(g);
+  slAfterGame(res);
+}
+
+/* 1ゲームの後始末。表示を更新して、結果をサーバーにも伝える */
+function slAfterGame(res){
+  slot.phase = 'idle';
+  slot.payout = res.pay || 0;
+  slot.paySum += res.pay || 0;
+  slot.diff = slot.paySum - slot.betSum;
+  slot.log.push(slot.diff);
+  if (slot.log.length > 5000) slot.log.shift();
+  slot.bonusLog = slot.g.bonusLog;
+
+  if (res.pay > 0){
+    el.slReelWindow.classList.add('is-win');
+    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
+    audio.play('chip');
+  }
+  if (res.peka){
+    audio.play('win');
+    slMsg('GOGO! CHANCE 点灯!');
+  } else if (res.started){
+    audio.play('win');
+    slMsg(res.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
+  } else if (res.ended){
+    slMsg(res.ended.type + ' 終了  ' + res.ended.paid + '枚獲得');
+  } else if (res.hasReplay){
+    slMsg('リプレイ');
+  } else if (res.pay > 0){
+    slMsg(res.pay + '枚 払い出し');
+  } else {
+    slMsg('');
+  }
+
+  /* サーバーに結果を伝えて、コインと台データを更新してもらう */
+  if (online.socket){
+    online.socket.emit('slot:report', {
+      pay: res.pay || 0,
+      replay: !!res.hasReplay,
+      started: res.started || null,
+      ended: res.ended ? res.ended.type : null,
+      bb: slot.g.bb, rb: slot.g.rb,
+      startG: slot.g.startG, totalG: slot.g.totalG,
+      lampLit: !!slot.g.lampLit
+    });
+  }
+  slSyncStopButtons();
+  slRenderAll();
 }
 
 async function slCashout(){
@@ -4566,15 +5157,14 @@ function onSlotSat(st){
   slot.diff = 0;
   slot.betSum = 0;
   slot.paySum = 0;
-  slot.bonusLog = st.bonusLog || [];
+  slot.bonusLog = [];
   slEnterMachine(st);
   slMsg('メダルを借りてゲームスタート!');
   audio.play('join');
 }
 
-/* 切断から戻ってきたとき */
+/* 切断から戻ってきたとき。台のデータは引き継ぐ */
 function onSlotResume(st){
-  slot.bonusLog = st.bonusLog || [];
   slEnterMachine(st);
   slMsg('前に打っていた ' + st.no + '番台に戻りました');
   toast(st.no + '番台に戻りました');
@@ -4582,80 +5172,24 @@ function onSlotResume(st){
 
 function onSlotState(st){
   slot.st = st;
-  slot.bonusLog = st.bonusLog || slot.bonusLog;
+  /* コインの枚数と台データはサーバーが正。手元の状態にも反映しておく */
+  if (slot.g){
+    slot.g.credit = st.credit;
+    slot.g.tray   = st.tray || 0;
+    if (slot.phase === 'idle' && st.bet === 0 && slot.g.bet !== 0 && st.replayPending === 0){
+      /* サーバー側でBETが取り消された(精算など) */
+      slot.g.bet = 0;
+    }
+  }
   if (screen === 'slot') slRenderAll();
-}
-
-/* レバーON。3つのリールを回し始める */
-function onSlotSpin(d){
-  slot.phase = 'spin';
-  slot.stopped = [false, false, false];
-  slot.pending = [false, false, false];
-  slot.payout = 0;
-  slot.gateAt = performance.now() + SL_STOP_GATE_MS;
-  slot.betSum += (d && d.bet) || 0;
-
-  const now = performance.now();
-  for (let i = 0; i < 3; i++){
-    const r = slot.reels[i];
-    r.spin = true; r.target = null; r.last = now;
-  }
-  slStartLoop();
-  slMsg('');
-  el.slReelWindow.classList.remove('is-win');
-  slSyncStopButtons();
-  /* ウェイトが明けた瞬間にボタンを点ける */
-  clearTimeout(slot.gateTimer);
-  slot.gateTimer = setTimeout(slSyncStopButtons, SL_STOP_GATE_MS + 10);
-}
-
-/* サーバーが決めた停止位置。ここまで滑らせて止める */
-function onSlotStopped(d){
-  const i = d.reel;
-  if (!slot.reels[i]) return;
-  slot.pending[i] = false;
-  slot.reels[i].target = d.pos;
-  slStartLoop();
-}
-
-/* 3つ止まったあとの結果 */
-function onSlotResult(d){
-  slot.phase = 'idle';
-  slot.payout = d.pay || 0;
-  slot.paySum += d.pay || 0;
-  slot.diff = slot.paySum - slot.betSum;
-  slot.log.push(slot.diff);
-  if (slot.log.length > 5000) slot.log.shift();
-
-  if (d.pay > 0){
-    el.slReelWindow.classList.add('is-win');
-    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
-    audio.play('chip');
-  }
-  if (d.peka){
-    audio.play('win');
-    slMsg('GOGO! CHANCE 点灯!');
-  } else if (d.started){
-    audio.play('win');
-    slMsg(d.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
-    slot.bonusLog.push({ type: d.started, at: 0, g: slot.st ? slot.st.totalG : 0 });
-  } else if (d.ended){
-    slMsg(d.ended.type + ' 終了  ' + d.ended.paid + '枚獲得');
-  } else if (d.replay){
-    slMsg('リプレイ');
-  } else if (d.pay > 0){
-    slMsg(d.pay + '枚 払い出し');
-  } else {
-    slMsg('');
-  }
-  slSyncStopButtons();
 }
 
 /* 精算した(自分で押した場合も、0時や自動退席の場合もここに来る) */
 function onSlotCashout(d){
   slot.seated = false;
   slot.phase = 'idle';
-  for (const r of slot.reels) { r.spin = false; r.target = null; }
+  slot.g = null;
+  for (const r of slot.reels) { r.spin = false; r.target = null; r.remain = null; }
   if (slot.raf){ cancelAnimationFrame(slot.raf); slot.raf = 0; }
 
   const gain = d.gain || 0;
@@ -4670,12 +5204,21 @@ function onSlotCashout(d){
   }
   if (d.user) setAccount(d.user);
 
-  /* ホールに戻す */
   if (screen === 'slot'){
     slot.joined = true;
     showScreen('slotHall');
     if (online.socket && online.socket.connected) online.socket.emit('slot:lobby');
   }
+}
+
+/* 接続の状態を上部に出す */
+function slSetConn(state){
+  if (!el.slConnDot) return;
+  const on = state === 'on';
+  el.slConnDot.classList.toggle('is-on', on);
+  el.slConnDot.classList.toggle('is-off', !on);
+  el.slConnText.textContent = on ? '接続中' : '接続が切れています';
+  el.slConnChip.classList.toggle('is-off', !on);
 }
 
 /* ---------- データ表示モード ---------- */
@@ -6806,6 +7349,23 @@ el.slHall.addEventListener('click', (e) => {
 });
 
 el.slLeaveBtn.addEventListener('click', () => { audio.play('button'); slCashout(); });
+
+/* システム設定(v5.1) */
+el.slSettingsBtn.addEventListener('click', () => {
+  audio.play('button');
+  applySlotOpt();
+  openOverlay(el.slotSettingsOverlay);
+});
+el.slotSettingsCloseBtn.addEventListener('click', () => closeOverlay(el.slotSettingsOverlay));
+el.slOptMsgBar.addEventListener('change', () => {
+  slotOpt.msgBar = el.slOptMsgBar.checked; saveSlotOpt(); applySlotOpt();
+});
+el.slOptOneBet.addEventListener('change', () => {
+  slotOpt.oneBetOnLamp = el.slOptOneBet.checked; saveSlotOpt(); slSyncButtons();
+});
+el.slOptEasyLever.addEventListener('change', () => {
+  slotOpt.easyLever = el.slOptEasyLever.checked; saveSlotOpt(); slSyncButtons();
+});
 el.slRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('slot'); });
 
 el.slRentBtn.addEventListener('click', () => slRent());
@@ -6830,7 +7390,8 @@ document.addEventListener('keydown', (e) => {
   if (screen !== 'slot') return;
   if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   /* オーバーレイが開いているときは触らせない */
-  if (!el.slotDataOverlay.hidden || !el.rulesOverlay.hidden || !el.confirmOverlay.hidden) return;
+  if (!el.slotDataOverlay.hidden || !el.rulesOverlay.hidden || !el.confirmOverlay.hidden ||
+      !el.slotSettingsOverlay.hidden) return;
 
   switch (e.key){
     case ' ': case 'Spacebar': e.preventDefault(); slLever(); break;

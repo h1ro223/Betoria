@@ -5365,8 +5365,9 @@ body.is-booting{ overflow: hidden; }
 /* GOGO!CHANCE と7セグ。
    GOGOは幅30%(最大120px)で、高さは画像の比率にまかせる。
    ここに高さを持たせると縦に伸びて画面が崩れるので触らないこと */
+/* v5.1: GOGOをひとまわり小さくして、7セグを同じ高さの中央にそろえる */
 .sl-under{ display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.sl-gogo{ width: 30%; max-width: 120px; flex-shrink: 0; position: relative; }
+.sl-gogo{ width: 24%; max-width: 96px; flex-shrink: 0; position: relative; }
 .sl-gogo img{ width: 100%; display: block; border-radius: 8px; }
 .sl-gogo img[hidden]{ display: none; }
 #slGogoOn{ position: absolute; inset: 0; }
@@ -5381,7 +5382,7 @@ body.is-booting{ overflow: hidden; }
   0%  { filter: sepia(1) saturate(8) hue-rotate(0deg)   brightness(1.1) drop-shadow(0 0 6px rgba(255,255,255,.55)); }
   100%{ filter: sepia(1) saturate(8) hue-rotate(360deg) brightness(1.1) drop-shadow(0 0 6px rgba(255,255,255,.55)); }
 }
-.sl-seg{ flex: 1; display: flex; gap: 5px; }
+.sl-seg{ flex: 1; display: flex; gap: 5px; align-items: center; }
 .sl-seg-box{
   flex: 1; background: #000; border: 2px solid #2c0509; border-radius: 6px;
   padding: 4px 2px 2px; text-align: center;
@@ -5508,3 +5509,29 @@ body.is-booting{ overflow: hidden; }
 .sl-history .sl-hist-type.is-rb{ color: var(--sl-seg-yellow); }
 .sl-history .sl-hist-g{ margin-left: auto; color: var(--ivory); }
 .sl-history .empty-note{ margin: 0; }
+
+/* ---------- スロット: システム設定 (v5.1) ---------- */
+.sl-opt{
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 4px; cursor: pointer;
+  border-bottom: 1px solid var(--hairline);
+}
+.sl-opt:last-of-type{ border-bottom: 0; }
+.sl-opt-text{ display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sl-opt-name{ font-size: 14px; color: var(--ivory); }
+.sl-opt-text small{ font-size: 11px; color: var(--smoke); line-height: 1.4; }
+.sl-opt input{ width: 22px; height: 22px; accent-color: var(--brass); cursor: pointer; flex: 0 0 auto; }
+
+/* ---------- スロット: 接続の状態 (v5.1) ---------- */
+.sl-chip.is-conn{ gap: 7px; }
+.sl-chip.is-conn.is-off{ border-color: rgba(255,120,120,.45); }
+.sl-conn-dot{
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: #3FBF8F; box-shadow: 0 0 6px rgba(63,191,143,.8);
+}
+.sl-conn-dot.is-off{ background: #E05555; box-shadow: 0 0 6px rgba(224,85,85,.8); }
+.sl-conn-text{ font-size: 12px; color: var(--smoke); }
+.sl-chip.is-conn.is-off .sl-conn-text{ color: #FF9A9A; }
+
+/* メッセージバーOFFのときは下に詰める */
+.sl-msg[hidden]{ display: none; }

@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v4.6 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v5.1 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -107,7 +107,7 @@
         <span class="title-btn-icon">🃏</span>
         <span class="title-btn-text">
           <span class="title-btn-name">プレイ</span>
-          <span class="title-btn-desc">ブラックジャック / マーブルレース</span>
+          <span class="title-btn-desc">ブラックジャック / マーブルレース / スロット</span>
         </span>
       </button>
       <button type="button" class="title-btn" id="toRankingBtn">
@@ -601,9 +601,13 @@
     <div class="sl-top">
       <button type="button" class="back-btn is-exit" id="slLeaveBtn" title="精算してやめる" aria-label="精算してやめる">🚪</button>
       <div class="sl-top-chips">
-        <div class="sl-chip"><span class="sl-chip-key">台</span><span class="sl-chip-val led" id="slMachineNo">1</span></div>
-        <div class="sl-chip"><span class="sl-chip-key">コイン</span><span class="sl-chip-val led" id="slCoinNum">0</span></div>
+        <div class="sl-chip"><span class="sl-chip-val led" id="slMachineNo">1番台</span></div>
+        <div class="sl-chip is-conn" id="slConnChip">
+          <span class="sl-conn-dot" id="slConnDot"></span>
+          <span class="sl-conn-text" id="slConnText">接続中</span>
+        </div>
       </div>
+      <button type="button" class="icon-btn" id="slSettingsBtn" title="設定">⚙️</button>
       <button type="button" class="icon-btn" id="slRulesBtn" title="ルール">📖</button>
     </div>
 
@@ -1394,6 +1398,44 @@
     </div>
   </div>
 </div>
+<!-- ---------- スロット: システム設定 (v5.1) ---------- -->
+<div class="overlay" id="slotSettingsOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="システム設定">
+    <div class="sheet-head">
+      <h2>システム設定</h2>
+      <button type="button" class="close-btn" id="slotSettingsCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+
+      <h3 class="block-title">表示</h3>
+      <label class="sl-opt">
+        <span class="sl-opt-text">
+          <span class="sl-opt-name">メッセージバー表示</span>
+          <small>下部の文字表示。OFFで画面を少し縮められます</small>
+        </span>
+        <input type="checkbox" id="slOptMsgBar">
+      </label>
+
+      <h3 class="block-title">ゲーム操作</h3>
+      <label class="sl-opt">
+        <span class="sl-opt-text">
+          <span class="sl-opt-name">GOGO!CHANCE中は1BETのみにする</span>
+          <small>点灯中はMAXBETを押しても1枚だけ入れます</small>
+        </span>
+        <input type="checkbox" id="slOptOneBet">
+      </label>
+      <label class="sl-opt">
+        <span class="sl-opt-text">
+          <span class="sl-opt-name">簡単レバーモード</span>
+          <small>BETしていない状態でレバーを引くと、MAXBET→レバーをまとめて実行します</small>
+        </span>
+        <input type="checkbox" id="slOptEasyLever">
+      </label>
+
+    </div>
+  </div>
+</div>
+
 <!-- ---------- スロット: データ表示モード (v5.0) ---------- -->
 <div class="overlay" id="slotDataOverlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="データ表示">
@@ -1505,6 +1547,27 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v5.1</h3>
+        <ul class="rule-list">
+          <li>スロットの<b>リールの回り方を直しました。</b>上から下へ流れるようになり、目押しがしやすくなっています。</li>
+          <li><b>停止ボタンを押した瞬間に止まるようになりました。</b>これまでは反応までに間があり、狙った位置で止めにくい状態でした。</li>
+          <li>スロットに<b>⚙️設定</b>を追加しました。メッセージバーの表示、GOGO!CHANCE中に1BETだけ入れる設定、簡単レバーモードが選べます。</li>
+          <li>GOGO!CHANCEの表示を小さくして、まわりの数字と高さをそろえました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
+        <h3>v5.0</h3>
+        <ul class="rule-list">
+          <li><b>スロットを追加しました。</b>ホールに6台並んでいるので、好きな台に座って打てます。台は早いもの勝ちです。</li>
+          <li><b>設定1〜6が台ごとに毎日0:00で変わります。</b>どの台が良いかは公開していないので、データを見ながら自分で見極めてください。</li>
+          <li>座る前でも<b>BB・RB・スタートG数・総回転数・合成確率</b>が見られます。台選びの参考にどうぞ。</li>
+          <li><b>目押しができます。</b>ブドウやリプレイは自動で引き込みますが、チェリーとボーナスは自分で狙う必要があります。</li>
+          <li>貸出は<b>所持メダル1000枚 → コイン50枚</b>、精算は<b>コイン1枚 → 19メダル</b>です。実際のホールと同じで、借りるときと戻すときで少し差があります。</li>
+          <li>コインが尽きても、席に座ったままならメダルがある限り何度でも借りられます。</li>
+          <li>席を立たずに接続が切れても、<b>10分以内に戻ればそのまま続きから</b>打てます。10分を過ぎると自動で精算されます。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v4.6</h3>
         <ul class="rule-list">
