@@ -433,6 +433,11 @@ const el = {
   slDataStart: $('slDataStart'),
   slDataTotal: $('slDataTotal'),
   slDataRate: $('slDataRate'),
+  slBonusGraph: $('slBonusGraph'),
+  slWCoin: $('slWCoin'),
+  slWInvest: $('slWInvest'),
+  slWBack: $('slWBack'),
+  slWDiff: $('slWDiff'),
   slReelWindow: $('slReelWindow'),
   slReel0: $('slReel0'),
   slReel1: $('slReel1'),
@@ -4183,26 +4188,41 @@ const slot = {
   bonusLog: []
 };
 
-/* 1コマぶんの高さ(描画に使う) */
-function slCellMetrics(){
-  const win = el.slReelWindow;
-  const h = win ? win.clientHeight : 186;
-  /* 窓に3コマ + 上下に少し覗く。実機の見え方に寄せてある */
-  const cellH = Math.max(28, Math.round(h / 3.48));
-  const gap   = Math.round(cellH * 0.10);
-  return { cellH, gap, unit: cellH + gap };
+/* コマの大きさを決める。ジャグラーシミュレーターと同じ計算にしてある。
+   小役画像は 1280x470 なので、その比率でコマの高さを出す。
+   隙間はコマ高さの10%、上下に覗かせる量は24%。 */
+const SL_CELL_GAP_RATIO = 0.10;
+const SL_PEEK_RATIO     = 0.24;
+const slMetrics = { cellH: 60, gap: 6, peek: 14, pitch: 66 };
+
+function slLayoutReels(){
+  const reel = el.slReel0;
+  if (!reel) return slMetrics;
+  const w = reel.getBoundingClientRect().width;
+  if (w > 0){
+    const cellH = Math.round(w * 470 / 1280);
+    const gap   = Math.round(cellH * SL_CELL_GAP_RATIO);
+    const peek  = Math.round(cellH * SL_PEEK_RATIO);
+    slMetrics.cellH = cellH;
+    slMetrics.gap   = gap;
+    slMetrics.peek  = peek;
+    slMetrics.pitch = cellH + gap;
+    const root = document.documentElement.style;
+    root.setProperty('--sl-cellH', cellH + 'px');
+    root.setProperty('--sl-cellGap', gap + 'px');
+    root.setProperty('--sl-windowH', (cellH * 3 + gap * 2 + peek * 2) + 'px');
+  }
+  return slMetrics;
 }
 
-/* リールの帯を組み立てる。1周ぶんを3セット並べて、途切れなく回して見せる */
+/* リールの帯を組み立てる。1周ぶんを2セット並べて、途切れなく回して見せる */
 function slBuildStrip(idx){
-  const { cellH, gap } = slCellMetrics();
+  const { cellH, gap } = slMetrics;
   const reel = el['slReel' + idx];
   if (!reel) return;
   const strip = reel.querySelector('.sl-strip');
-  strip.style.setProperty('--sl-cellH', cellH + 'px');
-  strip.style.setProperty('--sl-cellGap', gap + 'px');
   let html = '';
-  for (let rep = 0; rep < 3; rep++){
+  for (let rep = 0; rep < 2; rep++){
     for (let i = 0; i < SL_KOMA; i++){
       const sym = SL_REEL_DATA[idx][i];
       html += '<div class="sl-cell" style="height:' + cellH + 'px;margin-bottom:' + gap + 'px">' +
@@ -4213,22 +4233,23 @@ function slBuildStrip(idx){
 }
 
 function slBuildAllStrips(){
+  slLayoutReels();
   for (let i = 0; i < 3; i++) slBuildStrip(i);
   slDrawReels();
 }
 
-/* 位置posのときの帯の縦位置を求めて反映する */
+/* 位置posのときの帯の縦位置を求めて反映する。
+   pos<1のときは1周ぶんずらして、上に覗くコマが帯の外に出て空白になるのを防ぐ */
 function slDrawReel(idx){
   const r = slot.reels[idx];
   if (!r) return;
   const reel = el['slReel' + idx];
   if (!reel) return;
   const strip = reel.querySelector('.sl-strip');
-  const { unit } = slCellMetrics();
-  /* 真ん中のセットを使う。posが増えるほど帯は上へ動く */
   const p = ((r.pos % SL_KOMA) + SL_KOMA) % SL_KOMA;
-  const y = -(SL_KOMA + p) * unit;
-  strip.style.transform = 'translateY(' + y + 'px)';
+  const ep = p < 1 ? p + SL_KOMA : p;
+  const y = slMetrics.peek - ep * slMetrics.pitch;
+  strip.style.transform = 'translate3d(0,' + y.toFixed(2) + 'px,0)';
 }
 function slDrawReels(){ for (let i = 0; i < 3; i++) slDrawReel(i); }
 
@@ -4309,7 +4330,7 @@ function renderSlotHall(){
       : '<span class="sl-empty">だれでも座れます</span>';
     const rate = m.rate ? '1/' + m.rate.toFixed(1) : '1/---';
     const canSit = !m.seat || mine;
-    return '<div class="sl-machine' + (mine ? ' is-mine' : '') + '">' +
+    return '<div class="sl-machine-card' + (mine ? ' is-mine' : '') + '">' +
       '<div class="sl-machine-head">' +
         '<span class="sl-machine-no">' + m.no + '<small>番台</small></span>' + badge +
       '</div>' +
@@ -4350,7 +4371,9 @@ function slEnterMachine(st){
   slot.reels = [0, 1, 2].map(i => ({ pos: i * 7, spin: false, target: null, last: 0 }));
 
   showScreen('slot');
+  /* 画面が出てからでないとリールの幅が測れないので、描画のあとに組み立てる */
   slBuildAllStrips();
+  requestAnimationFrame(() => { slBuildAllStrips(); slRenderAll(); });
   slRenderAll();
 }
 
@@ -4359,16 +4382,28 @@ function slEnterMachine(st){
 function slRenderAll(){
   const st = slot.st;
   if (!st) return;
+  const coins = (st.coins != null ? st.coins : st.credit);
 
   el.slMachineNo.textContent = st.no;
-  el.slCoinNum.textContent = (st.coins != null ? st.coins : st.credit);
+  el.slCoinNum.textContent = coins;
 
+  /* データカウンター */
   el.slDataBB.textContent = st.bb;
   el.slDataRB.textContent = st.rb;
   el.slDataStart.textContent = st.startG;
   el.slDataTotal.textContent = st.totalG;
   el.slDataRate.textContent = st.rate ? '1/' + st.rate.toFixed(1) : '1/---';
 
+  /* 情報バー。回収は「いま精算したら戻ってくるメダル」 */
+  const back = (coins + st.bet) * SL_COIN_VALUE;
+  const diff = back - st.invested;
+  el.slWCoin.textContent   = coins;
+  el.slWInvest.textContent = st.invested.toLocaleString();
+  el.slWBack.textContent   = back.toLocaleString();
+  el.slWDiff.textContent   = (diff >= 0 ? '+' : '') + diff.toLocaleString();
+  el.slWDiff.style.color   = diff >= 0 ? '#7fd4ff' : '#ff8a8a';
+
+  /* 7セグ */
   el.slSegCredit.textContent = st.credit;
   el.slSegPayout.textContent = slot.payout;
   el.slSegCount.textContent = st.inBonus
@@ -4379,20 +4414,47 @@ function slRenderAll(){
   for (let i = 1; i <= 3; i++){
     el['slBetLamp' + i].classList.toggle('is-on', st.bet >= i);
   }
-  /* 状態ランプ */
+  /* 状態ランプ。Insert Medals はメダルが無いときに点滅させる(実機と同じ) */
   el.slLampStart.classList.toggle('is-on', st.phase === 'spin');
   el.slLampReplay.classList.toggle('is-on', st.replayPending > 0);
-  el.slLampInsert.classList.toggle('is-on', st.phase === 'idle' && st.bet === 0 && st.credit === 0);
+  const needCoin = st.phase === 'idle' && st.bet === 0 && coins === 0 && st.replayPending === 0;
+  el.slLampInsert.classList.toggle('is-blink', needCoin);
+  el.slLampInsert.classList.toggle('is-on', false);
 
   /* GOGO!CHANCE */
   const lit = !!st.lampLit, rainbow = !!st.rareLamp && lit;
   el.slGogoOff.hidden = lit;
-  el.slGogoOn.hidden = !lit || rainbow;
+  el.slGogoOn.hidden = !lit;
   el.slGogoRainbow.hidden = !rainbow;
-  el.slGogo.classList.toggle('is-lit', lit && !rainbow);
+  el.slGogo.classList.toggle('is-lit', lit);
   el.slGogo.classList.toggle('is-rainbow', rainbow);
 
+  slRenderBonusGraph();
   slSyncButtons();
+}
+
+/* データカウンター右側の履歴グラフ。
+   最新10回ぶんのボーナスを、当たったゲーム数の深さで棒にして並べる。
+   1段=約78G(9段で700G)。BB=赤 / RB=黄 */
+function slRenderBonusGraph(){
+  const box = el.slBonusGraph;
+  if (!box) return;
+  const list = (slot.bonusLog || []).slice(-10);
+  let html = '';
+  for (let c = 0; c < 10; c++){
+    const b = list[c];
+    let lv = 0, cls = '';
+    if (b){
+      lv = Math.max(1, Math.min(9, Math.ceil((b.at || 0) / 78)));
+      cls = b.type === 'BB' ? 'is-b' : 'is-r';
+    }
+    html += '<div class="sl-bg-col">';
+    for (let r = 0; r < 9; r++){
+      html += '<span class="sl-bg-cell' + (b && r < lv ? ' ' + cls : '') + '"></span>';
+    }
+    html += '</div>';
+  }
+  box.innerHTML = html;
 }
 
 /* ボタンの押せる・押せないを揃える */
@@ -4403,7 +4465,10 @@ function slSyncButtons(){
   const coins = (st.coins != null ? st.coins : st.credit);
   const cap = st.inBonus ? 2 : 3;
 
-  el.slRentBtn.disabled = !idle;
+  /* メダルが足りないのに押せてしまうと「押したのに借りられない」ので、
+     足りないときは最初から押せなくしておく */
+  const medal = account.user ? Number(account.user.medal || 0) : 0;
+  el.slRentBtn.disabled = !idle || medal < SL_RENT_MEDAL;
   el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 || st.bet >= cap || st.inBonus;
   el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 || (coins < 1 && st.bet === 0) || st.bet >= cap;
   el.slCashoutBtn.disabled = !idle;

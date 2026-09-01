@@ -592,8 +592,11 @@
     <div class="sl-hall" id="slHall"></div>
   </section>
 
-  <!-- ---------- スロット: 実機画面 (v5.0) ---------- -->
+  <!-- ---------- スロット: 実機画面 (v5.0) ----------
+       見た目・配置はジャグラーシミュレーターをそのまま踏襲している。
+       全体を .sl-wrap(最大440px)で包んで、実機と同じ縦長の形にする -->
   <section class="screen" id="screenSlot" hidden>
+   <div class="sl-wrap">
 
     <div class="sl-top">
       <button type="button" class="back-btn is-exit" id="slLeaveBtn" title="精算してやめる" aria-label="精算してやめる">🚪</button>
@@ -604,82 +607,114 @@
       <button type="button" class="icon-btn" id="slRulesBtn" title="ルール">📖</button>
     </div>
 
-    <!-- 台データ表示器(実機の上部データランプ相当) -->
-    <div class="sl-data">
-      <div class="sl-data-cell"><span class="sl-data-key is-bb">BB</span><span class="sl-data-val led" id="slDataBB">0</span></div>
-      <div class="sl-data-cell"><span class="sl-data-key is-rb">RB</span><span class="sl-data-val led" id="slDataRB">0</span></div>
-      <div class="sl-data-cell"><span class="sl-data-key">スタート</span><span class="sl-data-val led" id="slDataStart">0</span></div>
-      <div class="sl-data-cell is-wide"><span class="sl-data-key">総回転数</span><span class="sl-data-val led" id="slDataTotal">0</span></div>
-      <div class="sl-data-cell is-wide"><span class="sl-data-key">合成確率</span><span class="sl-data-val led" id="slDataRate">1/---</span></div>
+    <!-- データカウンター -->
+    <div class="sl-dp">
+      <div class="sl-dp-body">
+        <div class="sl-dp-grid">
+          <div class="sl-dp-item">
+            <span class="sl-dp-label is-red">BB</span>
+            <span class="sl-dp-num is-red" id="slDataBB">0</span>
+          </div>
+          <div class="sl-dp-item">
+            <span class="sl-dp-label is-yellow">RB</span>
+            <span class="sl-dp-num is-yellow" id="slDataRB">0</span>
+          </div>
+          <div class="sl-dp-item">
+            <span class="sl-dp-label is-green">スタート</span>
+            <span class="sl-dp-num is-green" id="slDataStart">0</span>
+          </div>
+        </div>
+        <div class="sl-dp-side">
+          <div class="sl-dp-item">
+            <span class="sl-dp-label is-green">総回転数</span>
+            <span class="sl-dp-num is-green" id="slDataTotal">0</span>
+          </div>
+          <div class="sl-dp-item">
+            <span class="sl-dp-label is-green">合成確率</span>
+            <span class="sl-dp-num is-green" id="slDataRate">1/---</span>
+          </div>
+        </div>
+        <div class="sl-bgraph" id="slBonusGraph"></div>
+      </div>
     </div>
 
     <!-- 筐体 -->
-    <div class="sl-cabinet">
+    <div class="sl-machine">
 
-      <div class="sl-panel-top">
-        <span class="sl-panel-sub">LET'S PLAY EXCITING GAME</span>
-        <span class="sl-panel-main">BIG CHANCE!</span>
-        <span class="sl-panel-777">7 7 7</span>
+      <div class="sl-banner">
+        <span class="sl-banner-sub">LET'S PLAY EXCITING GAME</span>
+        <span class="sl-banner-main">BIG CHANCE!</span>
+        <span class="sl-banner-777">7 7 7</span>
       </div>
 
-      <div class="sl-reel-frame">
-        <div class="sl-bet-lamps">
-          <span class="sl-bet-lamp" id="slBetLamp3">3</span>
-          <span class="sl-bet-lamp" id="slBetLamp2">2</span>
-          <span class="sl-bet-lamp" id="slBetLamp1">1</span>
-        </div>
-        <div class="sl-reel-window" id="slReelWindow">
-          <div class="sl-reel" id="slReel0"><div class="sl-strip"></div><div class="sl-shade"></div></div>
-          <div class="sl-reel" id="slReel1"><div class="sl-strip"></div><div class="sl-shade"></div></div>
-          <div class="sl-reel" id="slReel2"><div class="sl-strip"></div><div class="sl-shade"></div></div>
-        </div>
-        <div class="sl-state-lamps">
-          <span class="sl-state-lamp" id="slLampStart">Start</span>
-          <span class="sl-state-lamp" id="slLampReplay">Replay</span>
-          <span class="sl-state-lamp" id="slLampWait">Wait</span>
-          <span class="sl-state-lamp" id="slLampInsert">Insert<br>Medals</span>
-        </div>
+      <div class="sl-wallet">
+        <div class="sl-wallet-item"><span class="sl-w-label">持ちコイン</span><span class="sl-w-num" id="slWCoin">0</span><span class="sl-w-unit">枚</span></div>
+        <div class="sl-wallet-item"><span class="sl-w-label">投資</span><span class="sl-w-num" id="slWInvest">0</span><span class="sl-w-unit">メダル</span></div>
+        <div class="sl-wallet-item"><span class="sl-w-label">回収</span><span class="sl-w-num" id="slWBack">0</span><span class="sl-w-unit">メダル</span></div>
+        <div class="sl-wallet-item"><span class="sl-w-label">差額</span><span class="sl-w-num" id="slWDiff">+0</span><span class="sl-w-unit">メダル</span></div>
       </div>
 
-      <div class="sl-under">
-        <div class="sl-gogo" id="slGogo">
-          <img id="slGogoOff" src="./slot/GOGO/GOGOCHANCE_0.png" alt="GOGO!CHANCE" draggable="false">
-          <img id="slGogoOn"  src="./slot/GOGO/GOGOCHANCE_1.png" alt="" draggable="false" hidden>
-          <img id="slGogoRainbow" src="./slot/GOGO/GOGOCHANCE_2.png" alt="" draggable="false" hidden>
+      <div class="sl-reel-section">
+        <div class="sl-reel-frame">
+          <div class="sl-bet-lamps">
+            <span class="sl-bet-lamp" id="slBetLamp3">3</span>
+            <span class="sl-bet-lamp" id="slBetLamp2">2</span>
+            <span class="sl-bet-lamp" id="slBetLamp1">1</span>
+          </div>
+          <div class="sl-reel-window" id="slReelWindow">
+            <div class="sl-reel" id="slReel0"><div class="sl-strip"></div><div class="sl-shade"></div></div>
+            <div class="sl-reel" id="slReel1"><div class="sl-strip"></div><div class="sl-shade"></div></div>
+            <div class="sl-reel" id="slReel2"><div class="sl-strip"></div><div class="sl-shade"></div></div>
+          </div>
+          <div class="sl-state-lamps">
+            <span class="sl-state-lamp" id="slLampStart">Start</span>
+            <span class="sl-state-lamp" id="slLampReplay">Replay</span>
+            <span class="sl-state-lamp" id="slLampWait">Wait</span>
+            <span class="sl-state-lamp" id="slLampInsert">Insert<br>Medals</span>
+          </div>
         </div>
-        <div class="sl-seg">
-          <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCredit">0</span><span class="sl-seg-label">CREDIT</span></div>
-          <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCount">---</span><span class="sl-seg-label">COUNT</span></div>
-          <div class="sl-seg-box"><span class="sl-seg-value" id="slSegPayout">0</span><span class="sl-seg-label">PAY OUT</span></div>
+
+        <div class="sl-under">
+          <div class="sl-gogo" id="slGogo">
+            <img id="slGogoOff" src="./slot/GOGO/GOGOCHANCE_0.png" alt="GOGO!CHANCE" draggable="false">
+            <img id="slGogoOn"  src="./slot/GOGO/GOGOCHANCE_1.png" alt="" draggable="false" hidden>
+            <img id="slGogoRainbow" src="./slot/GOGO/GOGOCHANCE_2.png" alt="" draggable="false" hidden>
+          </div>
+          <div class="sl-seg">
+            <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCredit">0</span><span class="sl-seg-label">CREDIT</span></div>
+            <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCount">---</span><span class="sl-seg-label">COUNT</span></div>
+            <div class="sl-seg-box"><span class="sl-seg-value" id="slSegPayout">0</span><span class="sl-seg-label">PAY OUT</span></div>
+          </div>
         </div>
+
+        <div class="sl-msg" id="slMsg">メダルを借りてゲームスタート!</div>
       </div>
 
-      <div class="sl-msg" id="slMsg">メダルを借りてゲームスタート!</div>
+      <div class="sl-controls">
+        <div class="sl-ctrl-row is-top">
+          <button type="button" class="sl-sub-btn" id="slRentBtn">貸出<small>1000メダル</small></button>
+          <button type="button" class="sl-sub-btn" id="slBet1Btn">1BET</button>
+          <button type="button" class="sl-sub-btn is-max" id="slMaxBetBtn">MAX<br>BET</button>
+          <button type="button" class="sl-sub-btn" id="slCashoutBtn">精算</button>
+          <button type="button" class="sl-sub-btn is-gear" id="slDataBtn">📊</button>
+        </div>
+        <div class="sl-ctrl-row is-main">
+          <div class="sl-lever" id="slLever">
+            <div class="sl-lever-ball"></div>
+            <div class="sl-lever-stick"></div>
+            <span class="sl-lever-label">LEVER</span>
+          </div>
+          <div class="sl-stop-btns">
+            <button type="button" class="sl-stop-btn" id="slStop0" data-reel="0"><span></span></button>
+            <button type="button" class="sl-stop-btn" id="slStop1" data-reel="1"><span></span></button>
+            <button type="button" class="sl-stop-btn" id="slStop2" data-reel="2"><span></span></button>
+          </div>
+        </div>
+        <div class="sl-key-guide">PC: [Space]レバー / [←][↓][→]ストップ / [↑]MAXBET / [1]1BET / [Insert]貸出</div>
+      </div>
+
     </div>
-
-    <!-- 操作パネル -->
-    <div class="sl-controls">
-      <div class="sl-ctrl-row is-top">
-        <button type="button" class="sl-sub-btn" id="slRentBtn">貸出<small>1000メダル</small></button>
-        <button type="button" class="sl-sub-btn" id="slBet1Btn">1BET</button>
-        <button type="button" class="sl-sub-btn is-max" id="slMaxBetBtn">MAX<br>BET</button>
-        <button type="button" class="sl-sub-btn" id="slCashoutBtn">精算</button>
-        <button type="button" class="sl-sub-btn is-gear" id="slDataBtn">📊</button>
-      </div>
-      <div class="sl-ctrl-row is-main">
-        <div class="sl-lever" id="slLever">
-          <div class="sl-lever-stick"></div>
-          <div class="sl-lever-ball"></div>
-          <span class="sl-lever-label">LEVER</span>
-        </div>
-        <div class="sl-stop-btns">
-          <button type="button" class="sl-stop-btn" id="slStop0" data-reel="0"><span></span></button>
-          <button type="button" class="sl-stop-btn" id="slStop1" data-reel="1"><span></span></button>
-          <button type="button" class="sl-stop-btn" id="slStop2" data-reel="2"><span></span></button>
-        </div>
-      </div>
-      <div class="sl-key-guide">PC: [Space]レバー / [←][↓][→]ストップ / [↑]MAXBET / [1]1BET / [Insert]貸出</div>
-    </div>
+   </div>
   </section>
 
 </main>
