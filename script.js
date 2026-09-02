@@ -4570,10 +4570,17 @@ function slNewGameState(setting){
   };
 }
 
+/* 動きの間(ま)を決める数字。すべてジャグラーシミュレーターと同じ値にしてある。
+   ここを変えると打ち心地が変わるので、触るときは juggler_handover.md と見比べること */
 const SL_REV_MS      = 780;   // リール1回転にかかる時間(約77rpm)
-const SL_STOP_GATE_MS= 190;   // レバーONから停止ボタンを押せるようになるまで(実機のウェイト)
-const SL_STOP_MIN_MS = 60;    // 停止操作の最小間隔(同じ指の二度押しを弾くだけ)
+const SL_WAIT_MS     = 4100;  // 実機規定のサイクルタイム(4.1秒)。前のゲームのレバーからこの時間が過ぎるまで次は回らない
+const SL_STOP_GATE_MS= 600;   // レバー音が鳴っている間は停止ボタンを押せない
+const SL_STOP_MIN_MS = 150;   // 停止操作の最小間隔(同時押し対策)
 const SL_SLIP_MS     = 38;    // 1コマ滑るのにかける時間(実機の見え方に合わせてある)
+const SL_BET_LAMP_MS = 50;    // BETランプを1本ずつ点けていく間隔
+const SL_BET_CT_MS   = 100;   // BETを押してからレバーを受け付けるまで(同時押し対策)
+const SL_COUNT_MS    = 100;   // COUNT/PAY OUT の数字が1つ増える間隔
+const SL_END_HIDE_MS = 150;   // ボーナス終了後にCOUNTを「---」に戻すまで
 const SL_COIN_VALUE  = 19;    // 精算レート。サーバーの SL_COIN_VALUE と合わせる
 const SL_RENT_MEDAL  = 1000;  // 貸出に必要な所持メダル
 
@@ -4613,6 +4620,26 @@ const slot = {
   payout: 0,
   g: null,            // 台の中身(抽選・停止判定はここを見て行う)
   setting: 1,
+
+  /* ウェイト(実機の4.1秒サイクル)。
+     前のゲームでレバーを引いた時刻を覚えておき、そこから4.1秒経つまで次は回さない */
+  leverAt: 0,         // 最後にレバーが実際に効いた時刻
+  inWait: false,      // ウェイト待ちの最中か
+  waitTimer: 0,
+  pendingLever: false,// ウェイト明けに回し始める予約
+
+  /* BETランプの順次点灯 */
+  betLampShown: 0,
+  betLampTimer: 0,
+  betCtUntil: 0,      // この時刻まではレバーを受け付けない
+  betCtTimer: 0,
+
+  /* COUNT / PAY OUT のカウントアップ演出 */
+  dispCount: 0,       // いま画面に出ているCOUNT
+  dispPayout: 0,      // いま画面に出ているPAY OUT
+  countTimer: 0,
+  countHidden: true,  // COUNTが「---」表示か
+  replayLamp: false,  // リプレイランプ(回転中も消さないので独立して持つ)
   /* データ表示モード用。着席してからの記録 */
   log: [],            // 差枚の推移
   diff: 0,            // 現在差枚
@@ -4824,6 +4851,18 @@ function slEnterMachine(st){
   slot.g.bonusPaid = st.bonusPaid || 0;
   slot.g.replayPending = st.replayPending || 0;
 
+  /* 演出まわりの状態も入れ直す */
+  slClearWait();
+  slClearBetLampAnim();
+  slStopCountAnim();
+  slot.leverAt = 0;
+  slot.betLampShown = 0;
+  slot.betCtUntil = 0;
+  slot.dispPayout = 0;
+  slot.dispCount = st.bonusPaid || 0;
+  slot.countHidden = !st.inBonus;
+  slot.replayLamp = (st.replayPending || 0) > 0;
+
   applySlotOpt();
   slSetConn(online.socket && online.socket.connected ? 'on' : 'off');
 
@@ -4872,23 +4911,13 @@ function slRenderAll(){
   el.slWDiff.textContent   = (diff >= 0 ? '+' : '') + diff.toLocaleString();
   el.slWDiff.style.color   = diff >= 0 ? '#7fd4ff' : '#ff8a8a';
 
-  /* 7セグ */
-  el.slSegCredit.textContent = st.credit;
-  el.slSegPayout.textContent = slot.payout;
-  el.slSegCount.textContent = inBonus
-    ? Math.max(0, (bonusType === 'BB' ? 294 : 112) - bonusPaid)
-    : '---';
+  /* 7セグ。数字はカウントアップ演出が持っているので、そちらに任せる */
+  slDrawSeg();
 
-  /* BETランプ */
-  for (let i = 1; i <= 3; i++){
-    el['slBetLamp' + i].classList.toggle('is-on', bet >= i);
-  }
-  /* 状態ランプ。Insert Medals はコインが無いときに点滅させる(実機と同じ) */
-  el.slLampStart.classList.toggle('is-on', slot.phase === 'spin');
-  el.slLampReplay.classList.toggle('is-on', st.replayPending > 0);
-  const needCoin = slot.phase === 'idle' && bet === 0 && coins === 0 && st.replayPending === 0;
-  el.slLampInsert.classList.toggle('is-blink', needCoin);
-  el.slLampInsert.classList.toggle('is-on', false);
+  /* BETランプ。枚数が増えたときは1本ずつ点ける(演出は slSetBetLamps が持つ) */
+  if (bet !== slot.betLampShown && !slot.betLampTimer) slSetBetLamps(bet);
+
+  slUpdateStateLamps();
 
   /* GOGO!CHANCE */
   const lit = !!lampLit, rainbow = !!rareLamp && lit;
@@ -4926,6 +4955,25 @@ function slRenderBonusGraph(){
   box.innerHTML = html;
 }
 
+/* 状態ランプ(Start / Replay / Wait / Insert Medals)をまとめて面倒みる。
+   実機の点灯条件に合わせてある */
+function slUpdateStateLamps(){
+  const st = slot.st, g = slot.g;
+  if (!st) return;
+  const idle = slot.phase === 'idle';
+  const bet = g ? g.bet : st.bet;
+
+  /* Start … レバー待ちで、BETかリプレイがある */
+  el.slLampStart.classList.toggle('is-on', idle && (bet > 0 || st.replayPending > 0));
+  /* Wait … ウェイトの最中だけ */
+  el.slLampWait.classList.toggle('is-on', !!slot.inWait);
+  /* Replay … 回転中も消さない。次のゲームの結果が出るまで点いたまま */
+  el.slLampReplay.classList.toggle('is-on', !!slot.replayLamp);
+  /* Insert Medals … レバー待ちの間はずっと点滅(BET数に関わらず) */
+  el.slLampInsert.classList.toggle('is-blink', idle);
+  el.slLampInsert.classList.toggle('is-on', false);
+}
+
 /* ボタンの押せる・押せないを揃える */
 function slSyncButtons(){
   const st = slot.st, g = slot.g;
@@ -4935,8 +4983,7 @@ function slSyncButtons(){
   const bet = g ? g.bet : st.bet;
   const inBonus = g ? g.inBonus : st.inBonus;
   const lampLit = g ? g.lampLit : st.lampLit;
-  let cap = inBonus ? 2 : 3;
-  if (slotOpt.oneBetOnLamp && lampLit && !inBonus) cap = 1;
+  const cap = slBetCapNow();
 
   /* メダルが足りないのに押せてしまうと「押したのに借りられない」ので、
      足りないときは最初から押せなくしておく */
@@ -4946,9 +4993,10 @@ function slSyncButtons(){
   el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 || (coins < 1 && bet === 0) || bet >= cap;
   el.slCashoutBtn.disabled = !idle;
 
-  /* 簡単レバーモードのときは、BET前でもレバーを引ける */
-  const canLever = idle && (bet >= (inBonus ? 2 : 1) || st.replayPending > 0 ||
-                            (slotOpt.easyLever && coins >= 1));
+  /* 0BETのときはレバーをグレーアウトする(簡単レバーモードなら引ける)。
+     BETの直後・ウェイト中も受け付けない */
+  const canLever = idle && !slot.inWait && !slBetCtActive() && slCanPullLever() &&
+                   !(inBonus && bet < 2 && st.replayPending === 0);
   el.slLever.classList.toggle('is-off', !canLever);
   slSyncStopButtons();
 }
@@ -4966,11 +5014,143 @@ function slSyncStopButtons(){
     btn.disabled = !live;
     btn.classList.toggle('is-live', live);
   }
-  /* WAITランプはウェイト中だけ点ける */
-  if (el.slLampWait) el.slLampWait.classList.toggle('is-on', spinning && gated);
+  /* 状態ランプは slUpdateStateLamps() が一手に面倒をみるので、ここでは触らない */
 }
 
 function slMsg(text){ if (el.slMsg) el.slMsg.textContent = text; }
+
+/* =========================================================
+   動きの間(ま)まわり。実機に合わせた仕掛け
+   ========================================================= */
+
+/* ---- ウェイト(実機の4.1秒サイクル) ----
+   実機は1ゲームにかならず4.1秒かける決まりになっている。
+   前のゲームのレバーから4.1秒経っていない状態でレバーを引くと、
+   レバー音もレバーの動きもリールの回転もぜんぶ保留になり、
+   ウェイトが明けた瞬間にまとめて始まる。 */
+function slWaitLeft(){
+  if (!slot.leverAt) return 0;
+  return Math.max(0, SL_WAIT_MS - (performance.now() - slot.leverAt));
+}
+
+function slBeginWait(ms){
+  slot.inWait = true;
+  slot.pendingLever = true;
+  slMsg('ウェイト');
+  slUpdateStateLamps();   // Waitランプをすぐ点ける
+  slSyncButtons();
+  clearTimeout(slot.waitTimer);
+  slot.waitTimer = setTimeout(() => {
+    slot.inWait = false;
+    slot.waitTimer = 0;
+    slUpdateStateLamps();   // Waitランプを消す
+    if (slot.pendingLever){
+      slot.pendingLever = false;
+      slDoLever();          // ウェイト明け。ここで初めて回り出す
+    } else {
+      slRenderAll();
+    }
+  }, ms);
+}
+
+function slClearWait(){
+  clearTimeout(slot.waitTimer);
+  slot.waitTimer = 0;
+  slot.inWait = false;
+  slot.pendingLever = false;
+}
+
+/* ---- BETランプの順次点灯 ----
+   MAXBETで1・2・3を同時に光らせず、0.05秒ずつずらして1本ずつ点ける */
+function slRenderBetLamps(){
+  for (let i = 1; i <= 3; i++){
+    el['slBetLamp' + i].classList.toggle('is-on', slot.betLampShown >= i);
+  }
+}
+function slClearBetLampAnim(){
+  clearTimeout(slot.betLampTimer);
+  slot.betLampTimer = 0;
+}
+function slAnimateBetLamps(target){
+  slClearBetLampAnim();
+  const step = () => {
+    if (slot.betLampShown >= target){ slot.betLampTimer = 0; return; }
+    slot.betLampShown++;
+    slRenderBetLamps();
+    slot.betLampTimer = setTimeout(step, SL_BET_LAMP_MS);
+  };
+  /* 1本目は待たずに点ける */
+  step();
+}
+function slSetBetLamps(target){
+  if (target > slot.betLampShown){
+    slAnimateBetLamps(target);            // 増えるときだけ演出する
+  } else {
+    slClearBetLampAnim();
+    slot.betLampShown = target;           // 減る・消えるは即座に
+    slRenderBetLamps();
+  }
+}
+
+/* ---- BETクールタイム ----
+   BETを押した直後にレバーが効いてしまうと、押したつもりのない枚数で回ってしまう。
+   この間はレバーをグレーアウトするので、明けたら必ず元に戻すこと
+   (戻し忘れると、押せるのに押せない見た目のままになる) */
+function slStartBetCT(){
+  slot.betCtUntil = performance.now() + SL_BET_CT_MS;
+  clearTimeout(slot.betCtTimer);
+  slot.betCtTimer = setTimeout(() => {
+    slot.betCtTimer = 0;
+    slSyncButtons();          // グレーアウトを解除する
+  }, SL_BET_CT_MS + 10);
+}
+function slBetCtActive(){ return performance.now() < slot.betCtUntil; }
+
+/* ---- COUNT / PAY OUT のカウントアップ ----
+   実機は払い出し枚数がパラパラと増えていく。0.1秒ごとに1つ進める */
+function slStopCountAnim(){
+  clearTimeout(slot.countTimer);
+  slot.countTimer = 0;
+}
+function slTickCount(){
+  const g = slot.g;
+  const targetPay = slot.payout;
+  const targetCount = (g && g.inBonus) ? g.bonusPaid : slot.dispCount;
+  let moved = false;
+
+  if (slot.dispPayout < targetPay){ slot.dispPayout++; moved = true; }
+  if (g && g.inBonus && slot.dispCount < targetCount){ slot.dispCount++; moved = true; }
+
+  slDrawSeg();
+  if (moved){
+    slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS);
+  } else {
+    slot.countTimer = 0;
+  }
+}
+function slStartCountAnim(){
+  if (slot.countTimer) return;
+  slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS);
+}
+
+/* 7セグの描画だけを切り出したもの(カウントアップ中に何度も呼ぶため) */
+function slDrawSeg(){
+  const st = slot.st, g = slot.g;
+  if (!st) return;
+  el.slSegCredit.textContent = st.credit;
+  el.slSegPayout.textContent = slot.dispPayout;
+  el.slSegCount.textContent = slot.countHidden ? '---' : slot.dispCount;
+}
+
+/* ボーナスが終わったあと、少し置いてからCOUNTを「---」に戻す */
+function slHideCount(){
+  setTimeout(() => {
+    slot.countHidden = true;
+    slot.dispCount = 0;
+    slDrawSeg();
+  }, SL_END_HIDE_MS);
+}
+
 
 /* ---------- 操作 ---------- */
 
@@ -4988,9 +5168,7 @@ function slBet(n){
   if (!g || !st || slot.phase !== 'idle') return;
   if (st.replayPending > 0) return;
 
-  let cap = slBetCap(g);
-  /* 設定「GOGO!CHANCE中は1BETのみ」。点灯中はMAXBETを押しても1枚だけ入れる */
-  if (slotOpt.oneBetOnLamp && g.lampLit && !g.inBonus) cap = 1;
+  const cap = slBetCapNow();
   const want = (n === undefined || n === null) ? cap : Math.floor(Number(n) || 0);
   if (!Number.isFinite(want) || want < 1) return;
   if (g.inBonus && want < 2 && n !== undefined) return;
@@ -5000,27 +5178,63 @@ function slBet(n){
   if (add <= 0) return;
 
   g.bet += add;
+  slStartBetCT();                 // 押した直後はレバーを受け付けない
+  slSetBetLamps(g.bet);           // ランプは1本ずつ点ける
   online.socket.emit('slot:bet', n === undefined ? { n: cap } : { n: add });
   audio.play('chip');
   slRenderAll();
 }
 
-/* レバーON。ここで当たりが決まり、すぐリールが回り出す */
+/* いまBETできる上限。ボーナス中は2枚が最優先、
+   次に「GOGO中は1BETのみ」の設定、それ以外は3枚 */
+function slBetCapNow(){
+  const g = slot.g;
+  if (!g) return 3;
+  if (g.inBonus) return 2;
+  if (slotOpt.oneBetOnLamp && g.lampLit) return 1;
+  return 3;
+}
+
+/* レバーを引けるか(BET枚数の観点だけ) */
+function slCanPullLever(){
+  const g = slot.g, st = slot.st;
+  if (!g || !st) return false;
+  if (st.replayPending > 0) return true;
+  if (g.bet > 0) return true;
+  /* 簡単レバーモードのときだけ、BET0でも引ける */
+  const coins = (st.coins != null ? st.coins : st.credit);
+  return !!slotOpt.easyLever && coins >= 1;
+}
+
+/* レバーON。ウェイトが残っていれば、明けるまで待ってから回し始める */
 function slLever(){
   const g = slot.g, st = slot.st;
   if (!g || !st || slot.phase !== 'idle') return;
+  if (slot.inWait) return;                 // すでにウェイト待ち
+  if (slBetCtActive()) return;             // BETの直後は受け付けない
 
-  /* 簡単レバーモード。BETしていない状態でレバーを引いたら、
-     MAXBETしてからレバーを引いたことにする */
-  if (g.bet === 0 && st.replayPending === 0 && slotOpt.easyLever){
+  /* 簡単レバーモード。BETしていない状態でレバーを引いたらMAXBETしてから */
+  if (g.bet === 0 && st.replayPending === 0){
+    if (!slotOpt.easyLever){ slMsg('メダルをBETしてください'); return; }
     slBet();
-    if (g.bet === 0) return;   // コインが足りなかった
+    if (g.bet === 0) return;               // コインが足りなかった
   }
-
-  if (st.replayPending > 0){ g.bet = st.replayPending; }
-  if (g.bet < 1){ slMsg('メダルをBETしてください'); return; }
+  if (st.replayPending > 0 && g.bet === 0) g.bet = st.replayPending;
+  if (g.bet < 1) return;
   if (g.inBonus && g.bet < 2){ slMsg('MAXBETしてください'); return; }
 
+  /* 実機は1ゲームに4.1秒かける。残っていれば、その間ぜんぶ保留する */
+  const left = slWaitLeft();
+  if (left > 0){ slBeginWait(left); return; }
+  slDoLever();
+}
+
+/* 実際に回し始めるところ。ウェイトが明けたあともここに来る */
+function slDoLever(){
+  const g = slot.g;
+  if (!g) return;
+
+  slot.leverAt = performance.now();
   el.slLever.classList.add('is-pulled');
   setTimeout(() => el.slLever.classList.remove('is-pulled'), 160);
 
@@ -5031,6 +5245,8 @@ function slLever(){
   slot.stopped = [false, false, false];
   slot.pending = [false, false, false];
   slot.payout = 0;
+  slot.dispPayout = 0;
+  slStopCountAnim();
   slot.gateAt = performance.now() + SL_STOP_GATE_MS;
   slot.betSum += g.bet;
 
@@ -5042,6 +5258,7 @@ function slLever(){
   slStartLoop();
   slMsg('');
   el.slReelWindow.classList.remove('is-win');
+  audio.play('button');
 
   /* 台のデータはサーバーにも残しておく(他の人のホール表示に出るため) */
   if (online.socket) online.socket.emit('slot:spin', { bet: g.bet });
@@ -5086,13 +5303,30 @@ function slStop(idx){
 
 /* 1ゲームの後始末。表示を更新して、結果をサーバーにも伝える */
 function slAfterGame(res){
+  const g = slot.g;
   slot.phase = 'idle';
   slot.payout = res.pay || 0;
   slot.paySum += res.pay || 0;
   slot.diff = slot.paySum - slot.betSum;
   slot.log.push(slot.diff);
   if (slot.log.length > 5000) slot.log.shift();
-  slot.bonusLog = slot.g.bonusLog;
+  slot.bonusLog = g.bonusLog;
+
+  /* リプレイランプは、次のゲームの結果が出るまで点けたままにする(実機と同じ)。
+     リール回転中に消えないよう、replayPending とは別に持っている */
+  slot.replayLamp = !!res.hasReplay;
+
+  /* BETランプは消す */
+  slSetBetLamps(0);
+
+  /* ボーナスに入ったらCOUNTを0から出す */
+  if (res.started){
+    slot.countHidden = false;
+    slot.dispCount = 0;
+  }
+  /* 払い出しはパラパラと増やす */
+  if (res.pay > 0 || (g.inBonus && !res.started)) slStartCountAnim();
+  else slDrawSeg();
 
   if (res.pay > 0){
     el.slReelWindow.classList.add('is-win');
@@ -5107,6 +5341,7 @@ function slAfterGame(res){
     slMsg(res.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
   } else if (res.ended){
     slMsg(res.ended.type + ' 終了  ' + res.ended.paid + '枚獲得');
+    slHideCount();
   } else if (res.hasReplay){
     slMsg('リプレイ');
   } else if (res.pay > 0){
@@ -5122,9 +5357,9 @@ function slAfterGame(res){
       replay: !!res.hasReplay,
       started: res.started || null,
       ended: res.ended ? res.ended.type : null,
-      bb: slot.g.bb, rb: slot.g.rb,
-      startG: slot.g.startG, totalG: slot.g.totalG,
-      lampLit: !!slot.g.lampLit
+      bb: g.bb, rb: g.rb,
+      startG: g.startG, totalG: g.totalG,
+      lampLit: !!g.lampLit
     });
   }
   slSyncStopButtons();
@@ -5133,8 +5368,8 @@ function slAfterGame(res){
 
 async function slCashout(){
   if (slot.phase !== 'idle') return;
-  const st = slot.st;
-  const coins = st ? (st.coins != null ? st.coins : st.credit) + st.bet : 0;
+  const st = slot.st, g = slot.g;
+  const coins = st ? (st.coins != null ? st.coins : st.credit) + (g ? g.bet : st.bet) : 0;
   const ok = await askConfirm({
     title: '精算して席を立ちますか?',
     text: 'コイン ' + coins + '枚 を ' + (coins * SL_COIN_VALUE).toLocaleString() + ' メダルとして受け取ります。',
@@ -5189,6 +5424,10 @@ function onSlotCashout(d){
   slot.seated = false;
   slot.phase = 'idle';
   slot.g = null;
+  slClearWait();
+  slClearBetLampAnim();
+  slStopCountAnim();
+  clearTimeout(slot.betCtTimer); slot.betCtTimer = 0;
   for (const r of slot.reels) { r.spin = false; r.target = null; r.remain = null; }
   if (slot.raf){ cancelAnimationFrame(slot.raf); slot.raf = 0; }
 

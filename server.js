@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v5.1)
+   Betoria - server.js  (v5.2)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '5.1.0';
+const APP_VERSION = '5.2.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
