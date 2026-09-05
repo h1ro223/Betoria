@@ -55,6 +55,7 @@ const iconColorOf = (c) => (ICON_COLORS.some(x => x.key === c) ? c : DEFAULT_ICO
    サーバーから受け取った名前と一致する人だけ、
    名前の先頭に👑を付けて金色で表示する。
    ========================================================= */
+/* スロットのメンテ状態はサーバーが app:info で教えてくれる */
 function isOwnerName(name){
   return !!name && !!online.ownerName && name === online.ownerName;
 }
@@ -444,8 +445,6 @@ const el = {
   slBonusGraph: $('slBonusGraph'),
   slWCoin: $('slWCoin'),
   slWInvest: $('slWInvest'),
-  slWBack: $('slWBack'),
-  slWDiff: $('slWDiff'),
   slReelWindow: $('slReelWindow'),
   slReel0: $('slReel0'),
   slReel1: $('slReel1'),
@@ -483,6 +482,9 @@ const el = {
   slStatAvg: $('slStatAvg'),
   slStatDiff: $('slStatDiff'),
   slHistory: $('slHistory'),
+  slYesterday: $('slYesterday'),
+  slotHistoryOverlay: $('slotHistoryOverlay'),
+  slotHistoryCloseBtn: $('slotHistoryCloseBtn'),
   rulesSlot: $('rulesSlot'),
   mrRulesBtn: $('mrRulesBtn'),
   mrRaceNo: $('mrRaceNo'),
@@ -1300,7 +1302,29 @@ const GAME_INFO = {
 function gameInfo(g){ return GAME_INFO[g] || GAME_INFO.bj; }
 
 function openGameSelect(){
+  renderGameSelect();
   showScreen('gameSelect');
+}
+
+/* メンテナンス中のゲームは押せないようにする(v6.1)。
+   オーナーだけはそのまま遊べる */
+function renderGameSelect(){
+  const card = el.gameGrid && el.gameGrid.querySelector('[data-game="slot"]');
+  if (!card) return;
+  const blocked = !!online.slotMaintenance &&
+                  !(account.user && isOwnerName(account.user.username));
+  card.classList.toggle('is-locked', blocked);
+  card.disabled = blocked;
+  let tag = card.querySelector('.game-tag.is-maint');
+  if (blocked && !tag){
+    tag = document.createElement('span');
+    tag.className = 'game-tag is-maint';
+    tag.textContent = 'メンテナンス中';
+    const tags = card.querySelector('.game-card-tags');
+    if (tags) tags.prepend(tag);
+  } else if (!blocked && tag){
+    tag.remove();
+  }
 }
 
 function openGameMenu(g){
@@ -3524,7 +3548,12 @@ function connectSocket(){
     audio.play('join');
   });
   /* オーナー名を受け取る(v4.6) */
-  sock.on('app:info', (d) => { online.ownerName = (d && d.owner) || ''; });
+  sock.on('app:info', (d) => {
+    online.ownerName = (d && d.owner) || '';
+    /* スロットのメンテナンス状態(v6.1)。ゲーム選択の見た目に使う */
+    online.slotMaintenance = !!(d && d.slotMaintenance);
+    if (screen === 'gameSelect') renderGameSelect();
+  });
 
   sock.on('room:state', onRoomState);
 
@@ -4247,6 +4276,10 @@ const slot = {
   replayLamp: false,
   dispPayout: 0,
   dispCount: 0,
+  dispCredit: 0,      // 画面に出ているCREDIT(1枚ずつ動かす)
+  dispCoin: 0,        // 画面に出ている持ちコイン
+  creditTarget: 0,
+  coinTarget: 0,
   countTimer: 0,
   countHidden: true,
   payTarget: 0,
@@ -4501,6 +4534,10 @@ function slEnterMachine(st){
   slot.betCtUntil = 0;
   slot.dispPayout = 0;
   slot.dispCount = st.bonusPaid || 0;
+  slot.dispCredit = st.credit;
+  slot.dispCoin = (st.coins != null ? st.coins : st.credit);
+  slot.creditTarget = slot.dispCredit;
+  slot.coinTarget = slot.dispCoin;
   slot.countHidden = !st.inBonus;
   slot.replayLamp = (st.replayPending || 0) > 0;
   slot.bet = st.bet || 0;
@@ -4580,21 +4617,52 @@ function slTickCount(){
   let moved = false;
   if (slot.dispPayout < slot.payTarget){ slot.dispPayout++; moved = true; }
   if (!slot.countHidden && slot.dispCount < slot.countTarget){ slot.dispCount++; moved = true; }
+  /* CREDITと持ちコインも1枚ずつ寄せていく。減るときも1枚ずつ */
+  if (slot.dispCredit !== slot.creditTarget){
+    slot.dispCredit += (slot.dispCredit < slot.creditTarget) ? 1 : -1;
+    moved = true;
+  }
+  if (slot.dispCoin !== slot.coinTarget){
+    slot.dispCoin += (slot.dispCoin < slot.coinTarget) ? 1 : -1;
+    moved = true;
+  }
   slDrawSeg();
   slot.countTimer = moved ? setTimeout(slTickCount, SL_COUNT_MS) : 0;
 }
 function slStartCountAnim(){ if (!slot.countTimer) slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS); }
+
+/* サーバーから来たコイン枚数を目標にセットする。
+   差が大きいとき(貸出・精算・着席)は待たせても仕方ないので即座に合わせる */
+function slSyncCoinTargets(instant){
+  const st = slot.st;
+  if (!st) return;
+  slot.creditTarget = st.credit;
+  slot.coinTarget = (st.coins != null ? st.coins : st.credit);
+  const far = Math.abs(slot.dispCredit - slot.creditTarget) > 15 ||
+              Math.abs(slot.dispCoin - slot.coinTarget) > 15;
+  if (instant || far){
+    slot.dispCredit = slot.creditTarget;
+    slot.dispCoin   = slot.coinTarget;
+    slDrawSeg();
+  } else if (slot.dispCredit !== slot.creditTarget || slot.dispCoin !== slot.coinTarget){
+    slStartCountAnim();
+  }
+}
 function slHideCount(){
   setTimeout(() => { slot.countHidden = true; slot.dispCount = 0; slDrawSeg(); }, SL_END_HIDE_MS);
 }
 
 /* 7セグだけの描画(カウントアップ中に何度も呼ぶ) */
+/* 7セグと持ちコインの描画。
+   数字は「いま画面に出ている値(disp)」を描く。サーバーの値を直に描くと
+   1枚ずつ増える演出にならないので注意(v6.1で修正) */
 function slDrawSeg(){
   const st = slot.st;
   if (!st) return;
-  el.slSegCredit.textContent = st.credit;
+  el.slSegCredit.textContent = slot.dispCredit;
   el.slSegPayout.textContent = slot.dispPayout;
   el.slSegCount.textContent = slot.countHidden ? '---' : slot.dispCount;
+  if (el.slWCoin) el.slWCoin.textContent = slot.dispCoin;
 }
 
 function slMsg(text){ if (el.slMsg) el.slMsg.textContent = text; }
@@ -4640,8 +4708,10 @@ function slBet(n){
   const add = Math.min(want, cap - slot.bet, coins);
   if (add <= 0) return;
 
+  const wasFirst = (slot.bet === 0);
   slot.bet += add;
   slStartBetCT();
+  if (wasFirst) slSetBetLamps(0);   // 前のゲームのぶんを消してから
   slSetBetLamps(slot.bet);
   online.socket.emit('slot:bet', n === undefined ? { n: cap } : { n: add });
   audio.play('chip');
@@ -4709,7 +4779,8 @@ function onSlotSpin(d){
     audio.play('button');
     slMsg('');
     el.slReelWindow.classList.remove('is-win');
-    slSetBetLamps(0);
+    /* ★BETランプはここで消さない。実機は回転中も点いたままで、
+       次のゲームのBETを入れるときに切り替わる(v6.1で修正) */
     slot.reels.forEach((r, i) => slStartSpin(r, i * SL_START_DELAY));
     slStartLoop();
     if (d.peka){ slot.view.lampLit = true; audio.play('win'); slMsg('GOGO! CHANCE 点灯!'); }
@@ -4794,8 +4865,11 @@ function onSlotResume(st){
 }
 
 function onSlotState(st){
+  const prev = slot.st;
   slot.st = st;
   if (slot.phase === 'idle') slot.bet = st.bet;
+  /* コインの増減は1枚ずつ見せる。初回や大きく動いたときは即座に合わせる */
+  slSyncCoinTargets(!prev);
   slot.view.bb = st.bb; slot.view.rb = st.rb;
   slot.view.startG = st.startG; slot.view.totalG = st.totalG;
   slot.view.inBonus = !!st.inBonus;
@@ -4836,8 +4910,10 @@ function onSlotResult(d){
   slot.dispPayout = 0;
   if (d.started){ slot.countHidden = false; slot.dispCount = 0; }
   slot.countTarget = d.bonusPaid || 0;
-  if (slot.payTarget > 0 || slot.countTarget > slot.dispCount) slStartCountAnim();
-  else slDrawSeg();
+  if (slot.payTarget > 0 || slot.countTarget > slot.dispCount ||
+      slot.dispCredit !== slot.creditTarget || slot.dispCoin !== slot.coinTarget){
+    slStartCountAnim();
+  } else slDrawSeg();
 
   if (d.pay > 0){
     el.slReelWindow.classList.add('is-win');
@@ -4862,7 +4938,7 @@ function onSlotResult(d){
     slMsg('');
   }
   slot.bet = 0;
-  slSetBetLamps(0);
+  /* BETランプは次にBETを入れるまで点けたままにする(実機と同じ) */
   slSyncStopButtons();
   slRenderAll();
 }
@@ -4916,17 +4992,14 @@ function slRenderAll(){
   el.slDataTotal.textContent = v.totalG;
   el.slDataRate.textContent = rate ? '1/' + rate.toFixed(1) : '1/---';
 
-  /* 情報バー。回収は「いま精算したら戻ってくるメダル」 */
-  const back = (coins + slot.bet) * SL_COIN_VALUE;
-  const diff = back - st.invested;
+  /* 情報バー。回収と差額は精算のときに出るので、ここには置かない(v6.1) */
   el.slWCoin.textContent   = coins;
   el.slWInvest.textContent = st.invested.toLocaleString();
-  el.slWBack.textContent   = back.toLocaleString();
-  el.slWDiff.textContent   = (diff >= 0 ? '+' : '') + diff.toLocaleString();
-  el.slWDiff.style.color   = diff >= 0 ? '#7fd4ff' : '#ff8a8a';
 
   slDrawSeg();
-  if (slot.bet !== slot.betLampShown && !slot.betLampTimer) slSetBetLamps(slot.bet);
+  /* BETランプは「BETが増えたとき」だけ追従させる。
+     0に戻すのは次のBETが入る瞬間なので、ここでは減らさない */
+  if (slot.bet > slot.betLampShown && !slot.betLampTimer) slSetBetLamps(slot.bet);
 
   /* GOGO!CHANCE */
   const lit = !!v.lampLit;
@@ -5026,7 +5099,32 @@ function slRenderData(){
   el.slStatAvg.textContent = (bb + rb) ? Math.round(g / (bb + rb)) : '---';
   el.slStatDiff.textContent = (slot.diff >= 0 ? '+' : '') + slot.diff;
   slDrawGraph();
+  slRenderYesterday();
+}
+
+/* 前日の設定。当日ぶんは絶対に出さない(サーバーが前日ぶんしか送ってこない) */
+function slRenderYesterday(){
+  const box = el.slYesterday;
+  if (!box) return;
+  const y = (slot.st && slot.st.yesterday) || null;
+  if (!y || !y.settings || !y.settings.length){
+    box.innerHTML = '<p class="empty-note">まだ前日のデータがありません</p>';
+    return;
+  }
+  box.innerHTML = y.settings.map(m => {
+    const rate = (m.bb + m.rb) && m.totalG ? '1/' + (m.totalG / (m.bb + m.rb)).toFixed(0) : '1/---';
+    return '<div class="sl-yest-item">' +
+      '<span class="sl-yest-no">' + m.no + '番台</span>' +
+      '<span class="sl-yest-set">' + m.setting + '</span>' +
+      '<span class="sl-yest-sub">' + m.totalG + 'G ' + rate + '</span>' +
+    '</div>';
+  }).join('');
+}
+
+/* ボーナス履歴は右上のグラフを押すと開く(v6.1) */
+function openSlotHistory(){
   slRenderHistory();
+  openOverlay(el.slotHistoryOverlay);
 }
 
 function slDrawGraph(){
@@ -6777,6 +6875,11 @@ el.gameSelectBackBtn.addEventListener('click', () => { audio.play('button'); sho
 el.gameGrid.addEventListener('click', (e) => {
   const card = e.target.closest('.game-card');
   if (!card) return;
+  if (card.classList.contains('is-locked')){
+    audio.play('error');
+    toast('スロットはただいまメンテナンス中です');
+    return;
+  }
   audio.play('button');
   openGameMenu(card.dataset.game);
 });
@@ -7137,6 +7240,10 @@ el.slSettingsBtn.addEventListener('click', () => {
   openOverlay(el.slotSettingsOverlay);
 });
 el.slotSettingsCloseBtn.addEventListener('click', () => closeOverlay(el.slotSettingsOverlay));
+
+/* ボーナス履歴(v6.1)。データカウンター右上のグラフを押すと開く */
+el.slBonusGraph.addEventListener('click', () => { audio.play('button'); openSlotHistory(); });
+el.slotHistoryCloseBtn.addEventListener('click', () => closeOverlay(el.slotHistoryOverlay));
 el.slOptMsgBar.addEventListener('change', () => {
   slotOpt.msgBar = el.slOptMsgBar.checked; saveSlotOpt(); applySlotOpt();
 });
@@ -7171,7 +7278,7 @@ document.addEventListener('keydown', (e) => {
   if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   /* オーバーレイが開いているときは触らせない */
   if (!el.slotDataOverlay.hidden || !el.rulesOverlay.hidden || !el.confirmOverlay.hidden ||
-      !el.slotSettingsOverlay.hidden) return;
+      !el.slotSettingsOverlay.hidden || !el.slotHistoryOverlay.hidden) return;
 
   switch (e.key){
     case ' ': case 'Spacebar': e.preventDefault(); slLever(); break;

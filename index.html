@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v6.0 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v6.1 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -638,7 +638,7 @@
             <span class="sl-dp-num is-green" id="slDataRate">1/---</span>
           </div>
         </div>
-        <div class="sl-bgraph" id="slBonusGraph"></div>
+        <button type="button" class="sl-bgraph" id="slBonusGraph" title="ボーナス履歴を見る"></button>
       </div>
     </div>
 
@@ -654,8 +654,6 @@
       <div class="sl-wallet">
         <div class="sl-wallet-item"><span class="sl-w-label">持ちコイン</span><span class="sl-w-num" id="slWCoin">0</span><span class="sl-w-unit">枚</span></div>
         <div class="sl-wallet-item"><span class="sl-w-label">投資</span><span class="sl-w-num" id="slWInvest">0</span><span class="sl-w-unit">メダル</span></div>
-        <div class="sl-wallet-item"><span class="sl-w-label">回収</span><span class="sl-w-num" id="slWBack">0</span><span class="sl-w-unit">メダル</span></div>
-        <div class="sl-wallet-item"><span class="sl-w-label">差額</span><span class="sl-w-num" id="slWDiff">+0</span><span class="sl-w-unit">メダル</span></div>
       </div>
 
       <div class="sl-reel-section">
@@ -1459,9 +1457,23 @@
         <div class="sl-stat"><span class="sl-stat-key">現在差枚</span><span class="sl-stat-val led" id="slStatDiff">+0</span></div>
       </div>
 
-      <h3 class="block-title">ボーナス履歴</h3>
-      <div class="sl-history" id="slHistory"></div>
+      <h3 class="block-title">前日の設定</h3>
+      <div class="sl-yest" id="slYesterday"></div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ---------- スロット: ボーナス履歴 (v6.1) ---------- -->
+<div class="overlay" id="slotHistoryOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="ボーナス履歴">
+    <div class="sheet-head">
+      <h2>ボーナス履歴</h2>
+      <button type="button" class="close-btn" id="slotHistoryCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <p class="screen-note">この台で当たったボーナスの記録です。Gの数字は、前回のボーナスから何ゲーム回して当たったかを表しています。</p>
+      <div class="sl-history" id="slHistory"></div>
     </div>
   </div>
 </div>
@@ -1547,6 +1559,17 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v6.1</h3>
+        <ul class="rule-list">
+          <li>スロットの数字を<b>実機と同じ7セグ書体</b>にしました。BB・RB・スタート・総回転数・合成確率・CREDIT・COUNT・PAY OUTが対象です。</li>
+          <li><b>CREDITと持ちコインが1枚ずつ増減する</b>ようになりました。</li>
+          <li>レバーを引いたときに<b>BETランプが一瞬消えてしまう</b>のを直しました。</li>
+          <li>データ表示に<b>前日の設定</b>を載せました。今日の設定は今までどおり非公開です。</li>
+          <li><b>ボーナス履歴</b>は、右上の四角いグラフを押すと開くようになりました。</li>
+          <li>筐体上部の表示を<b>持ちコインと投資の2つ</b>に整理しました(回収と差額は精算のときに出ます)。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v6.0</h3>
         <ul class="rule-list">

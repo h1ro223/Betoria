@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.0)
+   Betoria - server.js  (v6.1)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.0.0';
+const APP_VERSION = '6.1.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1557,6 +1557,16 @@ const SL_CHERRY_DUP_RATE = 0.25;
    変えたら必ず tests/t_rtp.js で全体の還元率を測り直すこと */
 const SL_SETTING_WEIGHTS = [1, 1, 1, 1, 1, 1];
 
+/* スロットのメンテナンス(v6.1)
+   true の間はオーナー以外が遊べない。内部データはそのまま残る。
+   環境変数 SLOT_MAINTENANCE=0 を入れれば、コードを触らずに開けられる */
+const SL_MAINTENANCE = process.env.SLOT_MAINTENANCE !== '0';
+function slCanPlay(name){ return !SL_MAINTENANCE || isOwnerName(name); }
+
+/* 前日の設定。0:00に振り直すとき、その日の設定をここへ移す。
+   当日の設定は絶対に見せないが、前日ぶんなら台の見極めの参考として出してよい */
+let slYesterday = { dayKey: null, settings: [] };
+
 const SL_MACHINES   = 6;      // ホールの台数
 const SL_PEKA_FIRST = 0.15;   // 先ペカ(レバーON時点灯)の割合。残り85%は後ペカ
 const SL_CREDIT_MAX = 50;     // クレジット上限
@@ -1691,7 +1701,9 @@ function slotLobby(){
       startG: m.startG, totalG: m.totalG,
       rate: slCombinedRate(m)
     })),
-    owner: OWNER_NAME
+    owner: OWNER_NAME,
+    maintenance: SL_MAINTENANCE,     // v6.1
+    yesterday: slYesterday
   };
 }
 function broadcastSlotLobby(io){
@@ -1717,6 +1729,7 @@ function slotState(m){
     rate: slCombinedRate(m),
     invested: m.invested,
     waitMs: slSlotWaitLeft(m),
+    yesterday: slYesterday,          // 前日の設定(v6.1)
     bonusLog: m.bonusLog.slice(-50)
   };
 }
@@ -1791,6 +1804,12 @@ function slDrawGame(m){
    --------------------------------------------------------- */
 async function resetSlotHall(io){
   const key = jstDateKey();
+  /* 振り直す前に、今の設定を「前日ぶん」として残しておく */
+  slYesterday = {
+    dayKey: slotHall[0] ? slotHall[0].dayKey : null,
+    settings: slotHall.map(m => ({ no: m.no, setting: m.setting,
+                                   bb: m.bb, rb: m.rb, totalG: m.totalG }))
+  };
   for (const m of slotHall){
     if (m.seat){
       try { await cashOutSlot(io, m, 'reset'); }
@@ -3452,7 +3471,7 @@ io.on('connection', (socket) => {
 
   /* オーナー名を伝える(v4.6)。
      画面側はこれを見て、開発者の名前に👑を付ける */
-  socket.emit('app:info', { owner: OWNER_NAME });
+  socket.emit('app:info', { owner: OWNER_NAME, slotMaintenance: SL_MAINTENANCE });
 
   socket.emit('room:list', roomList());
   /* ログインしたことをフレンドに知らせ、相手のオンライン人数表示を更新させる(v3.1) */
@@ -3793,6 +3812,8 @@ io.on('connection', (socket) => {
     const { no } = (payload || {});
     const m = slotById(no);
     if (!m) return socket.emit('room:error', 'その台はありません');
+    if (!slCanPlay(name))
+      return socket.emit('room:error', 'スロットはメンテナンス中です');
 
     /* 1人1台まで。別のタブや端末から座り直そうとした場合はここで弾く */
     const already = slotOf(name);
