@@ -3534,11 +3534,13 @@ function connectSocket(){
                 '。\nこの端末からはログアウトしました。');
   });
 
-  /* スロット(v5.0) */
+  /* スロット(v6.0) */
   sock.on('slot:lobby',   onSlotLobby);
   sock.on('slot:sat',     onSlotSat);
   sock.on('slot:resume',  onSlotResume);
   sock.on('slot:state',   onSlotState);
+  sock.on('slot:spin',    onSlotSpin);
+  sock.on('slot:result',  onSlotResult);
   sock.on('slot:cashout', onSlotCashout);
   /* 接続の状態を上部に出す(v5.1) */
   sock.on('connect',    () => slSetConn('on'));
@@ -4139,17 +4141,27 @@ const chat = { open: false, unread: 0, log: [], floatTimers: [] };
    会場は部屋を持たないので、送信先のイベント名が変わる */
 
 /* =========================================================
-   スロット (v5.0)
+   スロット (v6.0)
    ---------------------------------------------------------
-   実機のパチスロと同じで、当たりはレバーを叩いた瞬間にサーバーが決める。
-   ここ(クライアント)がやるのは次の3つだけ。
-     ・リールを回して見せる
-     ・停止ボタンを押した「位置」をサーバーに送る
-     ・サーバーが返してきた停止位置までリールを滑らせて止める
-   当選役はクライアントに一切届かないので、ここをいじっても出玉は変わらない。
+   当たりを決めるのはサーバー。ここは「見せる」のと「押した位置を送る」係。
+
+   ■ なぜ押した瞬間に止まるのか
+     レバーを引いたとき、サーバーは当たり(フラグ)と種(seed)をまとめて返す。
+     停止制御は seed が同じなら必ず同じ答えになるので、
+     ブラウザはサーバーの返事を待たずに自分で停止位置を計算できる。
+     3つ止め終わったら押した位置をサーバーに送り、サーバーが同じ計算をやり直して
+     答え合わせをする。払い出しもそこで決まる。
+
+   ■ 大事な約束
+     ・停止制御は shared/slot-core.js を使う。ここに書き写さないこと
+       (サーバーと1文字でも違うと答え合わせが通らなくなる)
+     ・出目はサーバーが返した cols で必ず上書きする。自分の計算を信じない
+     ・Math.random は使わない。ブドウの出目は seed 由来の rng で決める
    ========================================================= */
 
-const SL_KOMA = 21;
+const SC = window.SlotCore;          // shared/slot-core.js
+const SL_KOMA = SC.KOMA;
+
 const SL_SYM_IMG = {
   1: './slot/Reel/Grape.png',
   2: './slot/Reel/Cherry.png',
@@ -4159,432 +4171,27 @@ const SL_SYM_IMG = {
   6: './slot/Reel/BAR.png',
   7: './slot/Reel/7.png'
 };
-/* リール配列。サーバーの SL_REEL_DATA と必ず同じにすること。
-   見た目を作るためだけに持っている(抽選には一切使わない) */
-const SL_REEL_DATA = [
-  [4,7,5,1,5,1,6,2,1,5,1,7,3,1,5,1,2,6,1,5,1],
-  [5,7,1,2,5,4,1,2,5,6,1,2,5,4,1,2,5,6,1,2,3],
-  [1,7,6,4,5,1,3,4,5,1,3,4,5,1,3,4,5,1,3,4,5]
-];
 
+/* ---- 動きの間(ま)。すべてジャグラーシミュレーターと同じ値 ---- */
+const SL_REV_MS       = 780;   // 1回転にかかる時間(約77rpm)
+const SL_SPEED        = SL_KOMA / SL_REV_MS;   // コマ/ms
+const SL_ACCEL_MS     = 180;   // 加速にかかる時間
+const SL_ACCEL_UNTIL  = 220;   // 加速判定の猶予
+const SL_START_DELAY  = 70;    // リール間の回転開始ディレイ(i * 70ms)
+const SL_STOP_GATE_MS = 600;   // レバーONから停止ボタンが押せるまで
+const SL_STOP_MIN_MS  = 150;   // 停止操作の最小間隔
+const SL_BET_LAMP_MS  = 50;    // BETランプを1本ずつ点けていく間隔
+const SL_BET_CT_MS    = 100;   // BETを押してからレバーを受け付けるまで
+const SL_COUNT_MS     = 100;   // COUNT/PAY OUT が1つ増える間隔
+const SL_END_HIDE_MS  = 150;   // ボーナス終了後にCOUNTを「---」に戻すまで
+const SL_RESOLVE_MS   = 120;   // 第3停止から結果表示まで
+const SL_COIN_VALUE   = 19;    // 精算レート。server.js と合わせること
+const SL_RENT_MEDAL   = 1000;
 
-/* =========================================================
-   スロットの中身 (v5.1)
-   ---------------------------------------------------------
-   v5.0 まではサーバーが当たりを決めていたが、
-   停止ボタンを押してから止まるまでの間が大きかったため、
-   v5.1 でジャグラーシミュレーターと同じ「ブラウザ側で決める」作りに戻した。
-   押した瞬間に計算して、そのまま止める。
+const SL_CELL_GAP_RATIO = 0.10;
+const SL_PEEK_RATIO     = 0.24;
 
-   ※ このため、開発者ツールを開けば当たりや設定を覗ける状態になっている。
-      友達うちで遊ぶ前提での割り切り。広く公開するなら作りを戻すこと。
-   ========================================================= */
-const SL_SYM = { GRAPE: 1, CHERRY: 2, CLOWN: 3, BELL: 4, REPLAY: 5, BAR: 6, SEVEN: 7 };
-
-/* 有効5ライン: 各リールの行(0=上, 1=中, 2=下)。server.js と同じにすること */
-const SL_LINES = [
-  [0,0,0], [1,1,1], [2,2,2], [0,1,2], [2,1,0]
-];
-
-/* 設定別確率(index0 = 設定1)。6号機アイムジャグラーEX準拠 */
-const SL_SETTINGS = [
-  { bb: 1/273.1, rb: 1/439.8, grape: 1/6.02 },
-  { bb: 1/269.7, rb: 1/399.6, grape: 1/6.02 },
-  { bb: 1/269.7, rb: 1/331.0, grape: 1/6.02 },
-  { bb: 1/259.0, rb: 1/315.1, grape: 1/6.02 },
-  { bb: 1/259.0, rb: 1/255.0, grape: 1/6.02 },
-  { bb: 1/255.0, rb: 1/255.0, grape: 1/5.85 }
-];
-const SL_P_REPLAY = 1/7.298;
-const SL_P_CHERRY = 1/38.1;
-const SL_P_BELL   = 1/1092.3;
-const SL_P_CLOWN  = 1/1092.3;
-/* 中段チェリー(BB確定・BB確率の内数) */
-const slRareCherryProb = s => (s <= 3 ? 1/2184.53 : 1/1820.44);
-const SL_CHERRY_DUP_RATE = 0.25;  // ボーナス当選時にチェリーが重複する割合(概算)
-
-/* 停止目標図柄(null=不問)。BB=7/7/7、RB=7/7/BAR */
-const SL_TARGETS = {
-  GRAPE:      [1, 1, 1],
-  BELL:       [4, 4, 4],
-  CLOWN:      [3, 3, 3],
-  REPLAY:     [5, 5, 5],
-  CHERRY:     [2, null, null],
-  RARECHERRY: [2, null, null],
-  BB:         [7, 7, 7],
-  RB:         [7, 7, 6]
-};
-
-/* 設定の振り分けはサーバー側(server.js の slPickSetting)が受け持つ。
-   台に座ったときに 1〜6 の数字だけ受け取る */
-
-/* 台の決まりごと。server.js 側と必ず同じ数字にすること */
-const SL_MAX_SLIP   = 4;      // 最大4コマ引き込み
-const SL_PEKA_FIRST = 0.15;   // 先ペカ(レバーON時点灯)の割合。残り85%は後ペカ
-const SL_BB_LIMIT   = 280;    // BB: 280枚を超える払い出しで終了
-const SL_RB_LIMIT   = 98;     // RB: 98枚を超える払い出しで終了
-const SL_PAY_CAP    = 15;     // 1ゲームの払い出し上限
-const SL_CREDIT_MAX = 50;     // クレジット上限
-
-
-/* 0以上1未満の乱数 */
-function slRandom(){ return Math.random(); }
-
-const slMod  = (n, m) => ((n % m) + m) % m;
-const slModK = n => slMod(n, SL_KOMA);
-
-/* 指定位置に停めたときに窓に見える3コマ */
-function slWindowCol(reelIdx, pos){
-  const d = SL_REEL_DATA[reelIdx];
-  return [d[slModK(pos)], d[slModK(pos + 1)], d[slModK(pos + 2)]];
-}
-
-/* 窓の全ラインを評価して成立役を返す */
-function slEvalWins(cols){
-  const wins = [];
-  SL_LINES.forEach((rows, i) => {
-    const s = [cols[0][rows[0]], cols[1][rows[1]], cols[2][rows[2]]];
-    if (s[0] === SL_SYM.CHERRY) wins.push({ role: 'CHERRY', line: i });
-    if (s[0] === s[1] && s[1] === s[2]){
-      if      (s[0] === SL_SYM.GRAPE)  wins.push({ role: 'GRAPE',  line: i });
-      else if (s[0] === SL_SYM.BELL)   wins.push({ role: 'BELL',   line: i });
-      else if (s[0] === SL_SYM.CLOWN)  wins.push({ role: 'CLOWN',  line: i });
-      else if (s[0] === SL_SYM.REPLAY) wins.push({ role: 'REPLAY', line: i });
-      else if (s[0] === SL_SYM.SEVEN)  wins.push({ role: 'BB',     line: i });
-    }
-    if (s[0] === SL_SYM.SEVEN && s[1] === SL_SYM.SEVEN && s[2] === SL_SYM.BAR)
-      wins.push({ role: 'RB', line: i });
-  });
-  return wins;
-}
-
-/* 払い出し枚数。ブドウは複数ライン成立でも1回分だけ(実機準拠)
-   ブドウ 3BET=8枚 / 2BET=14枚 / 1BET=8枚 */
-function slPayoutFor(wins, bet, cherryUnit){
-  let total = 0, grapePaid = false;
-  const cUnit = (cherryUnit === undefined) ? (bet === 3 ? 1 : 7) : cherryUnit;
-  for (const w of wins){
-    switch (w.role){
-      case 'GRAPE':
-        if (!grapePaid){ total += (bet === 2 ? 14 : 8); grapePaid = true; }
-        break;
-      case 'BELL':  total += 14;    break;
-      case 'CLOWN': total += 10;    break;
-      case 'CHERRY':total += cUnit; break;
-    }
-  }
-  return Math.min(total, SL_PAY_CAP);
-}
-
-/* チェリー1ラインあたりの払い出し枚数 */
-function slCherryUnitFor(bet, cols, inBonus){
-  if (bet === 3) return 1;
-  /* 非ボーナス時の1BET連チェリーは1枚×2ライン=2枚。2BETは7枚×2ライン=14枚 */
-  if (bet === 1 && !inBonus && slCenterCherryLinked(cols[0], cols[1])) return 1;
-  return 7;
-}
-
-/* ---- 単チェリー判定 ----
-   実機の「単チェリー」= 順押しで左にチェリーが露出しているのに、
-   中リールの真横・斜めにチェリーが繋がっていない停止形。
-   この形が出た時点でボーナス成立が確定する。 */
-function slCherryRows(col){
-  const rows = [];
-  if (!col) return rows;
-  for (let r = 0; r < 3; r++) if (col[r] === SL_SYM.CHERRY) rows.push(r);
-  return rows;
-}
-function slCenterCherryLinked(col0, col1){
-  if (!col0 || !col1) return false;
-  const c0 = slCherryRows(col0), c1 = slCherryRows(col1);
-  return c0.some(r => c1.some(r2 => Math.abs(r2 - r) <= 1));
-}
-function slIsSoloCherry(cols, order){
-  if (!cols || !cols[0] || !cols[1]) return false;
-  if (!order || order.length !== 3) return false;
-  if (!(order[0] === 0 && order[1] === 1 && order[2] === 2)) return false; // 順押し限定
-  if (!cols[0].includes(SL_SYM.CHERRY)) return false;
-  return !slCenterCherryLinked(cols[0], cols[1]);
-}
-
-/* ---- 停止制御(最大4コマ引き込み + 蹴飛ばし) ---- */
-
-/* 図柄symを行rowに置ける停止位置の一覧 */
-function slAlignSet(reelIdx, sym, row, avoidCherry){
-  const set = [];
-  for (let t = 0; t < SL_KOMA; t++){
-    if (SL_REEL_DATA[reelIdx][t] !== sym) continue;
-    const p = slModK(t - row);
-    if (avoidCherry && reelIdx === 0 && slWindowCol(0, p).includes(SL_SYM.CHERRY)) continue;
-    set.push(p);
-  }
-  return set;
-}
-
-/* どのタイミングで押しても4コマ以内に引き込めるか */
-function slCoversAllPresses(setArr){
-  if (setArr.length === 0) return false;
-  const s = [...setArr].sort((a, b) => a - b);
-  for (let i = 0; i < s.length; i++){
-    const gap = (i === s.length - 1) ? (s[0] + SL_KOMA - s[i]) : (s[i + 1] - s[i]);
-    if (gap > SL_MAX_SLIP + 1) return false;
-  }
-  return true;
-}
-
-/* 押された位置から実際に停める位置を決める。
-   g はそのゲームの状態(フラグ・停止済みリール・押し順) */
-function slChooseStopPosition(g, reelIdx, curPos){
-  const stopped = g.cols;
-  const nStopped = stopped.filter(Boolean).length;
-
-  /* 狙う役: 小役優先 → なければ保持中のボーナス。
-     ボーナスはGOGO!CHANCE点灯中のみ揃えられる(未点灯なら蹴飛ばす) */
-  const aimableBonus = g.lampLit ? g.bonusFlag : null;
-  const flagRole = g.smallFlag || aimableBonus || null;
-  const allowed = new Set();
-  if (g.smallFlag){
-    allowed.add(g.smallFlag);
-    if (g.smallFlag === 'RARECHERRY') allowed.add('CHERRY');
-  } else if (aimableBonus) allowed.add(aimableBonus);
-
-  const target = flagRole ? SL_TARGETS[flagRole] : null;
-
-  let base = Math.floor(curPos);
-  if (curPos - base < 0.2) base = base - 1;   // 最低限の移動距離を確保
-  const candidates = [];
-  for (let s = 0; s <= SL_MAX_SLIP; s++) candidates.push({ slip: s, p: slModK(base - s) });
-
-  const scoreOf = (cand) => {
-    const col = slWindowCol(reelIdx, cand.p);
-    const cols = stopped.slice();
-    cols[reelIdx] = col;
-
-    if (nStopped === 2){
-      /* 第3停止: 完成形を厳密に判定する */
-      const wins = slEvalWins(cols);
-      const badWins = wins.filter(w => !allowed.has(w.role));
-      const flagHit = flagRole && wins.some(w =>
-        flagRole === 'RARECHERRY' ? (w.role === 'CHERRY' && w.line === 1) : w.role === flagRole);
-      if (badWins.length > 0) return 1000 + badWins.length * 10;  // 蹴飛ばす
-      if (flagHit) return 0;
-      return 10;
-    }
-
-    /* 第1・第2停止 */
-    let penalty = 0;
-    /* 単チェリー制御(順押しの第2停止=中リールのみ)。
-       重複当選なら「繋がらない形(=単チェリー)」、非重複なら「繋がる形」を優先する */
-    if (reelIdx === 1 && cols[0] && cols[0].includes(SL_SYM.CHERRY) &&
-        g.pressOrder.length === 1 && g.pressOrder[0] === 0 &&
-        (g.smallFlag === 'CHERRY' || g.smallFlag === 'RARECHERRY')){
-      if (slCenterCherryLinked(cols[0], col) === !!g.dupCherry) penalty += 40;
-    }
-    if (!allowed.has('CHERRY') && cols[0]){
-      /* チェリーは左リールだけで成立が決まるので、左停止時点で必ず避ける */
-      if (cols[0].includes(SL_SYM.CHERRY)) penalty = 500;
-    }
-    if (!target) return penalty + 10;
-
-    const avoidCherry = !allowed.has('CHERRY');
-    let live = 0, guaranteed = 0;
-    const lineSet = (flagRole === 'RARECHERRY') ? [SL_LINES[1]] : SL_LINES;
-    lineSet.forEach(rows => {
-      let ok = true;
-      for (let c = 0; c < 3; c++){
-        const t = target[c];
-        if (t == null) continue;
-        const cc = cols[c];
-        if (!cc) continue;
-        if (cc[rows[c]] !== t){ ok = false; break; }
-      }
-      if (!ok) return;
-      live++;
-      let sure = true;
-      for (let c = 0; c < 3; c++){
-        if (cols[c]) continue;
-        const t = target[c];
-        if (t == null) continue;
-        if (!slCoversAllPresses(slAlignSet(c, t, rows[c], avoidCherry))){ sure = false; break; }
-      }
-      if (sure) guaranteed++;
-    });
-    /* ブドウは引き込みが保証された形をすべて同格に扱う(出目のバリエーション用) */
-    if (flagRole === 'GRAPE') return penalty + (guaranteed > 0 ? 0 : 100);
-    return penalty + (guaranteed > 0 ? 0 : 100) + (10 - live);
-  };
-
-  let bestScore = Infinity;
-  for (const cand of candidates){
-    cand.score = scoreOf(cand);
-    if (cand.score < bestScore) bestScore = cand.score;
-  }
-  const bestList = candidates.filter(c => c.score === bestScore);
-  if (flagRole === 'GRAPE' && bestList.length > 1){
-    return bestList[Math.floor(Math.random() * bestList.length)].p;
-  }
-  return bestList[0].p;   // 通常は最小スベリ
-}
-
-
-/* BETできる上限。ボーナス中は2枚、通常は3枚 */
-function slBetCap(m){ return m.inBonus ? 2 : 3; }
-
-/* レバーON。ここで当たりが決まる(実機と同じ) */
-function slLeverOn(m){
-  m.cols = [null, null, null];
-  m.pressOrder = [];
-  m.rareLamp = false;
-
-  if (m.inBonus){
-    m.smallFlag = 'GRAPE';       // ボーナス中は毎ゲームブドウ
-    m.dupCherry = false;
-  } else {
-    const sp = SL_SETTINGS[m.setting - 1];
-    let newBonus = false, rareHit = false, dupCherry = false;
-
-    if (!m.bonusFlag){
-      const r = slRandom();
-      if (r < sp.bb){
-        m.bonusFlag = 'BB'; newBonus = true;
-        if (r < slRareCherryProb(m.setting)) rareHit = true;              // 中段チェリー(BB内数)
-        else if (slRandom() < SL_CHERRY_DUP_RATE) dupCherry = true;       // チェリー重複BB
-      } else if (r < sp.bb + sp.rb){
-        m.bonusFlag = 'RB'; newBonus = true;
-        if (slRandom() < SL_CHERRY_DUP_RATE) dupCherry = true;            // チェリー重複RB
-      }
-    }
-
-    /* 小役抽選 */
-    if (rareHit){
-      m.smallFlag = 'RARECHERRY';
-      m.rareLamp = true;
-    } else if (dupCherry){
-      m.smallFlag = 'CHERRY';
-    } else {
-      const r2 = slRandom();
-      let acc = 0;
-      m.smallFlag = null;
-      if      (r2 < (acc += sp.grape))     m.smallFlag = 'GRAPE';
-      else if (r2 < (acc += SL_P_REPLAY))  m.smallFlag = 'REPLAY';
-      else if (r2 < (acc += SL_P_CHERRY))  m.smallFlag = 'CHERRY';
-      else if (r2 < (acc += SL_P_BELL))    m.smallFlag = 'BELL';
-      else if (r2 < (acc += SL_P_CLOWN))   m.smallFlag = 'CLOWN';
-    }
-    m.dupCherry = !!(dupCherry || rareHit);
-
-    /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%) */
-    if (newBonus && !m.lampLit){
-      if (slRandom() < SL_PEKA_FIRST) m.lampLit = true;   // 先ペカ
-      else m.lampPending = true;                          // 後ペカ(第3停止離しで点灯)
-    }
-  }
-
-  m.phase = 'spin';
-  m.totalG++;
-  if (!m.inBonus) m.startG++;
-}
-
-/* 3リール停止後の判定。払い出しとボーナス開始・終了をまとめて行う */
-function slResolveGame(m){
-  const cols = m.cols;
-  const wins = slEvalWins(cols);
-  const bet  = m.bet;
-
-  /* リプレイ */
-  const hasReplay = wins.some(w => w.role === 'REPLAY');
-
-  /* ボーナス図柄が揃ったか */
-  const bbAligned = wins.some(w => w.role === 'BB');
-  const rbAligned = wins.some(w => w.role === 'RB');
-
-  let pay = 0;
-  if (!bbAligned && !rbAligned && !hasReplay){
-    const cUnit = slCherryUnitFor(bet, cols, m.inBonus);
-    pay = slPayoutFor(wins, bet, cUnit);
-  }
-
-  /* 後ペカ: 第3停止を離した時点で点灯する。
-     単チェリー形が出たときは、抽選結果に関わらず必ず点灯させる(実機準拠) */
-  let pekaNow = false;
-  if (!m.inBonus && m.bonusFlag && !m.lampLit){
-    if (m.lampPending) pekaNow = true;
-    else if (slIsSoloCherry(cols, m.pressOrder)) pekaNow = true;
-  }
-  if (pekaNow){ m.lampLit = true; m.lampPending = false; }
-
-  /* ボーナス開始 */
-  let started = null;
-  if (bbAligned || rbAligned){
-    m.inBonus   = true;
-    m.bonusType = bbAligned ? 'BB' : 'RB';
-    m.bonusPaid = 0;
-    m.bonusFlag = null;
-    m.lampLit   = false;
-    m.lampPending = false;
-    if (bbAligned) m.bb++; else m.rb++;
-    m.bonusLog.push({ type: m.bonusType, at: m.startG, g: m.totalG });
-    if (m.bonusLog.length > 200) m.bonusLog.shift();
-    m.startG = 0;                 // スタートG数は当選ではなく消化開始でリセットする
-    started = m.bonusType;
-  }
-
-  /* ボーナス中の払い出しと終了判定 */
-  let ended = null;
-  if (m.inBonus && !started){
-    m.bonusPaid += pay;
-    const limit = m.bonusType === 'BB' ? SL_BB_LIMIT : SL_RB_LIMIT;
-    if (m.bonusPaid > limit){
-      ended = { type: m.bonusType, paid: m.bonusPaid };
-      m.inBonus = false;
-      m.bonusType = null;
-      m.bonusPaid = 0;
-    }
-  }
-
-  /* 払い出しの枚数は結果として返すだけ。
-     実際のコインの増減はサーバーが持っているので、ここでは足さない
-     (二重に足すと画面とサーバーで食い違う) */
-
-  m.replayPending = hasReplay ? bet : 0;
-  m.bet = 0;
-  m.phase = 'idle';
-
-  return { wins, pay, hasReplay, started, ended, peka: pekaNow, rare: m.rareLamp };
-}
-
-
-/* 1ゲームぶんの状態。サーバーの台オブジェクトと同じ形にしてあるので、
-   slLeverOn() や slChooseStopPosition() をそのまま使える */
-function slNewGameState(setting){
-  return {
-    setting: setting || 1,
-    bb: 0, rb: 0, startG: 0, totalG: 0,
-    credit: 0, tray: 0, invested: 0,
-    phase: 'idle', bet: 0, replayPending: 0,
-    cols: [null, null, null], pressOrder: [],
-    smallFlag: null, bonusFlag: null, dupCherry: false,
-    lampLit: false, lampPending: false, rareLamp: false,
-    inBonus: false, bonusType: null, bonusPaid: 0,
-    bonusLog: []
-  };
-}
-
-/* 動きの間(ま)を決める数字。すべてジャグラーシミュレーターと同じ値にしてある。
-   ここを変えると打ち心地が変わるので、触るときは juggler_handover.md と見比べること */
-const SL_REV_MS      = 780;   // リール1回転にかかる時間(約77rpm)
-const SL_WAIT_MS     = 4100;  // 実機規定のサイクルタイム(4.1秒)。前のゲームのレバーからこの時間が過ぎるまで次は回らない
-const SL_STOP_GATE_MS= 600;   // レバー音が鳴っている間は停止ボタンを押せない
-const SL_STOP_MIN_MS = 150;   // 停止操作の最小間隔(同時押し対策)
-const SL_SLIP_MS     = 38;    // 1コマ滑るのにかける時間(実機の見え方に合わせてある)
-const SL_BET_LAMP_MS = 50;    // BETランプを1本ずつ点けていく間隔
-const SL_BET_CT_MS   = 100;   // BETを押してからレバーを受け付けるまで(同時押し対策)
-const SL_COUNT_MS    = 100;   // COUNT/PAY OUT の数字が1つ増える間隔
-const SL_END_HIDE_MS = 150;   // ボーナス終了後にCOUNTを「---」に戻すまで
-const SL_COIN_VALUE  = 19;    // 精算レート。サーバーの SL_COIN_VALUE と合わせる
-const SL_RENT_MEDAL  = 1000;  // 貸出に必要な所持メダル
-
-/* スロットの設定(v5.1)。ジャグラーシミュレーターにあったものを移植した */
+/* ---- 設定(⚙️から変えられるもの) ---- */
 const slotOpt = {
   msgBar:       store.get('bj4_slMsgBar') !== '0',   // 既定ON
   oneBetOnLamp: store.get('bj4_slOneBet') === '1',
@@ -4597,97 +4204,99 @@ function saveSlotOpt(){
 }
 function applySlotOpt(){
   if (el.slMsg) el.slMsg.hidden = !slotOpt.msgBar;
-  if (el.slOptMsgBar)  el.slOptMsgBar.checked  = slotOpt.msgBar;
-  if (el.slOptOneBet)  el.slOptOneBet.checked  = slotOpt.oneBetOnLamp;
+  if (el.slOptMsgBar)    el.slOptMsgBar.checked    = slotOpt.msgBar;
+  if (el.slOptOneBet)    el.slOptOneBet.checked    = slotOpt.oneBetOnLamp;
   if (el.slOptEasyLever) el.slOptEasyLever.checked = slotOpt.easyLever;
 }
 
+/* ---- 画面の状態 ---- */
 const slot = {
   joined: false,      // ホールを見ているか
   seated: false,      // 台に座っているか
-  no: 0,              // 座っている台番号
-  lobby: null,        // ホールの一覧
-  st: null,           // 自分の台の状態(サーバーから来たもの)
-  phase: 'idle',      // idle | spin
-  spinning: [false, false, false],
-  stopped: [false, false, false],
-  pending: [false, false, false],   // 停止要求を出して返事待ち
-  lastStopAt: 0,
-  gateAt: 0,
-  gateTimer: 0,
-  reels: [],
-  raf: 0,
-  payout: 0,
-  g: null,            // 台の中身(抽選・停止判定はここを見て行う)
-  setting: 1,
+  no: 0,
+  lobby: null,
+  st: null,           // サーバーから来た台の状態
 
-  /* ウェイト(実機の4.1秒サイクル)。
-     前のゲームでレバーを引いた時刻を覚えておき、そこから4.1秒経つまで次は回さない */
-  leverAt: 0,         // 最後にレバーが実際に効いた時刻
-  inWait: false,      // ウェイト待ちの最中か
+  /* いま回しているゲーム */
+  phase: 'idle',      // idle | spinning
+  spinId: null,
+  flags: null,        // { smallFlag, bonusFlag, dupCherry }
+  seed: 0,
+  rng: null,
+  ctx: null,          // 停止制御に渡す状態(cols / pressOrder)
+  presses: [],        // 押した位置。3つ揃ったらサーバーへ送る
+  bet: 0,
+  stopsInitiated: 0,
+  reelsStopped: 0,
+  resolved: false,
+
+  /* ウェイト(実機の4.1秒サイクル) */
+  inWait: false,
   waitTimer: 0,
-  pendingLever: false,// ウェイト明けに回し始める予約
+  pendingLever: false,
 
-  /* BETランプの順次点灯 */
-  betLampShown: 0,
-  betLampTimer: 0,
-  betCtUntil: 0,      // この時刻まではレバーを受け付けない
+  /* 操作の受付制御 */
+  stopEnableAt: 0,
+  lastStopPressAt: 0,
+  betCtUntil: 0,
   betCtTimer: 0,
 
-  /* COUNT / PAY OUT のカウントアップ演出 */
-  dispCount: 0,       // いま画面に出ているCOUNT
-  dispPayout: 0,      // いま画面に出ているPAY OUT
+  /* ランプ・7セグの演出 */
+  betLampShown: 0,
+  betLampTimer: 0,
+  replayLamp: false,
+  dispPayout: 0,
+  dispCount: 0,
   countTimer: 0,
-  countHidden: true,  // COUNTが「---」表示か
-  replayLamp: false,  // リプレイランプ(回転中も消さないので独立して持つ)
-  /* データ表示モード用。着席してからの記録 */
-  log: [],            // 差枚の推移
-  diff: 0,            // 現在差枚
-  betSum: 0,          // 投入した枚数の合計
-  paySum: 0,          // 払い出された枚数の合計
-  bonusLog: []
+  countHidden: true,
+  payTarget: 0,
+  countTarget: 0,
+
+  /* 見た目に出す台データ(サーバーが返した値をそのまま持つ) */
+  view: { bb: 0, rb: 0, startG: 0, totalG: 0, inBonus: false, bonusType: null,
+          bonusPaid: 0, lampLit: false },
+
+  /* データ表示モード用 */
+  log: [], diff: 0, betSum: 0, paySum: 0, bonusLog: [],
+
+  reels: [],
+  raf: 0
 };
 
-/* コマの大きさを決める。ジャグラーシミュレーターと同じ計算にしてある。
-   小役画像は 1280x470 なので、その比率でコマの高さを出す。
-   隙間はコマ高さの10%、上下に覗かせる量は24%。 */
-const SL_CELL_GAP_RATIO = 0.10;
-const SL_PEEK_RATIO     = 0.24;
+/* =========================================================
+   リール
+   ========================================================= */
 const slMetrics = { cellH: 60, gap: 6, peek: 14, pitch: 66 };
 
 function slLayoutReels(){
   const reel = el.slReel0;
-  if (!reel) return slMetrics;
+  if (!reel) return;
   const w = reel.getBoundingClientRect().width;
-  if (w > 0){
-    const cellH = Math.round(w * 470 / 1280);
-    const gap   = Math.round(cellH * SL_CELL_GAP_RATIO);
-    const peek  = Math.round(cellH * SL_PEEK_RATIO);
-    slMetrics.cellH = cellH;
-    slMetrics.gap   = gap;
-    slMetrics.peek  = peek;
-    slMetrics.pitch = cellH + gap;
-    const root = document.documentElement.style;
-    root.setProperty('--sl-cellH', cellH + 'px');
-    root.setProperty('--sl-cellGap', gap + 'px');
-    root.setProperty('--sl-windowH', (cellH * 3 + gap * 2 + peek * 2) + 'px');
-  }
-  return slMetrics;
+  if (w <= 0) return;
+  const cellH = Math.round(w * 470 / 1280);   // 図柄画像の実比率(1280x470)
+  const gap   = Math.round(cellH * SL_CELL_GAP_RATIO);
+  const peek  = Math.round(cellH * SL_PEEK_RATIO);
+  slMetrics.cellH = cellH;
+  slMetrics.gap   = gap;
+  slMetrics.peek  = peek;
+  slMetrics.pitch = cellH + gap;
+  const root = document.documentElement.style;
+  root.setProperty('--sl-cellH', cellH + 'px');
+  root.setProperty('--sl-cellGap', gap + 'px');
+  root.setProperty('--sl-windowH', (cellH * 3 + gap * 2 + peek * 2) + 'px');
 }
 
-/* リールの帯を組み立てる。1周ぶんを2セット並べて、途切れなく回して見せる */
+/* 帯は必ず 21×2 = 42 コマで作る。21個だと継ぎ目に空白が出る */
 function slBuildStrip(idx){
-  const { cellH, gap } = slMetrics;
   const reel = el['slReel' + idx];
   if (!reel) return;
   const strip = reel.querySelector('.sl-strip');
+  const { cellH, gap } = slMetrics;
   let html = '';
-  for (let rep = 0; rep < 2; rep++){
-    for (let i = 0; i < SL_KOMA; i++){
-      const sym = SL_REEL_DATA[idx][i];
-      html += '<div class="sl-cell" style="height:' + cellH + 'px;margin-bottom:' + gap + 'px">' +
-              '<img src="' + SL_SYM_IMG[sym] + '" alt="" draggable="false"></div>';
-    }
+  for (let i = 0; i < SL_KOMA * 2; i++){
+    const sym = SC.REEL_DATA[idx][i % SL_KOMA];
+    html += '<div class="sl-cell" style="height:' + cellH + 'px;margin-bottom:' + gap + 'px">' +
+            '<img src="' + SL_SYM_IMG[sym] + '" alt="" draggable="false"></div>';
   }
   strip.innerHTML = html;
 }
@@ -4698,63 +4307,104 @@ function slBuildAllStrips(){
   slDrawReels();
 }
 
-/* 位置posのときの帯の縦位置を求めて反映する。
-   pos<1のときは1周ぶんずらして、上に覗くコマが帯の外に出て空白になるのを防ぐ */
+/* リール1本ぶんの動き */
+function slMakeReel(idx){
+  return {
+    idx,
+    pos: idx * 7,          // 初期位置をずらす
+    mode: 'stopped',       // stopped | spin | stopping
+    v: 0,
+    remain: 0,
+    target: 0,
+    accelUntil: 0,
+    spinDelay: 0
+  };
+}
+
+function slStartSpin(r, delay){
+  const now = performance.now();
+  r.mode = 'spin';
+  r.v = 0;
+  r.accelUntil = now + SL_ACCEL_UNTIL + delay;
+  r.spinDelay  = now + delay;
+}
+
+/* 停止を要求する。加速中は受け付けない(false を返す) */
+function slRequestStop(r){
+  if (r.mode !== 'spin' || r.v < SL_SPEED * 0.95) return false;
+
+  const target = SC.chooseStopPosition(slot.ctx, r.idx, r.pos, slot.rng);
+  r.target = target;
+
+  /* ★押した瞬間に出目を確定させて記録する。
+     減速完了を待って記録すると、素早い連打時に次リールの制御が
+     「まだ止まっていないリール」を考慮できず取りこぼしが起きる */
+  slot.ctx.cols[r.idx] = SC.windowCol(r.idx, target);
+
+  r.remain = SC.mod(r.pos - target, SL_KOMA);
+  if (r.remain < 0.15) r.remain += SL_KOMA;   // 極端に短い場合は1周させる
+  r.mode = 'stopping';
+  return true;
+}
+
+/* 毎フレームの更新。減速はしない。等速のまま目標位置でガチッと止まる */
+function slUpdateReel(r, dt, now){
+  if (r.mode === 'spin'){
+    if (now < r.spinDelay) return;
+    if (now < r.accelUntil){
+      r.v = Math.min(SL_SPEED, r.v + SL_SPEED * dt / SL_ACCEL_MS);   // 線形加速
+    } else {
+      r.v = SL_SPEED;
+    }
+    r.pos = SC.mod(r.pos - r.v * dt, SL_KOMA);
+
+  } else if (r.mode === 'stopping'){
+    const step = Math.min(r.remain, SL_SPEED * dt);
+    r.remain -= step;
+    r.pos = SC.mod(r.target + r.remain, SL_KOMA);
+    if (r.remain <= 0.001){
+      r.pos = r.target;
+      r.mode = 'stopped';
+      slOnReelStopped(r.idx);
+    }
+  }
+  slDrawReel(r.idx);
+}
+
+let slLastT = 0;
+function slLoop(t){
+  const dt = Math.min(50, t - slLastT || 16);   // タブ復帰時の飛び防止
+  slLastT = t;
+  let moving = false;
+  for (const r of slot.reels){
+    if (r.mode !== 'stopped'){ slUpdateReel(r, dt, t); moving = true; }
+  }
+  /* 停止ボタンの見た目は「ゲートが明けたか」「規定速度に達したか」で決まる。
+     どちらも時間で変わるので、回っている間は毎フレーム見直す。
+     ここを止めると「押せるのにボタンが暗いまま」になる */
+  slSyncStopButtons();
+  slot.raf = moving ? requestAnimationFrame(slLoop) : 0;
+}
+function slStartLoop(){
+  if (!slot.raf){ slLastT = 0; slot.raf = requestAnimationFrame(slLoop); }
+}
+
+/* 描画。pos<1 のときは1周ぶんずらして、上に覗くコマが帯の外に出ないようにする */
 function slDrawReel(idx){
   const r = slot.reels[idx];
-  if (!r) return;
   const reel = el['slReel' + idx];
-  if (!reel) return;
+  if (!r || !reel) return;
   const strip = reel.querySelector('.sl-strip');
-  const p = ((r.pos % SL_KOMA) + SL_KOMA) % SL_KOMA;
-  const ep = p < 1 ? p + SL_KOMA : p;
+  if (!strip) return;
+  const ep = r.pos < 1 ? r.pos + SL_KOMA : r.pos;
   const y = slMetrics.peek - ep * slMetrics.pitch;
   strip.style.transform = 'translate3d(0,' + y.toFixed(2) + 'px,0)';
 }
 function slDrawReels(){ for (let i = 0; i < 3; i++) slDrawReel(i); }
 
-/* 毎フレーム、回っているリールを進める。
-   実機は図柄が「上から下」へ流れるので、posは減る向きに動かす。
-   停止するときは、決まったコマ数ぶんだけ滑らせてから止める */
-function slTick(now){
-  slot.raf = 0;
-  let moving = false;
-  for (let i = 0; i < 3; i++){
-    const r = slot.reels[i];
-    if (!r || !r.spin) continue;
-    moving = true;
-    const dt = Math.min(50, now - (r.last || now));
-    r.last = now;
-
-    if (r.remain != null){
-      /* 停止中。残りのコマ数を減らしていき、0になったらぴたりと止める */
-      const step = dt / SL_SLIP_MS;
-      r.remain -= step;
-      if (r.remain <= 0.001){
-        r.pos = r.target;
-        r.spin = false;
-        r.remain = null;
-        r.target = null;
-        slot.spinning[i] = false;
-        slot.stopped[i] = true;
-        audio.play('chip');
-        slSyncStopButtons();
-      } else {
-        r.pos = slMod(r.target + r.remain, SL_KOMA);
-      }
-    } else {
-      r.pos = slMod(r.pos - (dt / SL_REV_MS) * SL_KOMA, SL_KOMA);
-    }
-    slDrawReel(i);
-  }
-  if (moving) slot.raf = requestAnimationFrame(slTick);
-}
-function slStartLoop(){
-  if (!slot.raf) slot.raf = requestAnimationFrame(slTick);
-}
-
-/* ---------- ホール(台選び) ---------- */
-
+/* =========================================================
+   ホール(台選び)
+   ========================================================= */
 async function enterSlotHall(){
   if (!account.user){
     toast('スロットで遊ぶにはログインが必要です');
@@ -4815,244 +4465,76 @@ function renderSlotHall(){
   }).join('');
 }
 
-/* ---------- 台に座る ---------- */
-
 function slSit(no){
   if (!online.socket || !online.socket.connected) return;
   online.socket.emit('slot:sit', { no });
 }
 
-/* 着席したときの初期化。台のデータは引き継ぐが、
-   差枚などの「自分の記録」はここから数え直す */
+/* 着席したときの初期化 */
 function slEnterMachine(st){
   slot.seated = true;
   slot.no = st.no;
   slot.st = st;
-  slot.setting = st.setting || 1;
   slot.phase = 'idle';
-  slot.spinning = [false, false, false];
-  slot.stopped = [true, true, true];
-  slot.pending = [false, false, false];
-  slot.payout = 0;
-  slot.reels = [0, 1, 2].map(i => ({ pos: i * 7, spin: false, target: null, remain: null, last: 0 }));
+  slot.spinId = null;
+  slot.flags = null;
+  slot.ctx = null;
+  slot.presses = [];
+  slot.stopsInitiated = 0;
+  slot.reelsStopped = 0;
+  slot.resolved = false;
+  slot.reels = [0, 1, 2].map(slMakeReel);
 
-  /* 台の中身を作る。抽選と停止判定はこれを見て行う */
-  slot.g = slNewGameState(st.setting || 1);
-  slot.g.bb = st.bb; slot.g.rb = st.rb;
-  slot.g.startG = st.startG; slot.g.totalG = st.totalG;
-  slot.g.credit = st.credit; slot.g.tray = st.tray || 0;
-  slot.g.lampLit = !!st.lampLit;
-  slot.g.bonusLog = (st.bonusLog || []).slice();
-  slot.bonusLog = slot.g.bonusLog;
-  /* 前の続きから打てるよう、ランプが点いていればフラグも戻す */
-  if (st.lampLit && !st.inBonus) slot.g.bonusFlag = st.bonusFlag || 'BB';
-  slot.g.inBonus = !!st.inBonus;
-  slot.g.bonusType = st.bonusType || null;
-  slot.g.bonusPaid = st.bonusPaid || 0;
-  slot.g.replayPending = st.replayPending || 0;
+  slot.view = {
+    bb: st.bb, rb: st.rb, startG: st.startG, totalG: st.totalG,
+    inBonus: !!st.inBonus, bonusType: st.bonusType, bonusPaid: st.bonusPaid || 0,
+    lampLit: !!st.lampLit
+  };
+  slot.bonusLog = (st.bonusLog || []).slice();
 
-  /* 演出まわりの状態も入れ直す */
+  /* 演出まわりを入れ直す */
   slClearWait();
   slClearBetLampAnim();
   slStopCountAnim();
-  slot.leverAt = 0;
+  clearTimeout(slot.betCtTimer); slot.betCtTimer = 0;
   slot.betLampShown = 0;
   slot.betCtUntil = 0;
   slot.dispPayout = 0;
   slot.dispCount = st.bonusPaid || 0;
   slot.countHidden = !st.inBonus;
   slot.replayLamp = (st.replayPending || 0) > 0;
-
-  applySlotOpt();
-  slSetConn(online.socket && online.socket.connected ? 'on' : 'off');
+  slot.bet = st.bet || 0;
 
   showScreen('slot');
-  /* 画面が出てからでないとリールの幅が測れないので、描画のあとに組み立てる */
+  applySlotOpt();
+  slSetConn(online.socket && online.socket.connected ? 'on' : 'off');
+  /* 画面が出てからでないとリールの幅が測れない */
   slBuildAllStrips();
   requestAnimationFrame(() => { slBuildAllStrips(); slRenderAll(); });
   slRenderAll();
 }
 
-/* ---------- 画面の更新 ---------- */
-
-function slRenderAll(){
-  const st = slot.st;
-  const g  = slot.g;
-  if (!st) return;
-  const coins = (st.coins != null ? st.coins : st.credit);
-  /* BETやボーナスの状態は、押した瞬間に見た目へ出したいので手元の g を優先する */
-  const bet     = g ? g.bet : st.bet;
-  const inBonus = g ? g.inBonus : st.inBonus;
-  const bonusType = g ? g.bonusType : st.bonusType;
-  const bonusPaid = g ? g.bonusPaid : st.bonusPaid;
-  const lampLit = g ? g.lampLit : st.lampLit;
-  const rareLamp= g ? g.rareLamp : st.rareLamp;
-  const bb = g ? g.bb : st.bb;
-  const rb = g ? g.rb : st.rb;
-  const startG = g ? g.startG : st.startG;
-  const totalG = g ? g.totalG : st.totalG;
-  const rate = (bb + rb) && totalG ? totalG / (bb + rb) : null;
-
-  el.slMachineNo.textContent = st.no + '番台';
-
-  /* データカウンター */
-  el.slDataBB.textContent = bb;
-  el.slDataRB.textContent = rb;
-  el.slDataStart.textContent = startG;
-  el.slDataTotal.textContent = totalG;
-  el.slDataRate.textContent = rate ? '1/' + rate.toFixed(1) : '1/---';
-
-  /* 情報バー。回収は「いま精算したら戻ってくるメダル」 */
-  const back = (coins + bet) * SL_COIN_VALUE;
-  const diff = back - st.invested;
-  el.slWCoin.textContent   = coins;
-  el.slWInvest.textContent = st.invested.toLocaleString();
-  el.slWBack.textContent   = back.toLocaleString();
-  el.slWDiff.textContent   = (diff >= 0 ? '+' : '') + diff.toLocaleString();
-  el.slWDiff.style.color   = diff >= 0 ? '#7fd4ff' : '#ff8a8a';
-
-  /* 7セグ。数字はカウントアップ演出が持っているので、そちらに任せる */
-  slDrawSeg();
-
-  /* BETランプ。枚数が増えたときは1本ずつ点ける(演出は slSetBetLamps が持つ) */
-  if (bet !== slot.betLampShown && !slot.betLampTimer) slSetBetLamps(bet);
-
-  slUpdateStateLamps();
-
-  /* GOGO!CHANCE */
-  const lit = !!lampLit, rainbow = !!rareLamp && lit;
-  el.slGogoOff.hidden = lit;
-  el.slGogoOn.hidden = !lit;
-  el.slGogoRainbow.hidden = !rainbow;
-  el.slGogo.classList.toggle('is-lit', lit);
-  el.slGogo.classList.toggle('is-rainbow', rainbow);
-
-  slRenderBonusGraph();
-  slSyncButtons();
-}
-
-/* データカウンター右側の履歴グラフ。
-   最新10回ぶんのボーナスを、当たったゲーム数の深さで棒にして並べる。
-   1段=約78G(9段で700G)。BB=赤 / RB=黄 */
-function slRenderBonusGraph(){
-  const box = el.slBonusGraph;
-  if (!box) return;
-  const list = (slot.bonusLog || []).slice(-10);
-  let html = '';
-  for (let c = 0; c < 10; c++){
-    const b = list[c];
-    let lv = 0, cls = '';
-    if (b){
-      lv = Math.max(1, Math.min(9, Math.ceil((b.at || 0) / 78)));
-      cls = b.type === 'BB' ? 'is-b' : 'is-r';
-    }
-    html += '<div class="sl-bg-col">';
-    for (let r = 0; r < 9; r++){
-      html += '<span class="sl-bg-cell' + (b && r < lv ? ' ' + cls : '') + '"></span>';
-    }
-    html += '</div>';
-  }
-  box.innerHTML = html;
-}
-
-/* 状態ランプ(Start / Replay / Wait / Insert Medals)をまとめて面倒みる。
-   実機の点灯条件に合わせてある */
-function slUpdateStateLamps(){
-  const st = slot.st, g = slot.g;
-  if (!st) return;
-  const idle = slot.phase === 'idle';
-  const bet = g ? g.bet : st.bet;
-
-  /* Start … レバー待ちで、BETかリプレイがある */
-  el.slLampStart.classList.toggle('is-on', idle && (bet > 0 || st.replayPending > 0));
-  /* Wait … ウェイトの最中だけ */
-  el.slLampWait.classList.toggle('is-on', !!slot.inWait);
-  /* Replay … 回転中も消さない。次のゲームの結果が出るまで点いたまま */
-  el.slLampReplay.classList.toggle('is-on', !!slot.replayLamp);
-  /* Insert Medals … レバー待ちの間はずっと点滅(BET数に関わらず) */
-  el.slLampInsert.classList.toggle('is-blink', idle);
-  el.slLampInsert.classList.toggle('is-on', false);
-}
-
-/* ボタンの押せる・押せないを揃える */
-function slSyncButtons(){
-  const st = slot.st, g = slot.g;
-  if (!st) return;
-  const idle = slot.phase === 'idle';
-  const coins = (st.coins != null ? st.coins : st.credit);
-  const bet = g ? g.bet : st.bet;
-  const inBonus = g ? g.inBonus : st.inBonus;
-  const lampLit = g ? g.lampLit : st.lampLit;
-  const cap = slBetCapNow();
-
-  /* メダルが足りないのに押せてしまうと「押したのに借りられない」ので、
-     足りないときは最初から押せなくしておく */
-  const medal = account.user ? Number(account.user.medal || 0) : 0;
-  el.slRentBtn.disabled = !idle || medal < SL_RENT_MEDAL;
-  el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 || bet >= cap || inBonus;
-  el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 || (coins < 1 && bet === 0) || bet >= cap;
-  el.slCashoutBtn.disabled = !idle;
-
-  /* 0BETのときはレバーをグレーアウトする(簡単レバーモードなら引ける)。
-     BETの直後・ウェイト中も受け付けない */
-  const canLever = idle && !slot.inWait && !slBetCtActive() && slCanPullLever() &&
-                   !(inBonus && bet < 2 && st.replayPending === 0);
-  el.slLever.classList.toggle('is-off', !canLever);
-  slSyncStopButtons();
-}
-
-function slSyncStopButtons(){
-  const spinning = slot.phase === 'spin';
-  /* レバーONから少しの間は停止を受け付けない(実機のウェイト)。
-     この間もボタンが光っていると「押したのに止まらない」と感じるので、
-     ウェイト中は消灯させて押せないようにする */
-  const gated = performance.now() < slot.gateAt;
-  for (let i = 0; i < 3; i++){
-    const btn = el['slStop' + i];
-    if (!btn) continue;
-    const live = spinning && !gated && !slot.stopped[i] && !slot.pending[i];
-    btn.disabled = !live;
-    btn.classList.toggle('is-live', live);
-  }
-  /* 状態ランプは slUpdateStateLamps() が一手に面倒をみるので、ここでは触らない */
-}
-
-function slMsg(text){ if (el.slMsg) el.slMsg.textContent = text; }
-
 /* =========================================================
-   動きの間(ま)まわり。実機に合わせた仕掛け
+   動きの間(ま)
    ========================================================= */
 
 /* ---- ウェイト(実機の4.1秒サイクル) ----
-   実機は1ゲームにかならず4.1秒かける決まりになっている。
-   前のゲームのレバーから4.1秒経っていない状態でレバーを引くと、
-   レバー音もレバーの動きもリールの回転もぜんぶ保留になり、
-   ウェイトが明けた瞬間にまとめて始まる。 */
-function slWaitLeft(){
-  if (!slot.leverAt) return 0;
-  return Math.max(0, SL_WAIT_MS - (performance.now() - slot.leverAt));
-}
-
-function slBeginWait(ms){
+   前のゲームから4.1秒経つまでは、レバーを引いても
+   レバー音・レバーの動き・リールの回転がすべて保留になる。
+   明けた瞬間にまとめて始まる。残り時間はサーバーが教えてくれる。 */
+function slBeginWait(ms, onDone){
   slot.inWait = true;
-  slot.pendingLever = true;
   slMsg('ウェイト');
-  slUpdateStateLamps();   // Waitランプをすぐ点ける
+  slUpdateStateLamps();
   slSyncButtons();
   clearTimeout(slot.waitTimer);
   slot.waitTimer = setTimeout(() => {
     slot.inWait = false;
     slot.waitTimer = 0;
-    slUpdateStateLamps();   // Waitランプを消す
-    if (slot.pendingLever){
-      slot.pendingLever = false;
-      slDoLever();          // ウェイト明け。ここで初めて回り出す
-    } else {
-      slRenderAll();
-    }
+    slUpdateStateLamps();
+    if (onDone) onDone();
   }, ms);
 }
-
 function slClearWait(){
   clearTimeout(slot.waitTimer);
   slot.waitTimer = 0;
@@ -5060,99 +4542,76 @@ function slClearWait(){
   slot.pendingLever = false;
 }
 
-/* ---- BETランプの順次点灯 ----
-   MAXBETで1・2・3を同時に光らせず、0.05秒ずつずらして1本ずつ点ける */
+/* ---- BETランプの順次点灯 ---- */
 function slRenderBetLamps(){
   for (let i = 1; i <= 3; i++){
     el['slBetLamp' + i].classList.toggle('is-on', slot.betLampShown >= i);
   }
 }
-function slClearBetLampAnim(){
-  clearTimeout(slot.betLampTimer);
-  slot.betLampTimer = 0;
-}
-function slAnimateBetLamps(target){
-  slClearBetLampAnim();
-  const step = () => {
-    if (slot.betLampShown >= target){ slot.betLampTimer = 0; return; }
-    slot.betLampShown++;
-    slRenderBetLamps();
-    slot.betLampTimer = setTimeout(step, SL_BET_LAMP_MS);
-  };
-  /* 1本目は待たずに点ける */
-  step();
-}
+function slClearBetLampAnim(){ clearTimeout(slot.betLampTimer); slot.betLampTimer = 0; }
 function slSetBetLamps(target){
   if (target > slot.betLampShown){
-    slAnimateBetLamps(target);            // 増えるときだけ演出する
+    slClearBetLampAnim();
+    const step = () => {
+      if (slot.betLampShown >= target){ slot.betLampTimer = 0; return; }
+      slot.betLampShown++;
+      slRenderBetLamps();
+      slot.betLampTimer = setTimeout(step, SL_BET_LAMP_MS);
+    };
+    step();
   } else {
     slClearBetLampAnim();
-    slot.betLampShown = target;           // 減る・消えるは即座に
+    slot.betLampShown = target;
     slRenderBetLamps();
   }
 }
 
-/* ---- BETクールタイム ----
-   BETを押した直後にレバーが効いてしまうと、押したつもりのない枚数で回ってしまう。
-   この間はレバーをグレーアウトするので、明けたら必ず元に戻すこと
-   (戻し忘れると、押せるのに押せない見た目のままになる) */
+/* ---- BETクールタイム。明けたら必ずボタンを戻すこと ---- */
 function slStartBetCT(){
   slot.betCtUntil = performance.now() + SL_BET_CT_MS;
   clearTimeout(slot.betCtTimer);
-  slot.betCtTimer = setTimeout(() => {
-    slot.betCtTimer = 0;
-    slSyncButtons();          // グレーアウトを解除する
-  }, SL_BET_CT_MS + 10);
+  slot.betCtTimer = setTimeout(() => { slot.betCtTimer = 0; slSyncButtons(); }, SL_BET_CT_MS + 10);
 }
 function slBetCtActive(){ return performance.now() < slot.betCtUntil; }
 
-/* ---- COUNT / PAY OUT のカウントアップ ----
-   実機は払い出し枚数がパラパラと増えていく。0.1秒ごとに1つ進める */
-function slStopCountAnim(){
-  clearTimeout(slot.countTimer);
-  slot.countTimer = 0;
-}
+/* ---- COUNT / PAY OUT のカウントアップ ---- */
+function slStopCountAnim(){ clearTimeout(slot.countTimer); slot.countTimer = 0; }
 function slTickCount(){
-  const g = slot.g;
-  const targetPay = slot.payout;
-  const targetCount = (g && g.inBonus) ? g.bonusPaid : slot.dispCount;
   let moved = false;
-
-  if (slot.dispPayout < targetPay){ slot.dispPayout++; moved = true; }
-  if (g && g.inBonus && slot.dispCount < targetCount){ slot.dispCount++; moved = true; }
-
+  if (slot.dispPayout < slot.payTarget){ slot.dispPayout++; moved = true; }
+  if (!slot.countHidden && slot.dispCount < slot.countTarget){ slot.dispCount++; moved = true; }
   slDrawSeg();
-  if (moved){
-    slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS);
-  } else {
-    slot.countTimer = 0;
-  }
+  slot.countTimer = moved ? setTimeout(slTickCount, SL_COUNT_MS) : 0;
 }
-function slStartCountAnim(){
-  if (slot.countTimer) return;
-  slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS);
+function slStartCountAnim(){ if (!slot.countTimer) slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS); }
+function slHideCount(){
+  setTimeout(() => { slot.countHidden = true; slot.dispCount = 0; slDrawSeg(); }, SL_END_HIDE_MS);
 }
 
-/* 7セグの描画だけを切り出したもの(カウントアップ中に何度も呼ぶため) */
+/* 7セグだけの描画(カウントアップ中に何度も呼ぶ) */
 function slDrawSeg(){
-  const st = slot.st, g = slot.g;
+  const st = slot.st;
   if (!st) return;
   el.slSegCredit.textContent = st.credit;
   el.slSegPayout.textContent = slot.dispPayout;
   el.slSegCount.textContent = slot.countHidden ? '---' : slot.dispCount;
 }
 
-/* ボーナスが終わったあと、少し置いてからCOUNTを「---」に戻す */
-function slHideCount(){
-  setTimeout(() => {
-    slot.countHidden = true;
-    slot.dispCount = 0;
-    slDrawSeg();
-  }, SL_END_HIDE_MS);
+function slMsg(text){ if (el.slMsg) el.slMsg.textContent = text; }
+
+/* 接続の状態を上部に出す */
+function slSetConn(state){
+  if (!el.slConnDot) return;
+  const on = state === 'on';
+  el.slConnDot.classList.toggle('is-on', on);
+  el.slConnDot.classList.toggle('is-off', !on);
+  el.slConnText.textContent = on ? '接続中' : '接続が切れています';
+  el.slConnChip.classList.toggle('is-off', !on);
 }
 
-
-/* ---------- 操作 ---------- */
+/* =========================================================
+   操作
+   ========================================================= */
 
 function slRent(){
   if (!online.socket) return;
@@ -5160,216 +4619,148 @@ function slRent(){
   audio.play('chip');
 }
 
-/* BET。nを省略するとMAXBET。
-   コインの出し入れはサーバーが持っているので、押した内容をそのまま送る。
-   ただし見た目はすぐ変えたいので、手元の状態も同時に進める */
+/* いまBETできる上限 */
+function slBetCapNow(){
+  if (slot.view.inBonus) return 2;
+  if (slotOpt.oneBetOnLamp && slot.view.lampLit) return 1;
+  return 3;
+}
+
 function slBet(n){
-  const g = slot.g, st = slot.st;
-  if (!g || !st || slot.phase !== 'idle') return;
+  const st = slot.st;
+  if (!st || slot.phase !== 'idle') return;
   if (st.replayPending > 0) return;
 
   const cap = slBetCapNow();
   const want = (n === undefined || n === null) ? cap : Math.floor(Number(n) || 0);
   if (!Number.isFinite(want) || want < 1) return;
-  if (g.inBonus && want < 2 && n !== undefined) return;
+  if (slot.view.inBonus && want < 2 && n !== undefined) return;
 
   const coins = (st.coins != null ? st.coins : st.credit);
-  const add = Math.min(want, cap - g.bet, coins);
+  const add = Math.min(want, cap - slot.bet, coins);
   if (add <= 0) return;
 
-  g.bet += add;
-  slStartBetCT();                 // 押した直後はレバーを受け付けない
-  slSetBetLamps(g.bet);           // ランプは1本ずつ点ける
+  slot.bet += add;
+  slStartBetCT();
+  slSetBetLamps(slot.bet);
   online.socket.emit('slot:bet', n === undefined ? { n: cap } : { n: add });
   audio.play('chip');
   slRenderAll();
 }
 
-/* いまBETできる上限。ボーナス中は2枚が最優先、
-   次に「GOGO中は1BETのみ」の設定、それ以外は3枚 */
-function slBetCapNow(){
-  const g = slot.g;
-  if (!g) return 3;
-  if (g.inBonus) return 2;
-  if (slotOpt.oneBetOnLamp && g.lampLit) return 1;
-  return 3;
-}
-
 /* レバーを引けるか(BET枚数の観点だけ) */
 function slCanPullLever(){
-  const g = slot.g, st = slot.st;
-  if (!g || !st) return false;
+  const st = slot.st;
+  if (!st) return false;
   if (st.replayPending > 0) return true;
-  if (g.bet > 0) return true;
-  /* 簡単レバーモードのときだけ、BET0でも引ける */
+  if (slot.bet > 0) return true;
   const coins = (st.coins != null ? st.coins : st.credit);
   return !!slotOpt.easyLever && coins >= 1;
 }
 
-/* レバーON。ウェイトが残っていれば、明けるまで待ってから回し始める */
+/* レバーON。サーバーに抽選を頼む */
 function slLever(){
-  const g = slot.g, st = slot.st;
-  if (!g || !st || slot.phase !== 'idle') return;
-  if (slot.inWait) return;                 // すでにウェイト待ち
-  if (slBetCtActive()) return;             // BETの直後は受け付けない
+  const st = slot.st;
+  if (!st || slot.phase !== 'idle') return;
+  if (slot.inWait) return;
+  if (slBetCtActive()) return;
 
-  /* 簡単レバーモード。BETしていない状態でレバーを引いたらMAXBETしてから */
-  if (g.bet === 0 && st.replayPending === 0){
+  if (slot.bet === 0 && st.replayPending === 0){
     if (!slotOpt.easyLever){ slMsg('メダルをBETしてください'); return; }
     slBet();
-    if (g.bet === 0) return;               // コインが足りなかった
+    if (slot.bet === 0) return;
+    return;   // BETした直後はクールタイムがあるので、もう一度引いてもらう
   }
-  if (st.replayPending > 0 && g.bet === 0) g.bet = st.replayPending;
-  if (g.bet < 1) return;
-  if (g.inBonus && g.bet < 2){ slMsg('MAXBETしてください'); return; }
+  if (slot.view.inBonus && slot.bet < 2 && st.replayPending === 0){
+    slMsg('MAXBETしてください'); return;
+  }
+  if (!online.socket) return;
 
-  /* 実機は1ゲームに4.1秒かける。残っていれば、その間ぜんぶ保留する */
-  const left = slWaitLeft();
-  if (left > 0){ slBeginWait(left); return; }
-  slDoLever();
+  slot.phase = 'spinning';       // 二重送信を防ぐ
+  online.socket.emit('slot:spin');
 }
 
-/* 実際に回し始めるところ。ウェイトが明けたあともここに来る */
-function slDoLever(){
-  const g = slot.g;
-  if (!g) return;
-
-  slot.leverAt = performance.now();
-  el.slLever.classList.add('is-pulled');
-  setTimeout(() => el.slLever.classList.remove('is-pulled'), 160);
-
-  /* 抽選(実機の内部抽選と同じ。レバーを叩いた瞬間に決まる) */
-  slLeverOn(g);
-
-  slot.phase = 'spin';
-  slot.stopped = [false, false, false];
-  slot.pending = [false, false, false];
-  slot.payout = 0;
+/* サーバーが当たりと seed を返してきた。ここから回し始める */
+function onSlotSpin(d){
+  slot.spinId = d.spinId;
+  slot.flags  = d.flags;
+  slot.seed   = d.seed;
+  slot.bet    = d.bet;
+  slot.rng    = SC.makeRng(d.seed);
+  slot.ctx    = { cols: [null, null, null], pressOrder: [],
+                  smallFlag: d.flags.smallFlag, bonusFlag: d.flags.bonusFlag,
+                  dupCherry: d.flags.dupCherry };
+  slot.presses = [];
+  slot.stopsInitiated = 0;
+  slot.reelsStopped = 0;
+  slot.resolved = false;
+  slot.payTarget = 0;
   slot.dispPayout = 0;
   slStopCountAnim();
-  slot.gateAt = performance.now() + SL_STOP_GATE_MS;
-  slot.betSum += g.bet;
+  slot.betSum += d.bet;
+  slot.view.totalG = d.totalG;
+  slot.view.startG = d.startG;
 
-  const now = performance.now();
-  for (let i = 0; i < 3; i++){
-    const r = slot.reels[i];
-    r.spin = true; r.target = null; r.remain = null; r.last = now;
-  }
-  slStartLoop();
-  slMsg('');
-  el.slReelWindow.classList.remove('is-win');
-  audio.play('button');
-
-  /* 台のデータはサーバーにも残しておく(他の人のホール表示に出るため) */
-  if (online.socket) online.socket.emit('slot:spin', { bet: g.bet });
-
-  slSyncStopButtons();
-  clearTimeout(slot.gateTimer);
-  slot.gateTimer = setTimeout(slSyncStopButtons, SL_STOP_GATE_MS + 10);
-  slRenderAll();
-}
-
-/* 停止ボタン。押した瞬間にここで停止位置を決めて、そのまま止める */
-function slStop(idx){
-  const g = slot.g;
-  if (!g || slot.phase !== 'spin') return;
-  if (slot.stopped[idx] || g.cols[idx]) return;
-  const now = performance.now();
-  if (now - slot.lastStopAt < SL_STOP_MIN_MS) return;
-  if (now < slot.gateAt) return;
-  slot.lastStopAt = now;
-
-  const r = slot.reels[idx];
-  if (!r) return;
-  const cur = slMod(r.pos, SL_KOMA);
-  const stopPos = slChooseStopPosition(g, idx, cur);
-
-  g.cols[idx] = slWindowCol(idx, stopPos);
-  g.pressOrder.push(idx);
-
-  /* 何コマ滑るかを出して、そのぶんだけ動かしてから止める */
-  r.target = stopPos;
-  r.remain = slMod(cur - stopPos, SL_KOMA);
-  if (r.remain > SL_MAX_SLIP + 0.5) r.remain = slMod(r.remain, 1);
-  slStartLoop();
-  slSyncStopButtons();
-
-  if (g.pressOrder.length < 3) return;
-
-  /* 3つとも押し終えたので結果を出す */
-  const res = slResolveGame(g);
-  slAfterGame(res);
-}
-
-/* 1ゲームの後始末。表示を更新して、結果をサーバーにも伝える */
-function slAfterGame(res){
-  const g = slot.g;
-  slot.phase = 'idle';
-  slot.payout = res.pay || 0;
-  slot.paySum += res.pay || 0;
-  slot.diff = slot.paySum - slot.betSum;
-  slot.log.push(slot.diff);
-  if (slot.log.length > 5000) slot.log.shift();
-  slot.bonusLog = g.bonusLog;
-
-  /* リプレイランプは、次のゲームの結果が出るまで点けたままにする(実機と同じ)。
-     リール回転中に消えないよう、replayPending とは別に持っている */
-  slot.replayLamp = !!res.hasReplay;
-
-  /* BETランプは消す */
-  slSetBetLamps(0);
-
-  /* ボーナスに入ったらCOUNTを0から出す */
-  if (res.started){
-    slot.countHidden = false;
-    slot.dispCount = 0;
-  }
-  /* 払い出しはパラパラと増やす */
-  if (res.pay > 0 || (g.inBonus && !res.started)) slStartCountAnim();
-  else slDrawSeg();
-
-  if (res.pay > 0){
-    el.slReelWindow.classList.add('is-win');
-    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
-    audio.play('chip');
-  }
-  if (res.peka){
-    audio.play('win');
-    slMsg('GOGO! CHANCE 点灯!');
-  } else if (res.started){
-    audio.play('win');
-    slMsg(res.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
-  } else if (res.ended){
-    slMsg(res.ended.type + ' 終了  ' + res.ended.paid + '枚獲得');
-    slHideCount();
-  } else if (res.hasReplay){
-    slMsg('リプレイ');
-  } else if (res.pay > 0){
-    slMsg(res.pay + '枚 払い出し');
-  } else {
+  const start = () => {
+    slot.phase = 'spinning';
+    slot.stopEnableAt = performance.now() + SL_STOP_GATE_MS;
+    el.slLever.classList.add('is-pulled');
+    setTimeout(() => el.slLever.classList.remove('is-pulled'), 160);
+    audio.play('button');
     slMsg('');
-  }
+    el.slReelWindow.classList.remove('is-win');
+    slSetBetLamps(0);
+    slot.reels.forEach((r, i) => slStartSpin(r, i * SL_START_DELAY));
+    slStartLoop();
+    if (d.peka){ slot.view.lampLit = true; audio.play('win'); slMsg('GOGO! CHANCE 点灯!'); }
+    slRenderAll();
+  };
 
-  /* サーバーに結果を伝えて、コインと台データを更新してもらう */
-  if (online.socket){
-    online.socket.emit('slot:report', {
-      pay: res.pay || 0,
-      replay: !!res.hasReplay,
-      started: res.started || null,
-      ended: res.ended ? res.ended.type : null,
-      bb: g.bb, rb: g.rb,
-      startG: g.startG, totalG: g.totalG,
-      lampLit: !!g.lampLit
-    });
-  }
+  /* 実機の4.1秒サイクル。残っていればその間ぜんぶ保留する */
+  if (d.waitMs > 0) slBeginWait(d.waitMs, start);
+  else start();
+}
+
+/* 停止ボタン */
+function slStop(i){
+  if (slot.phase !== 'spinning' || slot.inWait) return;
+  const now = performance.now();
+  if (now < slot.stopEnableAt) return;                    // ゲート中
+  if (now - slot.lastStopPressAt < SL_STOP_MIN_MS) return; // 連打ガード
+
+  const r = slot.reels[i];
+  if (!r || r.mode !== 'spin') return;
+  const pos = r.pos;
+  if (!slRequestStop(r)) return;                          // 加速中なら失敗
+
+  slot.lastStopPressAt = now;
+  /* ★pressOrder への追加は requestStop の後。順序が逆だと単チェリー制御が壊れる */
+  slot.ctx.pressOrder.push(i);
+  slot.presses.push({ reel: i, pos });
+  slot.stopsInitiated++;
   slSyncStopButtons();
-  slRenderAll();
+}
+
+/* リールが1つ止まった */
+function slOnReelStopped(idx){
+  slot.reelsStopped++;
+  if (slot.reelsStopped === 3 && slot.ctx && slot.ctx.cols.every(Boolean)){
+    setTimeout(slSendStops, SL_RESOLVE_MS);
+  }
+}
+
+/* 3つ止まったので、押した位置をサーバーへ送って答え合わせしてもらう */
+function slSendStops(){
+  if (slot.resolved) return;
+  slot.resolved = true;
+  if (!online.socket || !slot.spinId) return;
+  online.socket.emit('slot:stop', { spinId: slot.spinId, presses: slot.presses });
 }
 
 async function slCashout(){
   if (slot.phase !== 'idle') return;
-  const st = slot.st, g = slot.g;
-  const coins = st ? (st.coins != null ? st.coins : st.credit) + (g ? g.bet : st.bet) : 0;
+  const st = slot.st;
+  const coins = st ? (st.coins != null ? st.coins : st.credit) + slot.bet : 0;
   const ok = await askConfirm({
     title: '精算して席を立ちますか?',
     text: 'コイン ' + coins + '枚 を ' + (coins * SL_COIN_VALUE).toLocaleString() + ' メダルとして受け取ります。',
@@ -5380,7 +4771,9 @@ async function slCashout(){
   if (online.socket) online.socket.emit('slot:cashout');
 }
 
-/* ---------- サーバーからの受信 ---------- */
+/* =========================================================
+   サーバーからの受信
+   ========================================================= */
 
 function onSlotLobby(d){
   slot.lobby = d;
@@ -5388,17 +4781,12 @@ function onSlotLobby(d){
 }
 
 function onSlotSat(st){
-  slot.log = [];
-  slot.diff = 0;
-  slot.betSum = 0;
-  slot.paySum = 0;
-  slot.bonusLog = [];
+  slot.log = []; slot.diff = 0; slot.betSum = 0; slot.paySum = 0;
   slEnterMachine(st);
   slMsg('メダルを借りてゲームスタート!');
   audio.play('join');
 }
 
-/* 切断から戻ってきたとき。台のデータは引き継ぐ */
 function onSlotResume(st){
   slEnterMachine(st);
   slMsg('前に打っていた ' + st.no + '番台に戻りました');
@@ -5407,28 +4795,88 @@ function onSlotResume(st){
 
 function onSlotState(st){
   slot.st = st;
-  /* コインの枚数と台データはサーバーが正。手元の状態にも反映しておく */
-  if (slot.g){
-    slot.g.credit = st.credit;
-    slot.g.tray   = st.tray || 0;
-    if (slot.phase === 'idle' && st.bet === 0 && slot.g.bet !== 0 && st.replayPending === 0){
-      /* サーバー側でBETが取り消された(精算など) */
-      slot.g.bet = 0;
-    }
-  }
+  if (slot.phase === 'idle') slot.bet = st.bet;
+  slot.view.bb = st.bb; slot.view.rb = st.rb;
+  slot.view.startG = st.startG; slot.view.totalG = st.totalG;
+  slot.view.inBonus = !!st.inBonus;
+  slot.view.bonusType = st.bonusType;
+  slot.view.bonusPaid = st.bonusPaid || 0;
+  slot.view.lampLit = !!st.lampLit;
+  slot.bonusLog = st.bonusLog || slot.bonusLog;
   if (screen === 'slot') slRenderAll();
 }
 
-/* 精算した(自分で押した場合も、0時や自動退席の場合もここに来る) */
+/* 答え合わせの結果。★出目はここで上書きする */
+function onSlotResult(d){
+  slot.phase = 'idle';
+  slot.spinId = null;
+
+  /* サーバーの出目と食い違っていたら、そちらに合わせて止め直す */
+  if (slot.ctx && JSON.stringify(slot.ctx.cols) !== JSON.stringify(d.cols)){
+    console.warn('[slot] 出目がサーバーと違ったので合わせ直しました');
+    for (const s of (d.stops || [])){
+      const r = slot.reels[s.reel];
+      if (r){ r.pos = s.stop; r.target = s.stop; r.mode = 'stopped'; }
+    }
+    slDrawReels();
+  }
+
+  slot.paySum += d.pay || 0;
+  slot.diff = slot.paySum - slot.betSum;
+  slot.log.push(slot.diff);
+  if (slot.log.length > 5000) slot.log.shift();
+
+  slot.replayLamp = !!d.replay;
+  slot.view.lampLit = !!d.lampLit;
+  slot.view.inBonus = !!d.inBonus;
+  slot.view.bonusPaid = d.bonusPaid || 0;
+
+  /* 払い出しはパラパラと増やす */
+  slot.payTarget = d.pay || 0;
+  slot.dispPayout = 0;
+  if (d.started){ slot.countHidden = false; slot.dispCount = 0; }
+  slot.countTarget = d.bonusPaid || 0;
+  if (slot.payTarget > 0 || slot.countTarget > slot.dispCount) slStartCountAnim();
+  else slDrawSeg();
+
+  if (d.pay > 0){
+    el.slReelWindow.classList.add('is-win');
+    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
+    audio.play('chip');
+  }
+  if (d.started){
+    audio.play('win');
+    slMsg(d.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
+    slot.bonusLog.push({ type: d.started, at: slot.view.startG, g: slot.view.totalG });
+  } else if (d.peka){
+    audio.play('win');
+    slMsg('GOGO! CHANCE 点灯!');
+  } else if (d.ended){
+    slMsg(d.ended + ' 終了  ' + d.endedPaid + '枚獲得');
+    slHideCount();
+  } else if (d.replay){
+    slMsg('リプレイ');
+  } else if (d.pay > 0){
+    slMsg(d.pay + '枚 払い出し');
+  } else {
+    slMsg('');
+  }
+  slot.bet = 0;
+  slSetBetLamps(0);
+  slSyncStopButtons();
+  slRenderAll();
+}
+
 function onSlotCashout(d){
   slot.seated = false;
   slot.phase = 'idle';
-  slot.g = null;
+  slot.spinId = null;
+  slot.ctx = null;
   slClearWait();
   slClearBetLampAnim();
   slStopCountAnim();
   clearTimeout(slot.betCtTimer); slot.betCtTimer = 0;
-  for (const r of slot.reels) { r.spin = false; r.target = null; r.remain = null; }
+  for (const r of slot.reels){ r.mode = 'stopped'; }
   if (slot.raf){ cancelAnimationFrame(slot.raf); slot.raf = 0; }
 
   const gain = d.gain || 0;
@@ -5450,42 +4898,137 @@ function onSlotCashout(d){
   }
 }
 
-/* 接続の状態を上部に出す */
-function slSetConn(state){
-  if (!el.slConnDot) return;
-  const on = state === 'on';
-  el.slConnDot.classList.toggle('is-on', on);
-  el.slConnDot.classList.toggle('is-off', !on);
-  el.slConnText.textContent = on ? '接続中' : '接続が切れています';
-  el.slConnChip.classList.toggle('is-off', !on);
+/* =========================================================
+   画面の更新
+   ========================================================= */
+
+function slRenderAll(){
+  const st = slot.st, v = slot.view;
+  if (!st) return;
+  const coins = (st.coins != null ? st.coins : st.credit);
+  const rate = (v.bb + v.rb) && v.totalG ? v.totalG / (v.bb + v.rb) : null;
+
+  el.slMachineNo.textContent = st.no + '番台';
+
+  el.slDataBB.textContent = v.bb;
+  el.slDataRB.textContent = v.rb;
+  el.slDataStart.textContent = v.startG;
+  el.slDataTotal.textContent = v.totalG;
+  el.slDataRate.textContent = rate ? '1/' + rate.toFixed(1) : '1/---';
+
+  /* 情報バー。回収は「いま精算したら戻ってくるメダル」 */
+  const back = (coins + slot.bet) * SL_COIN_VALUE;
+  const diff = back - st.invested;
+  el.slWCoin.textContent   = coins;
+  el.slWInvest.textContent = st.invested.toLocaleString();
+  el.slWBack.textContent   = back.toLocaleString();
+  el.slWDiff.textContent   = (diff >= 0 ? '+' : '') + diff.toLocaleString();
+  el.slWDiff.style.color   = diff >= 0 ? '#7fd4ff' : '#ff8a8a';
+
+  slDrawSeg();
+  if (slot.bet !== slot.betLampShown && !slot.betLampTimer) slSetBetLamps(slot.bet);
+
+  /* GOGO!CHANCE */
+  const lit = !!v.lampLit;
+  el.slGogoOff.hidden = lit;
+  el.slGogoOn.hidden = !lit;
+  el.slGogo.classList.toggle('is-lit', lit);
+
+  slUpdateStateLamps();
+  slRenderBonusGraph();
+  slSyncButtons();
 }
 
-/* ---------- データ表示モード ---------- */
+/* 状態ランプ。点灯条件はシミュレーター準拠 */
+function slUpdateStateLamps(){
+  const st = slot.st;
+  if (!st) return;
+  const idle = slot.phase === 'idle';
+  el.slLampStart.classList.toggle('is-on', idle && !slot.inWait &&
+    (slot.bet > 0 || st.replayPending > 0));
+  el.slLampWait.classList.toggle('is-on', !!slot.inWait);
+  el.slLampReplay.classList.toggle('is-on', !!slot.replayLamp);
+  el.slLampInsert.classList.toggle('is-blink', idle && !slot.inWait);
+  el.slLampInsert.classList.toggle('is-on', false);
+}
 
+function slSyncButtons(){
+  const st = slot.st;
+  if (!st) return;
+  const idle = slot.phase === 'idle';
+  const coins = (st.coins != null ? st.coins : st.credit);
+  const cap = slBetCapNow();
+  const medal = account.user ? Number(account.user.medal || 0) : 0;
+
+  el.slRentBtn.disabled = !idle || medal < SL_RENT_MEDAL;
+  el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 ||
+                          slot.bet >= cap || slot.view.inBonus;
+  el.slMaxBetBtn.disabled = !idle || st.replayPending > 0 ||
+                            (coins < 1 && slot.bet === 0) || slot.bet >= cap;
+  el.slCashoutBtn.disabled = !idle;
+
+  const canLever = idle && !slot.inWait && !slBetCtActive() && slCanPullLever() &&
+                   !(slot.view.inBonus && slot.bet < 2 && st.replayPending === 0);
+  el.slLever.classList.toggle('is-off', !canLever);
+  slSyncStopButtons();
+}
+
+function slSyncStopButtons(){
+  const spinning = slot.phase === 'spinning' && !slot.inWait;
+  const gated = performance.now() < slot.stopEnableAt;
+  for (let i = 0; i < 3; i++){
+    const btn = el['slStop' + i];
+    if (!btn) continue;
+    const r = slot.reels[i];
+    const live = spinning && !gated && r && r.mode === 'spin' && r.v >= SL_SPEED * 0.95;
+    btn.disabled = !live;
+    btn.classList.toggle('is-live', live);
+  }
+}
+
+/* データカウンター右側の履歴グラフ。1段=約78G(9段で700G) */
+function slRenderBonusGraph(){
+  const box = el.slBonusGraph;
+  if (!box) return;
+  const list = (slot.bonusLog || []).slice(-10);
+  let html = '';
+  for (let c = 0; c < 10; c++){
+    const b = list[c];
+    let lv = 0, cls = '';
+    if (b){
+      lv = Math.max(1, Math.min(9, Math.ceil((b.at || 0) / 78)));
+      cls = b.type === 'BB' ? 'is-b' : 'is-r';
+    }
+    html += '<div class="sl-bg-col">';
+    for (let r = 0; r < 9; r++){
+      html += '<span class="sl-bg-cell' + (b && r < lv ? ' ' + cls : '') + '"></span>';
+    }
+    html += '</div>';
+  }
+  box.innerHTML = html;
+}
+
+/* =========================================================
+   データ表示モード
+   ========================================================= */
 function openSlotData(){
   slRenderData();
   openOverlay(el.slotDataOverlay);
 }
 
 function slRenderData(){
-  const st = slot.st;
-  const g = st ? st.totalG : 0;
-  const bb = st ? st.bb : 0;
-  const rb = st ? st.rb : 0;
-
+  const v = slot.view;
+  const g = v.totalG, bb = v.bb, rb = v.rb;
   el.slStatBB.textContent = bb ? '1/' + (g / bb).toFixed(1) : '1/---';
   el.slStatRB.textContent = rb ? '1/' + (g / rb).toFixed(1) : '1/---';
   el.slStatRate.textContent = slot.betSum
     ? (slot.paySum / slot.betSum * 100).toFixed(1) + '%' : '---%';
   el.slStatAvg.textContent = (bb + rb) ? Math.round(g / (bb + rb)) : '---';
-  const d = slot.diff;
-  el.slStatDiff.textContent = (d >= 0 ? '+' : '') + d;
-
+  el.slStatDiff.textContent = (slot.diff >= 0 ? '+' : '') + slot.diff;
   slDrawGraph();
   slRenderHistory();
 }
 
-/* 差枚グラフ */
 function slDrawGraph(){
   const cv = el.slGraphCanvas;
   if (!cv) return;
@@ -5493,7 +5036,6 @@ function slDrawGraph(){
   const W = cv.width, H = cv.height;
   ctx.clearRect(0, 0, W, H);
 
-  /* 目盛り */
   const data = slot.log;
   let max = 500, min = -500;
   for (const v of data){ if (v > max) max = v; if (v < min) min = v; }
@@ -5517,7 +5059,6 @@ function slDrawGraph(){
     ctx.fillText('まだデータがありません', W / 2, H / 2);
     return;
   }
-
   ctx.strokeStyle = '#35FF6E';
   ctx.lineWidth = 2;
   ctx.beginPath();

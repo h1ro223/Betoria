@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v5.2 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v6.0 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -1548,6 +1548,16 @@
     </div>
     <div class="sheet-body">
       <div class="sheet-section">
+        <h3>v6.0</h3>
+        <ul class="rule-list">
+          <li><b>スロットを作り直しました。</b>当たりを決めるのはサーバーになり、それでいて<b>停止ボタンは押した瞬間に反応します</b>(実測20ミリ秒ほど)。</li>
+          <li>サーバーが当たりと「種」を配り、ブラウザがその場で止め、サーバーが同じ計算をやり直して答え合わせをする仕組みです。<b>出ていないボーナスを作ったり、払い出しを水増ししたりはできません。</b></li>
+          <li><b>台の設定はブラウザに一切送られません。</b>覗いても分からないので、データを見て自分で見極めてください。</li>
+          <li><b>リールが徐々に加速する</b>ようになりました。加速しきるまでは停止ボタンが効きません(実機と同じです)。</li>
+          <li>リールの停止位置が<b>1コマもずれずにぴったり</b>止まるようになりました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>v5.2</h3>
         <ul class="rule-list">
           <li><b>スロットの打ち心地を実機に合わせました。</b>1ゲームにかかる時間(ウェイト4.1秒)、停止ボタンが効くまでの間、停止操作の間隔を、すべて実機と同じ数字にしています。</li>
@@ -2046,6 +2056,8 @@
   made by <a href="https://github.com/h1ro223" target="_blank" rel="noopener noreferrer">hiro/ヒロ</a>
 </div>
 
+<!-- スロットの中核。server.js と同じものを読む(v6.0) -->
+<script src="./shared/slot-core.js"></script>
 <script src="./script.js"></script>
 </body>
 </html>
