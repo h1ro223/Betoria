@@ -442,9 +442,14 @@ const el = {
   slOptMsgBar: $('slOptMsgBar'),
   slOptOneBet: $('slOptOneBet'),
   slOptEasyLever: $('slOptEasyLever'),
+  slOwnerTools: $('slOwnerTools'),
+  slForceKind: $('slForceKind'),
+  slForceBtn: $('slForceBtn'),
+  slResetMachineBtn: $('slResetMachineBtn'),
   slBonusGraph: $('slBonusGraph'),
   slWCoin: $('slWCoin'),
   slWInvest: $('slWInvest'),
+  slBanner: document.querySelector('#screenSlot .sl-banner'),
   slReelWindow: $('slReelWindow'),
   slReel0: $('slReel0'),
   slReel1: $('slReel1'),
@@ -457,9 +462,6 @@ const el = {
   slLampWait: $('slLampWait'),
   slLampInsert: $('slLampInsert'),
   slGogo: $('slGogo'),
-  slGogoOff: $('slGogoOff'),
-  slGogoOn: $('slGogoOn'),
-  slGogoRainbow: $('slGogoRainbow'),
   slSegCredit: $('slSegCredit'),
   slSegCount: $('slSegCount'),
   slSegPayout: $('slSegPayout'),
@@ -841,6 +843,17 @@ const el = {
   devOverlay: $('devOverlay'),
   devCloseBtn: $('devCloseBtn'),
   devReloadBtn: $('devReloadBtn'),
+  devMenu: $('devMenu'),
+  devMenuAccounts: $('devMenuAccounts'),
+  devMenuSlot: $('devMenuSlot'),
+  devSlotStateNote: $('devSlotStateNote'),
+  devAccounts: $('devAccounts'),
+  devBackFromAccounts: $('devBackFromAccounts'),
+  devSlot: $('devSlot'),
+  devBackFromSlot: $('devBackFromSlot'),
+  devSlotMaint: $('devSlotMaint'),
+  devSlotHint: $('devSlotHint'),
+  devSlotError: $('devSlotError'),
   devSummary: $('devSummary'),
   devList: $('devList'),
   devDetailOverlay: $('devDetailOverlay'),
@@ -3570,10 +3583,20 @@ function connectSocket(){
   sock.on('slot:state',   onSlotState);
   sock.on('slot:spin',    onSlotSpin);
   sock.on('slot:result',  onSlotResult);
+  sock.on('slot:forced',       onSlotForced);
+  sock.on('slot:machineReset', onSlotMachineReset);
   sock.on('slot:cashout', onSlotCashout);
   /* 接続の状態を上部に出す(v5.1) */
-  sock.on('connect',    () => slSetConn('on'));
-  sock.on('disconnect', () => slSetConn('off'));
+  sock.on('connect', () => {
+    slSetConn('on');
+    /* つなぎ直したら台の状態を取り直す。これが無いと操作できなくなる(v6.2) */
+    slResync();
+  });
+  sock.on('disconnect', () => {
+    slSetConn('off');
+    /* 切れている間は押せないようにしておく。戻ったら slot:resume で立て直す */
+    if (slot.seated){ slot.phase = 'idle'; slSyncButtons(); }
+  });
 
   /* マーブルレース(v4.1) */
   sock.on('marble:state', onMarbleState);
@@ -4214,6 +4237,14 @@ const SL_BET_CT_MS    = 100;   // BETを押してからレバーを受け付け�
 const SL_COUNT_MS     = 100;   // COUNT/PAY OUT が1つ増える間隔
 const SL_END_HIDE_MS  = 150;   // ボーナス終了後にCOUNTを「---」に戻すまで
 const SL_RESOLVE_MS   = 120;   // 第3停止から結果表示まで
+/* 演出の長さ。音がまだ無いので固定値で動かしている(timing_list.md の「仮値」)。
+   実機の音を入れるときは、その音源の長さに置き換えること */
+const SL_GOGO_MS      = 1200;  // GOGO!CHANCE点灯演出。この間は払い出しを待たせる
+const SL_BB_HIT_MS    = 2800;  // BB当選のファンファーレ相当。この間は本編に入らない
+const SL_BB_FIN_MS    = 1800;  // BB終了演出。この間は操作できない
+const SL_PAY_LOCK_MS  = 900;   // ブドウ・ベルの払い出しが終わるまで
+const SL_PAY_TAIL_MS  = 500;   // 1枚ずつ払い出したあとの余韻
+const SL_BONUS_BLINK  = 1000;  // ヘッダーのBB/RB数字の点滅周期
 const SL_COIN_VALUE   = 19;    // 精算レート。server.js と合わせること
 const SL_RENT_MEDAL   = 1000;
 
@@ -4233,6 +4264,8 @@ function saveSlotOpt(){
 }
 function applySlotOpt(){
   if (el.slMsg) el.slMsg.hidden = !slotOpt.msgBar;
+  /* オーナー専用の項目は、サーバーがオーナーと認めたときだけ出す(v6.2) */
+  if (el.slOwnerTools) el.slOwnerTools.hidden = !(slot.st && slot.st.isOwner);
   if (el.slOptMsgBar)    el.slOptMsgBar.checked    = slotOpt.msgBar;
   if (el.slOptOneBet)    el.slOptOneBet.checked    = slotOpt.oneBetOnLamp;
   if (el.slOptEasyLever) el.slOptEasyLever.checked = slotOpt.easyLever;
@@ -4284,6 +4317,17 @@ const slot = {
   countHidden: true,
   payTarget: 0,
   countTarget: 0,
+
+  /* ボーナス演出(v6.2) */
+  bonusCountHold: false,   // ボーナスが終わってもCOUNTを出したままにする
+  bonusCountFinal: 0,      // そのとき出しておく最終値(294 / 112)
+  bonusPhase: '',          // '' | 'hit'(当選演出) | 'run'(本編) | 'fin'(終了演出)
+  betLock: false,          // BB終了演出の間は何も操作できない
+  gogoSndEnd: 0,           // GOGO点灯演出が終わる時刻
+  pendingBonus: null,      // 第3停止を押し込んでいる間、突入を待たせる
+  thirdStopPressed: false,
+  stopHeld: false,
+  bonusTimers: [],
 
   /* 見た目に出す台データ(サーバーが返した値をそのまま持つ) */
   view: { bb: 0, rb: 0, startG: 0, totalG: 0, inBonus: false, bonusType: null,
@@ -4516,6 +4560,10 @@ function slEnterMachine(st){
   slot.stopsInitiated = 0;
   slot.reelsStopped = 0;
   slot.resolved = false;
+  /* ★ここで戻さないと、画面のどこを押しても離した扱いになってしまう */
+  slot.thirdStopPressed = false;
+  slot.stopHeld = false;
+  slot.pendingBonus = null;
   slot.reels = [0, 1, 2].map(slMakeReel);
 
   slot.view = {
@@ -4529,6 +4577,8 @@ function slEnterMachine(st){
   slClearWait();
   slClearBetLampAnim();
   slStopCountAnim();
+  slClearBonusShow();
+  slReleaseStopVisual();
   clearTimeout(slot.betCtTimer); slot.betCtTimer = 0;
   slot.betLampShown = 0;
   slot.betCtUntil = 0;
@@ -4613,10 +4663,19 @@ function slBetCtActive(){ return performance.now() < slot.betCtUntil; }
 
 /* ---- COUNT / PAY OUT のカウントアップ ---- */
 function slStopCountAnim(){ clearTimeout(slot.countTimer); slot.countTimer = 0; }
+/* COUNTの目標値。
+   ★ボーナスが終わった瞬間に目標を0にすると、294へ向かって増えていた表示が
+     逆流して最後に「---」になってしまう。終わった後は最終値で止めておく */
+function slCountTarget(){
+  if (slot.view.inBonus) return slot.countTarget;
+  return slot.bonusCountHold ? slot.bonusCountFinal : slot.countTarget;
+}
+
 function slTickCount(){
   let moved = false;
+  const ct = slCountTarget();
   if (slot.dispPayout < slot.payTarget){ slot.dispPayout++; moved = true; }
-  if (!slot.countHidden && slot.dispCount < slot.countTarget){ slot.dispCount++; moved = true; }
+  if (!slot.countHidden && slot.dispCount < ct){ slot.dispCount++; moved = true; }
   /* CREDITと持ちコインも1枚ずつ寄せていく。減るときも1枚ずつ */
   if (slot.dispCredit !== slot.creditTarget){
     slot.dispCredit += (slot.dispCredit < slot.creditTarget) ? 1 : -1;
@@ -4648,8 +4707,91 @@ function slSyncCoinTargets(instant){
     slStartCountAnim();
   }
 }
+/* COUNTを「---」に戻す。★294から1枚ずつ減る演出にならないよう、即座に0にする。
+   同じ瞬間に履歴グラフとランプも切り替える(仕様書§4-4) */
 function slHideCount(){
-  setTimeout(() => { slot.countHidden = true; slot.dispCount = 0; slDrawSeg(); }, SL_END_HIDE_MS);
+  const t = setTimeout(() => {
+    slot.bonusCountHold = false;
+    slot.bonusCountFinal = 0;
+    slot.countHidden = true;
+    slot.dispCount = 0;
+    slot.countTarget = 0;
+    slDrawSeg();
+    slRenderBonusGraph();
+    slUpdateStateLamps();
+  }, SL_END_HIDE_MS);
+  slot.bonusTimers.push(t);
+}
+
+/* ボーナス演出のタイマーをまとめて止める(退席・リセット時) */
+function slClearBonusShow(){
+  for (const t of slot.bonusTimers) clearTimeout(t);
+  slot.bonusTimers = [];
+  slot.bonusPhase = '';
+  slot.betLock = false;
+  slot.pendingBonus = null;
+  if (el.slBanner) el.slBanner.classList.remove('is-bonus', 'is-hit');
+  el.slDataBB.classList.remove('is-blink');
+  el.slDataRB.classList.remove('is-blink');
+}
+
+/* ボーナス突入の演出。第3停止を離した瞬間にここへ来る */
+function slStartBonusShow(type){
+  slot.bonusPhase = 'hit';
+  slot.view.lampLit = false;          // GOGO!ランプはボーナス突入で消える
+  slot.replayLamp = false;
+  slot.bonusCountHold = false;
+  slot.bonusCountFinal = 0;
+  slot.countHidden = false;
+  slot.dispCount = 0;
+  slot.countTarget = 0;
+  audio.play('win');
+
+  if (el.slBanner) el.slBanner.classList.add('is-hit');
+  (type === 'BB' ? el.slDataBB : el.slDataRB).classList.add('is-blink');
+  slMsg(type === 'BB' ? 'BIG BONUS!!  (最大 +252枚)' : 'REGULAR BONUS!!  (最大 +96枚)');
+  slRenderAll();
+
+  /* BBは当選ファンファーレのぶん待ってから本編へ。RBは待たずに本編 */
+  const wait = (type === 'BB') ? SL_BB_HIT_MS : 0;
+  const go = () => {
+    slot.bonusPhase = 'run';
+    if (el.slBanner){
+      el.slBanner.classList.remove('is-hit');
+      el.slBanner.classList.add('is-bonus');
+    }
+    slRenderAll();
+  };
+  if (wait > 0) slot.bonusTimers.push(setTimeout(go, wait));
+  else go();
+}
+
+/* ボーナス終了の演出 */
+function slEndBonusShow(type, paid){
+  slot.bonusPhase = 'fin';
+  /* ★COUNTは最終値(294/112)を出したまま保つ */
+  slot.bonusCountHold = true;
+  slot.bonusCountFinal = paid;
+  slot.countHidden = false;
+  slStartCountAnim();
+
+  if (el.slBanner) el.slBanner.classList.remove('is-bonus', 'is-hit');
+  slMsg(type + ' 終了!  ' + paid + '枚獲得!');
+
+  /* BBは終了演出の間、操作を受け付けない。RBはすぐ次のゲームへ */
+  const fin = (type === 'BB') ? SL_BB_FIN_MS : 0;
+  if (fin > 0){
+    slot.betLock = true;
+    slSyncButtons();
+  }
+  slot.bonusTimers.push(setTimeout(() => {
+    slot.betLock = false;
+    slot.bonusPhase = '';
+    el.slDataBB.classList.remove('is-blink');
+    el.slDataRB.classList.remove('is-blink');
+    slHideCount();
+    slRenderAll();
+  }, fin));
 }
 
 /* 7セグだけの描画(カウントアップ中に何度も呼ぶ) */
@@ -4661,11 +4803,22 @@ function slDrawSeg(){
   if (!st) return;
   el.slSegCredit.textContent = slot.dispCredit;
   el.slSegPayout.textContent = slot.dispPayout;
-  el.slSegCount.textContent = slot.countHidden ? '---' : slot.dispCount;
+  el.slSegCount.textContent = (slot.countHidden && !slot.bonusCountHold) ? '---' : slot.dispCount;
   if (el.slWCoin) el.slWCoin.textContent = slot.dispCoin;
 }
 
 function slMsg(text){ if (el.slMsg) el.slMsg.textContent = text; }
+
+/* 台の状態をサーバーから取り直す(v6.2)。
+   スマホでバックグラウンドに回すと、回転のアニメも通信も止まる。
+   戻ってきたときに何もしないと、画面は「回転中」なのにサーバーは違う状態、
+   ということが起きてスロットが操作できなくなる。
+   ここで必ず サーバーの状態に合わせ直す */
+function slResync(){
+  if (!slot.seated) return;
+  if (!online.socket || !online.socket.connected) return;
+  online.socket.emit('slot:lobby');   // サーバーが slot:resume を返してくれる
+}
 
 /* 接続の状態を上部に出す */
 function slSetConn(state){
@@ -4787,8 +4940,9 @@ function onSlotSpin(d){
     slRenderAll();
   };
 
-  /* 実機の4.1秒サイクル。残っていればその間ぜんぶ保留する */
-  if (d.waitMs > 0) slBeginWait(d.waitMs, start);
+  /* 実機の4.1秒サイクル。残っていればその間ぜんぶ保留する。
+     切断から戻ってきた場合(resumed)は、待たせずそのまま回し直す */
+  if (d.waitMs > 0 && !d.resumed) slBeginWait(d.waitMs, start);
   else start();
 }
 
@@ -4809,7 +4963,36 @@ function slStop(i){
   slot.ctx.pressOrder.push(i);
   slot.presses.push({ reel: i, pos });
   slot.stopsInitiated++;
+  if (slot.stopsInitiated === 3){
+    slot.thirdStopPressed = true;
+    slot.stopHeld = true;        // 第3停止を押し込み中。離すまでボーナスに入らない
+  }
+  /* ★離すまで沈んだままにする。ここでクラスを消さないこと(v6.2) */
+  const btn = el['slStop' + i];
+  if (btn) btn.classList.add('is-pushed');
+  audio.play('chip');
   slSyncStopButtons();
+}
+
+/* 指を離したとき。ボタンの外で離されることがあるので window で受ける */
+function slReleaseStopVisual(){
+  for (let i = 0; i < 3; i++){
+    const b = el['slStop' + i];
+    if (b) b.classList.remove('is-pushed');
+  }
+}
+
+/* ★第3停止を離した瞬間はゲーム上の分かれ目。
+   押し込んだままだとボーナスに入らず、離して初めてファンファーレが鳴る */
+function slOnStopRelease(){
+  slReleaseStopVisual();
+  if (!slot.thirdStopPressed) return;
+  slot.stopHeld = false;
+  if (slot.pendingBonus){
+    const type = slot.pendingBonus;
+    slot.pendingBonus = null;
+    slStartBonusShow(type);
+  }
 }
 
 /* リールが1つ止まった */
@@ -4909,10 +5092,14 @@ function onSlotResult(d){
   slot.payTarget = d.pay || 0;
   slot.dispPayout = 0;
   if (d.started){ slot.countHidden = false; slot.dispCount = 0; }
-  slot.countTarget = d.bonusPaid || 0;
-  if (slot.payTarget > 0 || slot.countTarget > slot.dispCount ||
-      slot.dispCredit !== slot.creditTarget || slot.dispCoin !== slot.coinTarget){
-    slStartCountAnim();
+  if (d.inBonus) slot.countTarget = d.bonusPaid || 0;
+  const need = slot.payTarget > 0 || slCountTarget() > slot.dispCount ||
+               slot.dispCredit !== slot.creditTarget || slot.dispCoin !== slot.coinTarget;
+  if (need){
+    /* GOGOが光った直後は、点灯演出が終わってから数字を動かし始める */
+    const gogoWait = Math.max(0, slot.gogoSndEnd - performance.now());
+    if (gogoWait > 0) slot.bonusTimers.push(setTimeout(slStartCountAnim, gogoWait));
+    else slStartCountAnim();
   } else slDrawSeg();
 
   if (d.pay > 0){
@@ -4921,15 +5108,22 @@ function onSlotResult(d){
     audio.play('chip');
   }
   if (d.started){
-    audio.play('win');
-    slMsg(d.started === 'BB' ? 'BIG BONUS スタート!' : 'REGULAR BONUS スタート!');
     slot.bonusLog.push({ type: d.started, at: slot.view.startG, g: slot.view.totalG });
+    /* ★第3停止を押し込んだままなら、まだ突入させない。
+       離した瞬間にファンファーレが鳴る(仕様書§4-3) */
+    if (slot.stopHeld){
+      slot.pendingBonus = d.started;
+      slMsg('');
+    } else {
+      slStartBonusShow(d.started);
+    }
+  } else if (d.ended){
+    slEndBonusShow(d.ended, d.endedPaid);
   } else if (d.peka){
     audio.play('win');
-    slMsg('GOGO! CHANCE 点灯!');
-  } else if (d.ended){
-    slMsg(d.ended + ' 終了  ' + d.endedPaid + '枚獲得');
-    slHideCount();
+    slMsg('GOGO!CHANCE!!  ボーナス図柄を狙え!');
+    /* 点灯演出が終わるまで、払い出しのカウントアップを待たせる(仕様書§9-1) */
+    slot.gogoSndEnd = performance.now() + SL_GOGO_MS;
   } else if (d.replay){
     slMsg('リプレイ');
   } else if (d.pay > 0){
@@ -4943,6 +5137,18 @@ function onSlotResult(d){
   slRenderAll();
 }
 
+/* オーナーがボーナスを仕込んだ(v6.2) */
+function onSlotForced(d){
+  toast((d.kind === 'BB' ? 'BIG' : 'REG') + 'を仕込みました。レバーを引いてください');
+  closeOverlay(el.slotSettingsOverlay);
+}
+
+/* オーナーが台をリセットした。台選びに戻す */
+function onSlotMachineReset(d){
+  closeOverlay(el.slotSettingsOverlay);
+  toast(d.no + '番台をリセットしました');
+}
+
 function onSlotCashout(d){
   slot.seated = false;
   slot.phase = 'idle';
@@ -4951,6 +5157,8 @@ function onSlotCashout(d){
   slClearWait();
   slClearBetLampAnim();
   slStopCountAnim();
+  slClearBonusShow();
+  slReleaseStopVisual();
   clearTimeout(slot.betCtTimer); slot.betCtTimer = 0;
   for (const r of slot.reels){ r.mode = 'stopped'; }
   if (slot.raf){ cancelAnimationFrame(slot.raf); slot.raf = 0; }
@@ -5001,11 +5209,8 @@ function slRenderAll(){
      0に戻すのは次のBETが入る瞬間なので、ここでは減らさない */
   if (slot.bet > slot.betLampShown && !slot.betLampTimer) slSetBetLamps(slot.bet);
 
-  /* GOGO!CHANCE */
-  const lit = !!v.lampLit;
-  el.slGogoOff.hidden = lit;
-  el.slGogoOn.hidden = !lit;
-  el.slGogo.classList.toggle('is-lit', lit);
+  /* GOGO!CHANCE。点灯・消灯はCSSのopacityでやるので、hiddenは触らない(v6.2) */
+  el.slGogo.classList.toggle('is-lit', !!v.lampLit);
 
   slUpdateStateLamps();
   slRenderBonusGraph();
@@ -5016,12 +5221,12 @@ function slRenderAll(){
 function slUpdateStateLamps(){
   const st = slot.st;
   if (!st) return;
-  const idle = slot.phase === 'idle';
-  el.slLampStart.classList.toggle('is-on', idle && !slot.inWait &&
-    (slot.bet > 0 || st.replayPending > 0));
+  /* ボーナス終了のCOUNTを出している間は「次ゲーム待ち」ではない(仕様書§6-1) */
+  const waiting = slot.phase === 'idle' && !slot.inWait && !slot.bonusCountHold && !slot.betLock;
+  el.slLampStart.classList.toggle('is-on', waiting && (slot.bet > 0 || st.replayPending > 0));
   el.slLampWait.classList.toggle('is-on', !!slot.inWait);
   el.slLampReplay.classList.toggle('is-on', !!slot.replayLamp);
-  el.slLampInsert.classList.toggle('is-blink', idle && !slot.inWait);
+  el.slLampInsert.classList.toggle('is-blink', waiting);
   el.slLampInsert.classList.toggle('is-on', false);
 }
 
@@ -5033,6 +5238,14 @@ function slSyncButtons(){
   const cap = slBetCapNow();
   const medal = account.user ? Number(account.user.medal || 0) : 0;
 
+  /* BB終了演出の間は何も押せない(仕様書§4-5) */
+  if (slot.betLock){
+    el.slRentBtn.disabled = el.slBet1Btn.disabled = true;
+    el.slMaxBetBtn.disabled = el.slCashoutBtn.disabled = true;
+    el.slLever.classList.add('is-off');
+    slSyncStopButtons();
+    return;
+  }
   el.slRentBtn.disabled = !idle || medal < SL_RENT_MEDAL;
   el.slBet1Btn.disabled = !idle || st.replayPending > 0 || coins < 1 ||
                           slot.bet >= cap || slot.view.inBonus;
@@ -6702,7 +6915,60 @@ function renderDevDetail(d){
 
 function openDevPanel(){
   openOverlay(el.devOverlay);
+  showDevMenu();
+}
+
+/* 開発者モードは「項目を選ぶ → 中を開く」の2段にしてある(v6.2) */
+function showDevMenu(){
+  el.devMenu.hidden = false;
+  el.devAccounts.hidden = true;
+  el.devSlot.hidden = true;
+  el.devSlotStateNote.textContent =
+    online.slotMaintenance ? 'いまメンテナンス中(オーナーのみ)' : 'いま全員が遊べます';
+}
+function showDevAccounts(){
+  el.devMenu.hidden = true;
+  el.devAccounts.hidden = false;
+  el.devSlot.hidden = true;
   loadDevUsers();
+}
+function showDevSlot(){
+  el.devMenu.hidden = true;
+  el.devAccounts.hidden = true;
+  el.devSlot.hidden = false;
+  el.devSlotError.hidden = true;
+  el.devSlotMaint.checked = !!online.slotMaintenance;
+  renderDevSlotHint();
+}
+function renderDevSlotHint(){
+  const on = el.devSlotMaint.checked;
+  el.devSlotHint.textContent = on
+    ? 'ONの間は、オーナーだけが遊べます'
+    : 'OFFなので、いま全員が遊べます';
+  el.devSlotHint.classList.toggle('is-on', on);
+}
+
+/* メンテナンスを切り替える */
+async function toggleSlotMaintenance(){
+  const want = el.devSlotMaint.checked;
+  el.devSlotMaint.disabled = true;
+  el.devSlotError.hidden = true;
+  try {
+    const d = await api('/api/admin/slot-maintenance', {
+      method: 'POST', body: JSON.stringify({ pin: dev.pin, on: want })
+    });
+    online.slotMaintenance = !!d.on;
+    el.devSlotMaint.checked = !!d.on;
+    renderDevSlotHint();
+    renderGameSelect();
+    toast(d.on ? 'スロットをメンテナンス中にしました' : 'スロットを全員に開放しました');
+  } catch (e){
+    el.devSlotMaint.checked = !want;      // 失敗したら元に戻す
+    el.devSlotError.textContent = e.message;
+    el.devSlotError.hidden = false;
+  } finally {
+    el.devSlotMaint.disabled = false;
+  }
 }
 
 async function loadDevUsers(){
@@ -7253,6 +7519,33 @@ el.slOptOneBet.addEventListener('change', () => {
 el.slOptEasyLever.addEventListener('change', () => {
   slotOpt.easyLever = el.slOptEasyLever.checked; saveSlotOpt(); slSyncButtons();
 });
+
+/* --- オーナー専用(v6.2) --- */
+let slForceKind = 'BB';
+el.slForceKind.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-kind]');
+  if (!b) return;
+  slForceKind = b.dataset.kind;
+  el.slForceKind.querySelectorAll('.seg-btn').forEach(x =>
+    x.classList.toggle('is-on', x === b));
+  audio.play('button');
+});
+el.slForceBtn.addEventListener('click', () => {
+  if (!online.socket) return;
+  audio.play('button');
+  online.socket.emit('slot:forceBonus', { kind: slForceKind });
+});
+el.slResetMachineBtn.addEventListener('click', async () => {
+  audio.play('button');
+  const ok = await askConfirm({
+    title: 'この台をリセットしますか?',
+    text: 'BB・RB・総回転数・履歴と、台の設定まで全部まっさらになります。',
+    warn: '手持ちのコインは精算されて、台選びに戻ります。',
+    okText: 'リセットする'
+  });
+  if (!ok) return;
+  if (online.socket) online.socket.emit('slot:resetMachine');
+});
 el.slRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('slot'); });
 
 el.slRentBtn.addEventListener('click', () => slRent());
@@ -7271,6 +7564,10 @@ for (let i = 0; i < 3; i++){
   if (!btn) continue;
   btn.addEventListener('pointerdown', (e) => { e.preventDefault(); slStop(i); });
 }
+/* ★離すのは window で受ける。ボタンの外に指をずらして離すと
+   ボタン自身の pointerup が鳴らず、押し込んだまま固まってしまう(v6.2) */
+window.addEventListener('pointerup', () => { if (screen === 'slot') slOnStopRelease(); });
+window.addEventListener('pointercancel', () => { if (screen === 'slot') slReleaseStopVisual(); });
 
 /* キーボード操作(PC向け) */
 document.addEventListener('keydown', (e) => {
@@ -7285,10 +7582,17 @@ document.addEventListener('keydown', (e) => {
     case 'ArrowLeft':  e.preventDefault(); slStop(0); break;
     case 'ArrowDown':  e.preventDefault(); slStop(1); break;
     case 'ArrowRight': e.preventDefault(); slStop(2); break;
+    case 'Escape':     break;
     case 'ArrowUp':    e.preventDefault(); slBet();   break;
     case '1':          e.preventDefault(); slBet(1);  break;
     case 'Insert':     e.preventDefault(); slRent();  break;
   }
+});
+
+/* キーを離したときも、押し込みを戻してボーナス突入を進める */
+document.addEventListener('keyup', (e) => {
+  if (screen !== 'slot') return;
+  if (['ArrowLeft','ArrowDown','ArrowRight'].includes(e.key)) slOnStopRelease();
 });
 
 /* 画面の幅が変わったらリールを組み直す(コマの高さが変わるため) */
@@ -7692,6 +7996,13 @@ el.devDetailOverlay.addEventListener('click', (e) => {
   if (e.target === el.devDetailOverlay) closeOverlay(el.devDetailOverlay);
 });
 el.devCloseBtn.addEventListener('click', () => closeOverlay(el.devOverlay));
+/* 開発者モードの項目切り替え(v6.2) */
+el.devMenuAccounts.addEventListener('click', () => { audio.play('button'); showDevAccounts(); });
+el.devMenuSlot.addEventListener('click', () => { audio.play('button'); showDevSlot(); });
+el.devBackFromAccounts.addEventListener('click', () => { audio.play('button'); showDevMenu(); });
+el.devBackFromSlot.addEventListener('click', () => { audio.play('button'); showDevMenu(); });
+el.devSlotMaint.addEventListener('change', toggleSlotMaintenance);
+
 el.devReloadBtn.addEventListener('click', () => { audio.play('button'); loadDevUsers(); });
 
 el.devList.addEventListener('click', (e) => {
@@ -7773,8 +8084,17 @@ document.addEventListener('visibilitychange', () => {
   if (document.visibilityState !== 'visible') return;
   audio.resume();
   bgm.apply();
+  /* バックグラウンドから戻ったとき。
+     アニメのループが止まっているので回し直し、状態もサーバーに合わせ直す(v6.2) */
+  if (screen === 'slot'){
+    slStartLoop();
+    slResync();
+  }
 });
-window.addEventListener('pageshow', () => { audio.resume(); bgm.apply(); });
+window.addEventListener('pageshow', () => {
+  audio.resume(); bgm.apply();
+  if (screen === 'slot'){ slStartLoop(); slResync(); }
+});
 
 window.addEventListener('beforeunload', () => {
   if (online.socket) online.socket.emit('room:leave');

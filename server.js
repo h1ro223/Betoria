@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.1)
+   Betoria - server.js  (v6.2)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.1.0';
+const APP_VERSION = '6.2.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1560,14 +1560,15 @@ const SL_SETTING_WEIGHTS = [1, 1, 1, 1, 1, 1];
 /* スロットのメンテナンス(v6.1)
    true の間はオーナー以外が遊べない。内部データはそのまま残る。
    環境変数 SLOT_MAINTENANCE=0 を入れれば、コードを触らずに開けられる */
-const SL_MAINTENANCE = process.env.SLOT_MAINTENANCE !== '0';
+/* 起動時の既定値。開発者モードから切り替えられるので let にしてある */
+let SL_MAINTENANCE = process.env.SLOT_MAINTENANCE !== '0';
 function slCanPlay(name){ return !SL_MAINTENANCE || isOwnerName(name); }
 
 /* 前日の設定。0:00に振り直すとき、その日の設定をここへ移す。
    当日の設定は絶対に見せないが、前日ぶんなら台の見極めの参考として出してよい */
 let slYesterday = { dayKey: null, settings: [] };
 
-const SL_MACHINES   = 6;      // ホールの台数
+const SL_MACHINES   = 8;      // ホールの台数(v6.2で6台から増やした)
 const SL_PEKA_FIRST = 0.15;   // 先ペカ(レバーON時点灯)の割合。残り85%は後ペカ
 const SL_CREDIT_MAX = 50;     // クレジット上限
 const SL_RENT_MEDAL = 1000;   // 貸出1回で使う所持メダル
@@ -1639,6 +1640,8 @@ function makeSlotMachine(no){
     bonusType: null,
     bonusPaid: 0,
     bonusLog: [],
+
+    forceLamp: false,    // オーナーが仕込んだときだけ true。次のレバーで必ず点灯させる
 
     /* 回している最中の情報。slot:spin で作り slot:stop で使う */
     spin: null,          // { id, flags, seed, bet, at }
@@ -1729,6 +1732,7 @@ function slotState(m){
     rate: slCombinedRate(m),
     invested: m.invested,
     waitMs: slSlotWaitLeft(m),
+    isOwner: isOwnerName(m.seat),    // オーナー専用の項目を出すかどうか(v6.2)
     yesterday: slYesterday,          // 前日の設定(v6.1)
     bonusLog: m.bonusLog.slice(-50)
   };
@@ -1784,9 +1788,12 @@ function slDrawGame(m){
     else if (r2 < (acc += SL_P_CLOWN))   smallFlag = 'CLOWN';
   }
 
-  /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%) */
+  /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%)。
+     オーナーが仕込んだ場合だけは、待たせず必ずレバーONで点ける */
   let peka = false;
-  if (newBonus && !m.lampLit){
+  if (m.forceLamp && m.bonusFlag && !m.lampLit){
+    m.lampLit = true; peka = true; m.forceLamp = false;
+  } else if (newBonus && !m.lampLit){
     if (slRandom() < SL_PEKA_FIRST){ m.lampLit = true; peka = true; }
     else m.lampPending = true;
   }
@@ -1887,8 +1894,9 @@ function slotDayGuard(){
 function slotSweep(io){
   const now = Date.now();
   for (const m of slotHall){
-    /* 回しっぱなしで放置された台を戻す */
-    if (m.spin && now - m.spin.at > SL_SPIN_TTL){
+    /* 回しっぱなしで放置された台を戻す。
+       ただし切断中の人は復帰したら続きから打てるよう、そのまま残す(v6.2) */
+    if (m.spin && m.sid && now - m.spin.at > SL_SPIN_TTL){
       m.spin = null;
       m.phase = 'idle';
       m.bet = 0;
@@ -3355,6 +3363,31 @@ app.post('/api/admin/auth', async (req, res) => {
   res.json({ ok: true });
 });
 
+/* スロットのメンテナンスを切り替える(v6.2)。開発者モードから使う */
+app.post('/api/admin/slot-maintenance', async (req, res) => {
+  if (!await checkAdmin(req, res)) return;
+  const want = req.body && req.body.on;
+  if (typeof want === 'boolean' && want !== SL_MAINTENANCE){
+    SL_MAINTENANCE = want;
+    console.log('[slot] メンテナンスを' + (want ? 'ONにしました' : 'OFFにしました'));
+    /* 全員に知らせて、ゲーム選択の見た目を更新してもらう */
+    for (const [, sock] of io.of('/').sockets){
+      sock.emit('app:info', { owner: OWNER_NAME, slotMaintenance: SL_MAINTENANCE });
+    }
+    /* ONにしたなら、オーナー以外は座っていられないので降ろす */
+    if (SL_MAINTENANCE){
+      for (const m of slotHall){
+        if (m.seat && !isOwnerName(m.seat)){
+          try { await cashOutSlot(io, m, 'manual'); }
+          catch (e){ console.error('[slot] メンテナンス退席:', e.message); }
+        }
+      }
+    }
+    broadcastSlotLobby(io);
+  }
+  res.json({ on: SL_MAINTENANCE });
+});
+
 app.post('/api/admin/users', async (req, res) => {
   if (!await checkAdmin(req, res)) return;
   try {
@@ -3801,6 +3834,22 @@ io.on('connection', (socket) => {
       mine.offlineAt = 0;
       socket.join(SL_ROOM + ':' + mine.no);
       socket.emit('slot:resume', slotState(mine));
+      /* 回している途中で切れた場合。BETはもう引いてあるので、
+         同じゲームをそのまま送り直して続きから打ってもらう(v6.2)。
+         ここで捨てるとBETしたぶんが消えてしまう */
+      if (mine.spin){
+        socket.emit('slot:spin', {
+          spinId: mine.spin.id,
+          flags: mine.spin.flags,
+          seed: mine.spin.seed,
+          waitMs: 0,
+          bet: mine.spin.bet,
+          peka: false,
+          totalG: mine.totalG,
+          startG: mine.startG,
+          resumed: true
+        });
+      }
       broadcastSlotLobby(io);
     }
   });
@@ -4048,6 +4097,42 @@ io.on('connection', (socket) => {
         io.to(socket.id).emit('account:update', { user: publicUser(u), levelUp: up });
       } catch (e){ console.error('[slot] EXP:', e.message); }
     }
+  });
+
+  /* ---- ここからオーナー専用(v6.2) ---- */
+
+  /* 次のゲームで必ずボーナスを当選させる。動作確認用 */
+  socket.on('slot:forceBonus', (payload) => {
+    if (!isOwnerName(name)) return;
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'idle') return socket.emit('room:error', 'リールが回っています');
+    if (m.inBonus) return socket.emit('room:error', 'いまボーナス中です');
+
+    const kind = ((payload || {}).kind === 'RB') ? 'RB' : 'BB';
+    m.bonusFlag = kind;
+    m.lampLit = false;
+    m.lampPending = false;
+    m.forceLamp = true;          // 次のレバーで必ず先ペカにする
+    sendSlotState(io, m);
+    socket.emit('slot:forced', { kind });
+  });
+
+  /* この台をまっさらにする。設定も振り直して、席も立つ */
+  socket.on('slot:resetMachine', async () => {
+    if (!isOwnerName(name)) return;
+    const m = slotOf(name);
+    if (!m || m.sid !== socket.id) return;
+    if (m.phase !== 'idle') return socket.emit('room:error', 'リールが回っています');
+
+    /* 手持ちのコインは先に精算して返す */
+    await cashOutSlot(io, m, 'manual');
+    /* そのうえで台を作り直す(設定も新しくなる) */
+    const fresh = makeSlotMachine(m.no);
+    fresh.dayKey = jstDateKey();
+    Object.assign(m, fresh);
+    broadcastSlotLobby(io);
+    socket.emit('slot:machineReset', { no: m.no });
   });
 
   /* 精算して退席する */

@@ -5377,12 +5377,27 @@ body.is-booting{ overflow: hidden; }
    ここに高さを持たせると縦に伸びて画面が崩れるので触らないこと */
 /* v5.1: GOGOをひとまわり小さくして、7セグを同じ高さの中央にそろえる */
 .sl-under{ display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.sl-gogo{ width: 24%; max-width: 96px; flex-shrink: 0; position: relative; }
-.sl-gogo img{ width: 100%; display: block; border-radius: 8px; }
-.sl-gogo img[hidden]{ display: none; }
-#slGogoOn{ position: absolute; inset: 0; }
-#slGogoRainbow{ position: absolute; inset: 0; z-index: 2; }
-.sl-gogo.is-lit img{ animation: slGogoGlow 1s ease-in-out infinite; }
+/* v6.2: 消灯画像だけが高さを作っていたため、点灯すると枠が潰れて位置がずれていた。
+   3枚とも重ねて置き、高さは「常に見える土台(slGogoBase)」が決める。
+   点灯・消灯は opacity の切り替えでやる(hiddenで消すと高さが無くなる) */
+.sl-gogo{
+  width: 24%; max-width: 96px; flex-shrink: 0;
+  position: relative; align-self: center; line-height: 0;
+}
+.sl-gogo img{
+  width: 100%; display: block; border-radius: 8px;
+  position: absolute; inset: 0; height: 100%;
+  opacity: 0; transition: opacity .08s linear;
+}
+/* 土台の1枚だけが場所を取る。これが枠の高さを決める */
+.sl-gogo #slGogoBase{ position: static; height: auto; opacity: 1; visibility: hidden; }
+.sl-gogo #slGogoOff{ opacity: 1; }
+.sl-gogo.is-lit #slGogoOff{ opacity: 0; }
+.sl-gogo.is-lit #slGogoOn{ opacity: 1; }
+.sl-gogo.is-lit.is-rainbow #slGogoOn{ opacity: 0; }
+.sl-gogo.is-lit.is-rainbow #slGogoRainbow{ opacity: 1; z-index: 2; }
+.sl-gogo.is-lit #slGogoOn,
+.sl-gogo.is-lit #slGogoRainbow{ animation: slGogoGlow 1s ease-in-out infinite; }
 .sl-gogo.is-lit.is-rainbow #slGogoRainbow{ animation: slChanceRainbow 1.4s linear infinite; }
 @keyframes slGogoGlow{
   0%,100%{ filter: drop-shadow(0 0 4px rgba(120,120,255,.9)) brightness(1); }
@@ -5567,3 +5582,65 @@ body.is-booting{ overflow: hidden; }
 }
 .sl-yest-sub{ font-size: 10px; color: var(--smoke); }
 .sl-yest .empty-note{ grid-column: 1 / -1; margin: 0; }
+
+/* ---------- スロット: ボーナス中の演出 (v6.2) ---------- */
+
+/* 上部バナー。ボーナス中はカクカク点滅させる(なめらかにしない) */
+.sl-banner.is-bonus{ animation: slBannerFlash .5s steps(2) infinite; }
+@keyframes slBannerFlash{
+  50%{ filter: brightness(1.7) saturate(1.3); }
+}
+/* BB当選の瞬間だけ、より派手に光らせる */
+.sl-banner.is-hit{ animation: slBannerHit .25s steps(2) infinite; }
+@keyframes slBannerHit{
+  50%{ filter: brightness(2.4) saturate(1.5); box-shadow: 0 0 26px rgba(255,210,59,.9); }
+}
+.sl-banner.is-bonus .sl-banner-main,
+.sl-banner.is-hit .sl-banner-main{ color: #fff; text-shadow: 0 0 14px #ffd23b, 2px 2px 0 #4d0408; }
+.sl-banner.is-bonus .sl-banner-777,
+.sl-banner.is-hit .sl-banner-777{ animation: slBanner777 .4s steps(2) infinite; }
+@keyframes slBanner777{ 50%{ color: #ffd23b; text-shadow: 0 0 12px #ff8; } }
+
+/* ヘッダーのBB/RB数字。ボーナス中は1秒周期で点滅 */
+.sl-dp-num.is-blink{ animation: slDpBlink 1s steps(2) infinite; }
+@keyframes slDpBlink{ 50%{ opacity: .15; } }
+
+/* 停止ボタンは離すまで沈んだまま(v6.2) */
+.sl-stop-btn.is-pushed{
+  transform: translateY(4px);
+  box-shadow: 0 0 0 #000, inset 0 2px 3px rgba(255,255,255,.25);
+}
+
+/* ---------- 開発者モードの項目一覧 (v6.2) ---------- */
+.dev-menu-item{
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  padding: 14px 12px; margin-bottom: 8px; cursor: pointer; text-align: left;
+  border: 1px solid var(--hairline); border-radius: var(--radius);
+  background: linear-gradient(170deg, rgba(255,255,255,.05), rgba(0,0,0,.25));
+  color: var(--ivory);
+}
+.dev-menu-item:hover{ border-color: var(--brass); }
+.dev-menu-item:active{ transform: translateY(1px); }
+.dev-menu-ico{ font-size: 22px; flex: 0 0 auto; }
+.dev-menu-text{ display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; }
+.dev-menu-name{ font-size: 15px; }
+.dev-menu-text small{ font-size: 11px; color: var(--smoke); }
+.dev-menu-arrow{ color: var(--smoke); flex: 0 0 auto; }
+#devSlot .back-btn, #devAccounts .back-btn{ margin-bottom: 10px; }
+#devSlotHint.is-on{ color: #F0A85A; }
+
+/* ---------- スロット: オーナー専用の項目 (v6.2) ---------- */
+.sl-owner-row{
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  padding: 12px 4px; border-bottom: 1px solid var(--hairline); flex-wrap: wrap;
+}
+.sl-owner-row:last-child{ border-bottom: 0; }
+.sl-owner-ctrl{ display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.sl-owner-ctrl .seg{ margin: 0; }
+.sl-owner-ctrl .seg-btn{ padding: 6px 12px; font-size: 12px; }
+.sl-owner-ctrl .btn{ padding: 8px 16px; font-size: 13px; }
+.btn.is-danger{
+  background: linear-gradient(180deg, #d9403f, #8e1b1a);
+  border-color: rgba(255,140,140,.5); color: #fff;
+}
+.btn.is-danger:hover{ filter: brightness(1.1); }

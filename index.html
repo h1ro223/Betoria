@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v6.1 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v6.2 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -678,9 +678,11 @@
 
         <div class="sl-under">
           <div class="sl-gogo" id="slGogo">
+            <!-- 土台。見えないが、この1枚が枠の高さを決める(v6.2) -->
+            <img id="slGogoBase" src="./slot/GOGO/GOGOCHANCE_0.png" alt="" draggable="false" aria-hidden="true">
             <img id="slGogoOff" src="./slot/GOGO/GOGOCHANCE_0.png" alt="GOGO!CHANCE" draggable="false">
-            <img id="slGogoOn"  src="./slot/GOGO/GOGOCHANCE_1.png" alt="" draggable="false" hidden>
-            <img id="slGogoRainbow" src="./slot/GOGO/GOGOCHANCE_2.png" alt="" draggable="false" hidden>
+            <img id="slGogoOn"  src="./slot/GOGO/GOGOCHANCE_1.png" alt="" draggable="false">
+            <img id="slGogoRainbow" src="./slot/GOGO/GOGOCHANCE_2.png" alt="" draggable="false">
           </div>
           <div class="sl-seg">
             <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCredit">0</span><span class="sl-seg-label">CREDIT</span></div>
@@ -1430,6 +1432,35 @@
         <input type="checkbox" id="slOptEasyLever">
       </label>
 
+      <!-- オーナーだけに出る項目(v6.2) -->
+      <div id="slOwnerTools" hidden>
+        <h3 class="block-title">オーナー専用</h3>
+
+        <div class="sl-owner-row">
+          <span class="sl-opt-text">
+            <span class="sl-opt-name">次ゲームでGOGO!CHANCE点灯</span>
+            <small>次にレバーを引いたとき、必ず当選させます</small>
+          </span>
+          <div class="sl-owner-ctrl">
+            <div class="seg seg-2" id="slForceKind">
+              <button type="button" class="seg-btn is-on" data-kind="BB">BIG</button>
+              <button type="button" class="seg-btn" data-kind="RB">REG</button>
+            </div>
+            <button type="button" class="btn primary" id="slForceBtn">点灯</button>
+          </div>
+        </div>
+
+        <div class="sl-owner-row">
+          <span class="sl-opt-text">
+            <span class="sl-opt-name">この台データをリセット</span>
+            <small>設定も含めて台をまっさらにします。実行すると台選びに戻ります</small>
+          </span>
+          <div class="sl-owner-ctrl">
+            <button type="button" class="btn is-danger" id="slResetMachineBtn">実行</button>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -1545,8 +1576,51 @@
       </div>
     </div>
     <div class="sheet-body">
-      <p class="sheet-note" id="devSummary">読み込み中…</p>
-      <div class="dev-list" id="devList"></div>
+
+      <!-- 項目を選ぶ画面(v6.2) -->
+      <div id="devMenu">
+        <button type="button" class="dev-menu-item" id="devMenuAccounts">
+          <span class="dev-menu-ico">👥</span>
+          <span class="dev-menu-text">
+            <span class="dev-menu-name">登録アカウント一覧</span>
+            <small>登録されているアカウントを見る</small>
+          </span>
+          <span class="dev-menu-arrow">▶</span>
+        </button>
+        <button type="button" class="dev-menu-item" id="devMenuSlot">
+          <span class="dev-menu-ico">🎰</span>
+          <span class="dev-menu-text">
+            <span class="dev-menu-name">スロットメンテナンスモード</span>
+            <small id="devSlotStateNote">読み込み中…</small>
+          </span>
+          <span class="dev-menu-arrow">▶</span>
+        </button>
+      </div>
+
+      <!-- 登録アカウント一覧 -->
+      <div id="devAccounts" hidden>
+        <button type="button" class="back-btn" id="devBackFromAccounts">◀ もどる</button>
+        <p class="sheet-note" id="devSummary">読み込み中…</p>
+        <div class="dev-list" id="devList"></div>
+      </div>
+
+      <!-- スロットメンテナンス -->
+      <div id="devSlot" hidden>
+        <button type="button" class="back-btn" id="devBackFromSlot">◀ もどる</button>
+        <p class="sheet-note">
+          メンテナンスをONにすると、<b>オーナー以外はスロットで遊べなくなります</b>。
+          台のデータはそのまま残るので、いつでも開け閉めできます。
+        </p>
+        <label class="sl-opt">
+          <span class="sl-opt-text">
+            <span class="sl-opt-name">スロットをメンテナンス中にする</span>
+            <small id="devSlotHint">ONの間は、オーナーだけが遊べます</small>
+          </span>
+          <input type="checkbox" id="devSlotMaint">
+        </label>
+        <p class="form-error" id="devSlotError" hidden></p>
+      </div>
+
     </div>
   </div>
 </div>
@@ -1559,6 +1633,17 @@
       <button type="button" class="close-btn" id="changelogCloseBtn" aria-label="閉じる">✕</button>
     </div>
     <div class="sheet-body">
+      <div class="sheet-section">
+        <h3>v6.2</h3>
+        <ul class="rule-list">
+          <li>スロットの台を<b>6台から8台に増やしました。</b></li>
+          <li><b>ボーナスの演出を入れました。</b>BIG/REGが揃うと上のパネルが光り、ヘッダーのBB・RBの数字が点滅します。</li>
+          <li><b>停止ボタンが、指を離すまで押し込まれたまま</b>になりました。ボーナスが揃ったときは、離した瞬間に演出が始まります。</li>
+          <li>ボーナスの獲得枚数(COUNT)が<b>最後まで表示されない</b>不具合を直しました。</li>
+          <li>GOGO!CHANCEが光ったときに<b>表示位置がずれる</b>のを直しました。</li>
+          <li>アプリを裏に回してから戻ると<b>スロットが動かなくなる</b>のを直しました。打っている途中で切れても、戻れば続きから打てます。</li>
+        </ul>
+      </div>
       <div class="sheet-section">
         <h3>v6.1</h3>
         <ul class="rule-list">
