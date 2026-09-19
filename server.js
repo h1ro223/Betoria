@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.3)
+   Betoria - server.js  (v6.4)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.3.0';
+const APP_VERSION = '6.4.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -112,6 +112,7 @@ const db = (() => {
     const ranks = new Map();     // 'game|dateKey' -> Map(username -> row)(v4.0)
     let noticeId = 1;
     let lastSettled = null;
+  let slotMaint = null;   // スロットのメンテナンス。null=未設定(v6.4)
     const fkey = (a, b) => (a < b ? a + '|' + b : b + '|' + a);
     return {
       kind: 'memory',
@@ -171,6 +172,12 @@ const db = (() => {
       /* ---- ランキング(v3.2 / v4.0でゲーム別化) ---- */
       async lastSettled(){ return lastSettled; },
       async setLastSettled(key){ lastSettled = key; },
+
+      /* ---- スロットのメンテナンス(v6.4) ----
+         再起動しても設定が消えないよう、DBに残す。
+         null は「まだ一度も決めていない」= 環境変数の既定に従う */
+      async slotMaintenance(){ return slotMaint; },
+      async setSlotMaintenance(on){ slotMaint = !!on; },
       async usersWithDay(key, game){
         const F = RANK_FIELDS[normGame(game)];
         return [...users.values()]
@@ -420,6 +427,8 @@ const db = (() => {
          メダルの加算が文字列連結になって桁が壊れた記録が残っている。
          一度だけ集計値をリセットする(このフラグで二度目は走らない)。 */
       await pool.query(`ALTER TABLE rank_meta ADD COLUMN IF NOT EXISTS gain_fixed BOOLEAN NOT NULL DEFAULT FALSE`);
+      /* スロットのメンテナンス(v6.4)。NULL のままなら環境変数の既定に従う */
+      await pool.query(`ALTER TABLE rank_meta ADD COLUMN IF NOT EXISTS slot_maintenance BOOLEAN`);
       const fixed = await pool.query(`SELECT gain_fixed FROM rank_meta WHERE id=1`);
       if (!fixed.rows[0] || !fixed.rows[0].gain_fixed){
         await pool.query(`UPDATE users SET total_gain=0, best_gain=0, best_gain_at=NULL,
@@ -570,6 +579,21 @@ const db = (() => {
       await pool.query(
         `INSERT INTO rank_meta(id, last_settled) VALUES(1,$1)
          ON CONFLICT (id) DO UPDATE SET last_settled=EXCLUDED.last_settled`, [key]);
+    },
+
+    /* ---- スロットのメンテナンス(v6.4) ----
+       ★メモリだけに持っていると、Renderがスリープから起き直すたびに
+         環境変数の既定値に戻ってしまう(勝手にONになる、と見える)。
+         そうならないようDBに残す。null は「まだ一度も決めていない」 */
+    async slotMaintenance(){
+      const r = await pool.query(`SELECT slot_maintenance FROM rank_meta WHERE id=1`);
+      const v = r.rows[0] ? r.rows[0].slot_maintenance : null;
+      return (v === null || v === undefined) ? null : !!v;
+    },
+    async setSlotMaintenance(on){
+      await pool.query(
+        `INSERT INTO rank_meta(id, slot_maintenance) VALUES(1,$1)
+         ON CONFLICT (id) DO UPDATE SET slot_maintenance=EXCLUDED.slot_maintenance`, [!!on]);
     },
     /* その日の成績を持つ人だけを確定用に取り出す(v4.0でゲーム別)
        列名は RANK_FIELDS から組み立てる。値は固定の識別子なので注入の心配はない */
@@ -1560,8 +1584,27 @@ const SL_SETTING_WEIGHTS = [1, 1, 1, 1, 1, 1];
 /* スロットのメンテナンス(v6.1)
    true の間はオーナー以外が遊べない。内部データはそのまま残る。
    環境変数 SLOT_MAINTENANCE=0 を入れれば、コードを触らずに開けられる */
-/* 起動時の既定値。開発者モードから切り替えられるので let にしてある */
+/* スロットのメンテナンス。
+   ★メモリだけに持っていると、Renderがスリープから起き直すたびに
+     この既定値に戻ってしまい「勝手にONになる」ように見える(v6.3までの不具合)。
+     v6.4 からはDBに残し、起動時に読み直すようにした。
+   環境変数 SLOT_MAINTENANCE は「DBにまだ一度も記録が無いとき」の既定値でしかない */
 let SL_MAINTENANCE = process.env.SLOT_MAINTENANCE !== '0';
+
+/* 起動時にDBから読み直す。開発者モードで切り替えた状態を引き継ぐ */
+async function loadSlotMaintenance(){
+  try {
+    const saved = await db.slotMaintenance();
+    if (saved !== null && saved !== undefined){
+      SL_MAINTENANCE = !!saved;
+      console.log('[slot] メンテナンスは' + (SL_MAINTENANCE ? 'ON' : 'OFF') + '(前回の設定を引き継ぎ)');
+    } else {
+      console.log('[slot] メンテナンスは' + (SL_MAINTENANCE ? 'ON' : 'OFF') + '(既定値)');
+    }
+  } catch (e){
+    console.error('[slot] メンテナンス設定の読み込みに失敗:', e.message);
+  }
+}
 function slCanPlay(name){ return !SL_MAINTENANCE || isOwnerName(name); }
 
 /* 前日の設定。0:00に振り直すとき、その日の設定をここへ移す。
@@ -3400,6 +3443,9 @@ app.post('/api/admin/slot-maintenance', async (req, res) => {
   const want = req.body && req.body.on;
   if (typeof want === 'boolean' && want !== SL_MAINTENANCE){
     SL_MAINTENANCE = want;
+    /* ★DBに残す。これをしないと再起動で元に戻ってしまう(v6.4) */
+    try { await db.setSlotMaintenance(want); }
+    catch (e){ console.error('[slot] メンテナンス設定の保存に失敗:', e.message); }
     console.log('[slot] メンテナンスを' + (want ? 'ONにしました' : 'OFFにしました'));
     /* 全員に知らせて、ゲーム選択の見た目を更新してもらう */
     for (const [, sock] of io.of('/').sockets){
@@ -4534,6 +4580,9 @@ db.init()
   .then(async () => {
     /* スリープ中に日付をまたいでいた場合の取りこぼしをここで拾う(v3.2) */
     await catchUpSettle();
+    /* スロットのメンテナンス設定を引き継ぐ(v6.4)。
+       これが無いと、起き直すたびに環境変数の既定値に戻ってしまう */
+    await loadSlotMaintenance();
     scheduleMidnight();
     /* スロット(v5.0): 切断したまま10分たった人を降ろす見回りを回す。
        スリープから復帰したときに日付が変わっていたら設定も振り直す */
