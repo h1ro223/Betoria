@@ -5645,14 +5645,3 @@ body.is-booting{ overflow: hidden; }
 }
 .btn.is-danger:hover{ filter: brightness(1.1); }
 
-/* ---------- ホール: 光ったまま空いた台 (v6.3) ---------- */
-.sl-badge.is-lamp{
-  color: #2a1a00; background: linear-gradient(180deg, #ffe08a, #ffc21f);
-  border-color: rgba(255,210,59,.7); font-weight: bold;
-  animation: slBadgeLamp .6s steps(2) infinite;
-}
-@keyframes slBadgeLamp{ 50%{ filter: brightness(1.35); } }
-.sl-badge.is-bonus{
-  color: #fff; background: linear-gradient(180deg, #ff5f5f, #b81414);
-  border-color: rgba(255,120,120,.6); font-weight: bold;
-}

@@ -4514,18 +4514,9 @@ function renderSlotHall(){
 
   el.slHall.innerHTML = d.machines.map(m => {
     const mine = account.user && m.seat === account.user.username;
-    /* 空き台でも、光っていたり消化中ならそれが分かるようにする(v6.3) */
-    let badge;
-    if (m.seat){
-      badge = m.offline ? '<span class="sl-badge is-off">離席中</span>'
-                        : '<span class="sl-badge is-busy">プレイ中</span>';
-    } else if (m.inBonus){
-      badge = '<span class="sl-badge is-bonus">' + (m.bonusType || 'BONUS') + '中</span>';
-    } else if (m.lampLit){
-      badge = '<span class="sl-badge is-lamp">GOGO点灯中</span>';
-    } else {
-      badge = '<span class="sl-badge is-open">空席</span>';
-    }
+    const badge = !m.seat ? '<span class="sl-badge is-open">空席</span>'
+                : m.offline ? '<span class="sl-badge is-off">離席中</span>'
+                : '<span class="sl-badge is-busy">プレイ中</span>';
     const who = m.seat
       ? '<span>' + nameHTML(m.seat) + '</span>'
       : '<span class="sl-empty">だれでも座れます</span>';
@@ -4684,6 +4675,12 @@ function slBetCtActive(){ return performance.now() < slot.betCtUntil; }
 
 /* ---- COUNT / PAY OUT のカウントアップ ---- */
 function slStopCountAnim(){ clearTimeout(slot.countTimer); slot.countTimer = 0; }
+
+/* いま払い出しの最中か(PAY OUTの数字が増えている途中か)。
+   ボーナス終了後にCOUNTを見せている間は、次のゲームに進めてよいので含めない */
+function slPayingOut(){
+  return slot.dispPayout < slot.payTarget;
+}
 /* COUNTの目標値。
    ★ボーナスが終わった瞬間に目標を0にすると、294へ向かって増えていた表示が
      逆流して最後に「---」になってしまう。終わった後は最終値で止めておく */
@@ -4707,7 +4704,12 @@ function slTickCount(){
     moved = true;
   }
   slDrawSeg();
-  slot.countTimer = moved ? setTimeout(slTickCount, SL_COUNT_MS) : 0;
+  if (moved){
+    slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS);
+  } else {
+    slot.countTimer = 0;
+    slSyncButtons();     /* 払い出しが終わったらボタンを戻す */
+  }
 }
 function slStartCountAnim(){ if (!slot.countTimer) slot.countTimer = setTimeout(slTickCount, SL_COUNT_MS); }
 
@@ -5121,6 +5123,7 @@ function onSlotResult(d){
     const gogoWait = Math.max(0, slot.gogoSndEnd - performance.now());
     if (gogoWait > 0) slot.bonusTimers.push(setTimeout(slStartCountAnim, gogoWait));
     else slStartCountAnim();
+    slSyncButtons();     /* 払い出しの間は押せなくする */
   } else slDrawSeg();
 
   if (d.pay > 0){
@@ -5259,8 +5262,11 @@ function slSyncButtons(){
   const cap = slBetCapNow();
   const medal = account.user ? Number(account.user.medal || 0) : 0;
 
-  /* BB終了演出の間は何も押せない(仕様書§4-5) */
-  if (slot.betLock){
+  /* 何も押せなくする場面(v6.5)
+       ・BB終了演出の間(仕様書§4-5)
+       ・払い出しの最中。数字が1枚ずつ増えている途中に
+         貸出やMAXBETを押されると、枚数の表示が食い違ってしまう */
+  if (slot.betLock || slPayingOut()){
     el.slRentBtn.disabled = el.slBet1Btn.disabled = true;
     el.slMaxBetBtn.disabled = el.slCashoutBtn.disabled = true;
     el.slLever.classList.add('is-off');

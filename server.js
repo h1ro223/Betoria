@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.4)
+   Betoria - server.js  (v6.5)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.4.0';
+const APP_VERSION = '6.5.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1745,12 +1745,7 @@ function slotLobby(){
       offline: !!(m.seat && !m.sid),
       bb: m.bb, rb: m.rb,
       startG: m.startG, totalG: m.totalG,
-      rate: slCombinedRate(m),
-      /* 空き台が「光ったまま」「ボーナス消化中」なら、座る前から分かるようにする(v6.3)。
-         設定は相変わらず出さない */
-      lampLit: !!m.lampLit,
-      inBonus: !!m.inBonus,
-      bonusType: m.inBonus ? m.bonusType : null
+      rate: slCombinedRate(m)
     })),
     owner: OWNER_NAME,
     maintenance: SL_MAINTENANCE,     // v6.1
@@ -4049,8 +4044,13 @@ io.on('connection', (socket) => {
 
     m.spin = { id, flags, seed, bet: m.bet, at: Date.now() + waitMs };
     m.phase = 'spin';
-    m.totalG++;
-    if (!m.inBonus) m.startG++;
+    /* ★ボーナス中は総回転数もスタートG数も増やさない(v6.5で修正)。
+       データカウンターの総回転数は「通常時に回した数」を表す。
+       ボーナスの消化ゲームまで数えると、合成確率がおかしくなる */
+    if (!m.inBonus){
+      m.totalG++;
+      m.startG++;
+    }
     m.lastSpinAt = Date.now() + waitMs;
 
     socket.emit('slot:spin', {
