@@ -4514,9 +4514,18 @@ function renderSlotHall(){
 
   el.slHall.innerHTML = d.machines.map(m => {
     const mine = account.user && m.seat === account.user.username;
-    const badge = !m.seat ? '<span class="sl-badge is-open">空席</span>'
-                : m.offline ? '<span class="sl-badge is-off">離席中</span>'
-                : '<span class="sl-badge is-busy">プレイ中</span>';
+    /* 空き台でも、光っていたり消化中ならそれが分かるようにする(v6.3) */
+    let badge;
+    if (m.seat){
+      badge = m.offline ? '<span class="sl-badge is-off">離席中</span>'
+                        : '<span class="sl-badge is-busy">プレイ中</span>';
+    } else if (m.inBonus){
+      badge = '<span class="sl-badge is-bonus">' + (m.bonusType || 'BONUS') + '中</span>';
+    } else if (m.lampLit){
+      badge = '<span class="sl-badge is-lamp">GOGO点灯中</span>';
+    } else {
+      badge = '<span class="sl-badge is-open">空席</span>';
+    }
     const who = m.seat
       ? '<span>' + nameHTML(m.seat) + '</span>'
       : '<span class="sl-empty">だれでも座れます</span>';
@@ -4595,6 +4604,18 @@ function slEnterMachine(st){
   showScreen('slot');
   applySlotOpt();
   slSetConn(online.socket && online.socket.connected ? 'on' : 'off');
+
+  /* 前の人が残していった状態を、見た目にも反映する(v6.3)。
+     光ったまま空いた台・消化中の台に座ったとき、
+     ランプやバナーが消えていると分からなくなってしまう */
+  if (st.inBonus){
+    slot.bonusPhase = 'run';
+    if (el.slBanner) el.slBanner.classList.add('is-bonus');
+    (st.bonusType === 'BB' ? el.slDataBB : el.slDataRB).classList.add('is-blink');
+    slMsg(st.bonusType + ' 消化中  MAXBETで回してください');
+  } else if (st.lampLit){
+    slMsg('GOGO!CHANCE 点灯中!  ボーナス図柄を狙ってください');
+  }
   /* 画面が出てからでないとリールの幅が測れない */
   slBuildAllStrips();
   requestAnimationFrame(() => { slBuildAllStrips(); slRenderAll(); });
@@ -7537,13 +7558,19 @@ el.slForceBtn.addEventListener('click', () => {
 });
 el.slResetMachineBtn.addEventListener('click', async () => {
   audio.play('button');
+  /* ★確認を出す前に設定画面を閉じる。
+     開いたままだと確認のポップアップと重なってしまう(v6.3で修正) */
+  closeOverlay(el.slotSettingsOverlay);
   const ok = await askConfirm({
     title: 'この台をリセットしますか?',
     text: 'BB・RB・総回転数・履歴と、台の設定まで全部まっさらになります。',
     warn: '手持ちのコインは精算されて、台選びに戻ります。',
     okText: 'リセットする'
   });
-  if (!ok) return;
+  if (!ok){
+    openOverlay(el.slotSettingsOverlay);   // やめたら設定画面に戻す
+    return;
+  }
   if (online.socket) online.socket.emit('slot:resetMachine');
 });
 el.slRulesBtn.addEventListener('click', () => { audio.play('button'); openRules('slot'); });

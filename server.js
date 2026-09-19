@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.2)
+   Betoria - server.js  (v6.3)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.2.0';
+const APP_VERSION = '6.3.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1702,7 +1702,12 @@ function slotLobby(){
       offline: !!(m.seat && !m.sid),
       bb: m.bb, rb: m.rb,
       startG: m.startG, totalG: m.totalG,
-      rate: slCombinedRate(m)
+      rate: slCombinedRate(m),
+      /* 空き台が「光ったまま」「ボーナス消化中」なら、座る前から分かるようにする(v6.3)。
+         設定は相変わらず出さない */
+      lampLit: !!m.lampLit,
+      inBonus: !!m.inBonus,
+      bonusType: m.inBonus ? m.bonusType : null
     })),
     owner: OWNER_NAME,
     maintenance: SL_MAINTENANCE,     // v6.1
@@ -1843,9 +1848,27 @@ async function cashOutSlot(io, m, reason){
   const invest = m.invested;
   const sid    = m.sid;
 
-  /* 先に席を空ける。DBアクセス中に別の人が座れるようにしておく */
-  const keep = { bb: m.bb, rb: m.rb, startG: m.startG, totalG: m.totalG,
-                 setting: m.setting, dayKey: m.dayKey, bonusLog: m.bonusLog };
+  /* 先に席を空ける。DBアクセス中に別の人が座れるようにしておく。
+     ★台に残すもの(v6.3)
+       台データ(BB/RB/回転数/履歴/設定)に加えて、
+       ボーナス関連の状態もそのまま残す。
+       GOGO!CHANCEが光ったまま席を立ったら光ったまま、
+       ボーナス消化中に降りたら消化中のまま、次に座った人が続きを打てる。
+       実際のホールで「光ってる台に座る(ハイエナ)」ができるのと同じ。
+       ここを makeSlotMachine() で初期化してしまうと、
+       せっかく引いたボーナスが消えてしまうので注意 */
+  const keep = {
+    bb: m.bb, rb: m.rb, startG: m.startG, totalG: m.totalG,
+    setting: m.setting, dayKey: m.dayKey, bonusLog: m.bonusLog,
+    /* ボーナス関連。ここを消さないこと */
+    bonusFlag: m.bonusFlag,       // 成立して未消化のボーナス
+    lampLit: m.lampLit,           // GOGO!CHANCE 点灯中
+    lampPending: m.lampPending,   // 後ペカ待ち
+    inBonus: m.inBonus,           // ボーナス消化中
+    bonusType: m.bonusType,
+    bonusPaid: m.bonusPaid,
+    replayPending: m.replayPending
+  };
   Object.assign(m, makeSlotMachine(m.no), keep);
 
   let user = null;
@@ -1913,6 +1936,14 @@ function slotSweep(io){
 if (process.env.SLOT_TEST_HOOKS === '1'){
   global.__slotTestHooks = {
     hall:  () => slotHall,
+    /* テストで長く回すためにメダルを足す。本番では使われない */
+    giveMedal: async (name, n) => {
+      const u = await db.findUser(name);
+      if (!u) return 0;
+      u.medal = Number(u.medal || 0) + n;
+      await db.saveUser(u);
+      return u.medal;
+    },
     reset: () => resetSlotHall(io),
     sweep: () => slotSweep(io),
     core:  slotCore
