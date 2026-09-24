@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v6.6 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v6.7 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -177,7 +177,7 @@
         <span class="game-card-body">
           <span class="game-card-name">SLOT</span>
           <span class="game-card-jp">スロット</span>
-          <span class="game-card-desc">6台のうち好きな台に座って打つ、本格的なパチスロです。設定は毎日0:00に変わります。目押しの腕と台選びがものを言います。</span>
+          <span class="game-card-desc">8台のうち好きな台に座って打つ、本格的なパチスロです。設定は毎日0:00に変わります。目押しの腕と台選びがものを言います。</span>
           <span class="game-card-tags">
             <span class="game-tag is-new">NEW</span>
             <span class="game-tag">6台・先着順</span>
@@ -586,7 +586,11 @@
 
     <div class="sl-hall-bar">
       <span class="sl-hall-count" id="slHallCount">-</span>
-      <span class="sl-hall-note">設定は毎日0:00に変更</span>
+      <span class="sl-hall-right">
+        <span class="sl-hall-note">設定は毎日0:00に変更</span>
+        <!-- 前日の台設定(v6.7)。台選びの時点で8台ぶん見られる -->
+        <button type="button" class="sl-hall-yest-btn" id="slHallYestBtn">前日の台設定</button>
+      </span>
     </div>
 
     <div class="sl-hall" id="slHall"></div>
@@ -677,10 +681,10 @@
         </div>
 
         <div class="sl-under">
-          <!-- GOGO!CHANCE(v6.6)。透過画像を赤パネルの上に直接置く。
+          <!-- CHANCEランプ(v6.6)。透過画像を赤パネルの上に直接置く。
                点灯・消灯は script.js が src を Chance_0 ⇔ Chance_1 に差し替える -->
           <div class="sl-gogo" id="slGogo">
-            <img id="slGogoImg" src="./slot/chance/Chance_0.png" alt="GOGO!CHANCE"
+            <img id="slGogoImg" src="./slot/chance/Chance_0.png" alt="CHANCEランプ"
                  width="768" height="768" draggable="false" decoding="sync">
           </div>
           <div class="sl-seg">
@@ -1227,10 +1231,19 @@
       </div>
 
       <div class="rules-group" id="rulesSlot" hidden>
+        <!-- 小役一覧(v6.7) -->
+        <div class="sheet-section">
+          <button type="button" class="sl-pay-open-btn" id="slPaytableBtn">
+            <span class="sl-pay-open-icons" aria-hidden="true">
+              <img src="./Guide/7.png" alt="" draggable="false"><img src="./Guide/Bell.png" alt="" draggable="false"><img src="./Guide/Cherry.png" alt="" draggable="false">
+            </span>
+            <span class="sl-pay-open-text">小役一覧を見る</span>
+          </button>
+        </div>
         <div class="sheet-section">
           <h3>スロットの基本</h3>
           <ul class="rule-list">
-            <li>ホールに<b>6台</b>並んでいます。好きな空き台に座って打ってください。<b>先に座った人が優先</b>で、同時に座れるのは1人1台までです。</li>
+            <li>ホールに<b>8台</b>並んでいます。好きな空き台に座って打ってください。<b>先に座った人が優先</b>で、同時に座れるのは1人1台までです。</li>
             <li>実機のパチスロと同じで、<b>レバーを叩いた瞬間に当たりが決まります</b>。そのあとリールをどう止めるかは、揃えられるかどうかだけの話です。</li>
             <li>抽選も停止も<b>すべてサーバー側で処理しています</b>。画面をいじっても結果は変わりません。</li>
             <li>台の<b>設定(1〜6)は毎日0:00に変わります</b>。どの台がどの設定かは公開していません。</li>
@@ -1251,7 +1264,7 @@
           <ul class="rule-list">
             <li><b>MAXBET</b>(3枚)を押してから<b>レバー</b>を叩き、<b>3つの停止ボタン</b>で左から順に止めます。</li>
             <li>ブドウやリプレイは自動で引き込まれますが、<b>チェリーとボーナスは目押しが必要</b>です。</li>
-            <li><b>GOGO!CHANCEが光ったらボーナス確定</b>です。光っている間に7を狙って揃えてください。光っていないと揃いません。</li>
+            <li><b>CHANCEランプが光ったらボーナス確定</b>です。光っている間に7を狙って揃えてください。光っていないと揃いません。</li>
             <li>ボーナスは<b>BB(ビッグ)</b>と<b>RB(レギュラー)</b>の2種類です。BBのほうが大きく増えます。</li>
             <li>ランプは<b>レバーを叩いた瞬間</b>に光ることもあれば、<b>3つ目を止めて手を離した瞬間</b>に光ることもあります。</li>
           </ul>
@@ -1418,7 +1431,7 @@
       <h3 class="block-title">ゲーム操作</h3>
       <label class="sl-opt">
         <span class="sl-opt-text">
-          <span class="sl-opt-name">GOGO!CHANCE中は1BETのみにする</span>
+          <span class="sl-opt-name">CHANCEランプ点灯中は1BETのみにする</span>
           <small>点灯中はMAXBETを押しても1枚だけ入れます</small>
         </span>
         <input type="checkbox" id="slOptOneBet">
@@ -1437,33 +1450,16 @@
 
         <div class="sl-owner-row">
           <span class="sl-opt-text">
-            <span class="sl-opt-name">次ゲームでGOGO!CHANCE点灯</span>
-            <small>次にレバーを引いたとき、必ず当選させます</small>
+            <span class="sl-opt-name">次ゲームでボーナス当選</span>
+            <small>次にレバーを引いたとき、必ず当選させます。先ペカ・後ペカやプレミアは普段どおりランダム。???はBIGかREGかもお楽しみです</small>
           </span>
           <div class="sl-owner-ctrl">
-            <div class="seg seg-2" id="slForceKind">
+            <div class="seg seg-3" id="slForceKind">
               <button type="button" class="seg-btn is-on" data-kind="BB">BIG</button>
               <button type="button" class="seg-btn" data-kind="RB">REG</button>
+              <button type="button" class="seg-btn" data-kind="RANDOM">???</button>
             </div>
-            <button type="button" class="btn primary" id="slForceBtn">点灯</button>
-          </div>
-          <!-- 点灯タイミングとプレミアの指定(v6.6)。動作確認用 -->
-          <div class="sl-owner-sub">
-            <span class="sl-owner-label">点灯タイミング</span>
-            <div class="seg seg-2" id="slForceTiming">
-              <button type="button" class="seg-btn is-on" data-timing="first">先ペカ</button>
-              <button type="button" class="seg-btn" data-timing="after">後ペカ</button>
-            </div>
-          </div>
-          <div class="sl-owner-sub">
-            <span class="sl-owner-label">プレミア</span>
-            <div class="seg seg-4" id="slForcePremium">
-              <button type="button" class="seg-btn is-on" data-premium="">なし</button>
-              <button type="button" class="seg-btn" data-premium="fanfare">ファンファーレ</button>
-              <button type="button" class="seg-btn" data-premium="strong">強ガコッ</button>
-              <button type="button" class="seg-btn" data-premium="silent">無音</button>
-            </div>
-            <small class="sl-owner-note">ファンファーレと無音はBIGのみ。ファンファーレは必ず先ペカになります</small>
+            <button type="button" class="btn primary" id="slForceBtn">当選</button>
           </div>
         </div>
 
@@ -1642,6 +1638,62 @@
   </div>
 </div>
 
+<!-- ============ スロット: 小役一覧 (v6.7) ============
+     ルール画面の上に重ねて開くので、rulesOverlay より後ろに置くこと -->
+<div class="overlay sl-pay-overlay" id="slPaytableOverlay" hidden>
+  <div class="sl-pay-card" role="dialog" aria-modal="true" aria-label="小役一覧">
+    <h2 class="sl-pay-title">小役一覧</h2>
+    <ul class="sl-pay-list">
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms"><img src="./Guide/7.png" alt="7"><img src="./Guide/7.png" alt="7"><img src="./Guide/7.png" alt="7"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main is-name">BIG BONUS</span><span class="sl-pay-sub">最大+252枚</span></span>
+      </li>
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms"><img src="./Guide/7.png" alt="7"><img src="./Guide/7.png" alt="7"><img src="./Guide/BAR.png" alt="BAR"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main is-name">REGULAR BONUS</span><span class="sl-pay-sub">最大+96枚</span></span>
+      </li>
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms"><img src="./Guide/Bell.png" alt="ベル"><img src="./Guide/Bell.png" alt="ベル"><img src="./Guide/Bell.png" alt="ベル"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main">14枚</span></span>
+      </li>
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms"><img src="./Guide/Clown.png" alt="ピエロ"><img src="./Guide/Clown.png" alt="ピエロ"><img src="./Guide/Clown.png" alt="ピエロ"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main">10枚</span></span>
+      </li>
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms"><img src="./Guide/Suica.png" alt="スイカ"><img src="./Guide/Suica.png" alt="スイカ"><img src="./Guide/Suica.png" alt="スイカ"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main">8枚</span><span class="sl-pay-sub">2BET時のみ 14枚</span></span>
+      </li>
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms is-pair"><img src="./Guide/Cherry.png" alt="チェリー"><img src="./Guide/Cherry.png" alt="チェリー"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main">1枚</span><span class="sl-pay-sub">1・2BET時 7枚 / ライン毎(角=2ライン分)</span></span>
+      </li>
+      <li class="sl-pay-row">
+        <span class="sl-pay-syms"><img src="./Guide/Replay.png" alt="リプレイ"><img src="./Guide/Replay.png" alt="リプレイ"><img src="./Guide/Replay.png" alt="リプレイ"></span>
+        <span class="sl-pay-text"><span class="sl-pay-main is-name">リプレイ</span><span class="sl-pay-sub">再遊技</span></span>
+      </li>
+    </ul>
+    <p class="sl-pay-foot">※ボーナス中は2BET固定・毎ゲーム <img src="./Guide/Suica.png" alt="スイカ"> (14枚)</p>
+    <button type="button" class="sl-pay-close" id="slPaytableCloseBtn">閉じる</button>
+  </div>
+</div>
+
+<!-- ============ スロット: 前日の台設定 (v6.7) ============ -->
+<div class="overlay" id="slHallYestOverlay" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="前日の台設定">
+    <div class="sheet-head">
+      <h2>前日の台設定</h2>
+      <button type="button" class="close-btn" id="slHallYestCloseBtn" aria-label="閉じる">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="sheet-section">
+        <p class="sheet-note" id="slHallYestNote">前日の営業が終わったときの設定と結果です。今日の設定は公開していません。</p>
+        <div class="sl-yest" id="slHallYest"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ============ 更新履歴 ============ -->
 <div class="overlay" id="changelogOverlay" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-label="更新履歴">
@@ -1651,10 +1703,18 @@
     </div>
     <div class="sheet-body">
       <div class="sheet-section">
+        <h3>v6.7</h3>
+        <ul class="rule-list">
+          <li>スロットの台選びに<b>「前日の台設定」</b>ボタンを追加しました。座る前に、前日の8台すべての設定を確認できます。</li>
+          <li>ルール(📖)のスロットに<b>小役一覧</b>を追加しました。</li>
+          <li>ランプの呼び方を<b>CHANCEランプ</b>に統一しました。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>v6.6</h3>
         <ul class="rule-list">
-          <li><b>スロットの絵柄とGOGO!CHANCEのランプを新しい画像にしました。</b></li>
-          <li><b>後ペカのGOGO!CHANCEが、第3停止ボタンを離した瞬間に光る</b>ようになりました。押し込んでいる間はまだ光りません。</li>
+          <li><b>スロットの絵柄とCHANCEランプを新しい画像にしました。</b></li>
+          <li><b>後ペカのCHANCEランプが、第3停止ボタンを離した瞬間に光る</b>ようになりました。押し込んでいる間はまだ光りません。</li>
           <li>ボーナスを引いたとき、ごくまれに<b>いつもと違う演出</b>が起きるようになりました。見られたらラッキーです。</li>
         </ul>
       </div>
@@ -1669,7 +1729,7 @@
       <div class="sheet-section">
         <h3>v6.3</h3>
         <ul class="rule-list">
-          <li><b>GOGO!CHANCEが光ったまま、またはボーナス消化中に精算しても、その状態が台に残るようになりました。</b>次に座った人が続きを打てます。</li>
+          <li><b>CHANCEランプが光ったまま、またはボーナス消化中に精算しても、その状態が台に残るようになりました。</b>次に座った人が続きを打てます。</li>
           <li>台選びの画面で、<b>光ったまま空いている台</b>や<b>ボーナス消化中の台</b>が分かるようになりました。狙って座ってみてください。</li>
           <li>台データのリセットで、確認の画面が設定画面と重なってしまうのを直しました。</li>
         </ul>
@@ -1681,7 +1741,7 @@
           <li><b>ボーナスの演出を入れました。</b>BIG/REGが揃うと上のパネルが光り、ヘッダーのBB・RBの数字が点滅します。</li>
           <li><b>停止ボタンが、指を離すまで押し込まれたまま</b>になりました。ボーナスが揃ったときは、離した瞬間に演出が始まります。</li>
           <li>ボーナスの獲得枚数(COUNT)が<b>最後まで表示されない</b>不具合を直しました。</li>
-          <li>GOGO!CHANCEが光ったときに<b>表示位置がずれる</b>のを直しました。</li>
+          <li>CHANCEランプが光ったときに<b>表示位置がずれる</b>のを直しました。</li>
           <li>アプリを裏に回してから戻ると<b>スロットが動かなくなる</b>のを直しました。打っている途中で切れても、戻れば続きから打てます。</li>
         </ul>
       </div>
@@ -1722,8 +1782,8 @@
         <ul class="rule-list">
           <li>スロットの<b>リールの回り方を直しました。</b>上から下へ流れるようになり、目押しがしやすくなっています。</li>
           <li><b>停止ボタンを押した瞬間に止まるようになりました。</b>これまでは反応までに間があり、狙った位置で止めにくい状態でした。</li>
-          <li>スロットに<b>⚙️設定</b>を追加しました。メッセージバーの表示、GOGO!CHANCE中に1BETだけ入れる設定、簡単レバーモードが選べます。</li>
-          <li>GOGO!CHANCEの表示を小さくして、まわりの数字と高さをそろえました。</li>
+          <li>スロットに<b>⚙️設定</b>を追加しました。メッセージバーの表示、CHANCEランプ点灯中に1BETだけ入れる設定、簡単レバーモードが選べます。</li>
+          <li>CHANCEランプの表示を小さくして、まわりの数字と高さをそろえました。</li>
         </ul>
       </div>
       <div class="sheet-section">

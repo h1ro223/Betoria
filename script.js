@@ -471,8 +471,13 @@ const el = {
   slLampInsert: $('slLampInsert'),
   slGogo: $('slGogo'),
   slGogoImg: $('slGogoImg'),
-  slForceTiming: $('slForceTiming'),
-  slForcePremium: $('slForcePremium'),
+  slHallYestBtn: $('slHallYestBtn'),
+  slHallYestOverlay: $('slHallYestOverlay'),
+  slHallYestCloseBtn: $('slHallYestCloseBtn'),
+  slHallYest: $('slHallYest'),
+  slPaytableBtn: $('slPaytableBtn'),
+  slPaytableOverlay: $('slPaytableOverlay'),
+  slPaytableCloseBtn: $('slPaytableCloseBtn'),
   slSegCredit: $('slSegCredit'),
   slSegCount: $('slSegCount'),
   slSegPayout: $('slSegPayout'),
@@ -4648,7 +4653,7 @@ function slEnterMachine(st){
     (st.bonusType === 'BB' ? el.slDataBB : el.slDataRB).classList.add('is-blink');
     slMsg(st.bonusType + ' 消化中  MAXBETで回してください');
   } else if (st.lampLit){
-    slMsg('GOGO!CHANCE 点灯中!  ボーナス図柄を狙ってください');
+    slMsg('CHANCEランプ点灯中!  ボーナス図柄を狙ってください');
   }
   /* 画面が出てからでないとリールの幅が測れない */
   slBuildAllStrips();
@@ -5105,11 +5110,11 @@ function slLightLamp(after){
   slSe('gogo', strong ? SL_STRONG_GOGO_VOL : 1);
   if (strong) slStartStrongGako();
   if (after){
-    slMsg('GOGO!CHANCE!!  ボーナス図柄を狙え!');
+    slMsg('CHANCE!!  ボーナス図柄を狙え!');
     /* 点灯演出が終わるまで、払い出しのカウントアップを待たせる(仕様書§9-1) */
     slot.gogoSndEnd = performance.now() + SL_GOGO_MS;
   } else {
-    slMsg('GOGO! CHANCE 点灯!');
+    slMsg('CHANCEランプ点灯!');
   }
   /* ★画像は描画を待たずにこの場で差し替える。点灯の瞬間に遅れを出さないため */
   slRenderGogo();
@@ -5346,9 +5351,9 @@ function onSlotResult(d){
 
 /* オーナーがボーナスを仕込んだ(v6.2) */
 function onSlotForced(d){
-  const PREM = { fanfare: 'レバーONファンファーレ', silent: '無音', strong: '強ガコッ' };
-  const how = (d.timing === 'after' ? '後ペカ' : '先ペカ') + (d.premium ? '・' + PREM[d.premium] : '');
-  toast((d.kind === 'BB' ? 'BIG' : 'REG') + 'を仕込みました(' + how + ')。レバーを引いてください');
+  /* ???のときはBIG/REGを伏せたまま(光ってからのお楽しみ, v6.7) */
+  const name = (d.kind === 'RANDOM') ? '???' : (d.kind === 'BB' ? 'BIG' : 'REG');
+  toast(name + 'を仕込みました。レバーを引いてください');
   closeOverlay(el.slotSettingsOverlay);
 }
 
@@ -5530,9 +5535,16 @@ function slRenderData(){
 
 /* 前日の設定。当日ぶんは絶対に出さない(サーバーが前日ぶんしか送ってこない) */
 function slRenderYesterday(){
-  const box = el.slYesterday;
+  slRenderYesterdayInto(el.slYesterday, (slot.st && slot.st.yesterday) || null);
+}
+/* 台選び画面の「前日の台設定」(v6.7)。
+   台選びで受け取っている slot:lobby に前日ぶんが入っているので、通信は増えない */
+function openHallYesterday(){
+  slRenderYesterdayInto(el.slHallYest, (slot.lobby && slot.lobby.yesterday) || null);
+  openOverlay(el.slHallYestOverlay);
+}
+function slRenderYesterdayInto(box, y){
   if (!box) return;
-  const y = (slot.st && slot.st.yesterday) || null;
   if (!y || !y.settings || !y.settings.length){
     box.innerHTML = '<p class="empty-note">まだ前日のデータがありません</p>';
     return;
@@ -7733,60 +7745,29 @@ el.slOptEasyLever.addEventListener('change', () => {
   slotOpt.easyLever = el.slOptEasyLever.checked; saveSlotOpt(); slSyncButtons();
 });
 
+/* --- 台選びの「前日の台設定」(v6.7) --- */
+el.slHallYestBtn.addEventListener('click', () => { audio.play('button'); openHallYesterday(); });
+el.slHallYestCloseBtn.addEventListener('click', () => closeOverlay(el.slHallYestOverlay));
+
+/* --- ルールの小役一覧(v6.7)。ルール画面の上に重ねて開く --- */
+el.slPaytableBtn.addEventListener('click', () => { audio.play('button'); openOverlay(el.slPaytableOverlay); });
+el.slPaytableCloseBtn.addEventListener('click', () => { audio.play('button'); closeOverlay(el.slPaytableOverlay); });
+
 /* --- オーナー専用(v6.2) --- */
 let slForceKind = 'BB';
-let slForceTiming = 'first';     // 'first'(先ペカ) | 'after'(後ペカ)(v6.6)
-let slForcePremium = '';         // '' | 'fanfare' | 'silent' | 'strong'(v6.6)
 el.slForceKind.addEventListener('click', (e) => {
   const b = e.target.closest('[data-kind]');
   if (!b) return;
   slForceKind = b.dataset.kind;
   el.slForceKind.querySelectorAll('.seg-btn').forEach(x =>
     x.classList.toggle('is-on', x === b));
-  slSyncForceOptions();
   audio.play('button');
 });
-if (el.slForceTiming) el.slForceTiming.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-timing]');
-  if (!b || b.disabled) return;
-  slForceTiming = b.dataset.timing;
-  slSyncForceOptions();
-  audio.play('button');
-});
-if (el.slForcePremium) el.slForcePremium.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-premium]');
-  if (!b || b.disabled) return;
-  slForcePremium = b.dataset.premium;
-  slSyncForceOptions();
-  audio.play('button');
-});
-/* 選べない組み合わせを押せなくする(v6.6)
-   ・ファンファーレと無音はBB専用
-   ・ファンファーレは必ず先ペカ */
-function slSyncForceOptions(){
-  if (slForceKind === 'RB' && (slForcePremium === 'fanfare' || slForcePremium === 'silent')) slForcePremium = '';
-  if (el.slForcePremium){
-    el.slForcePremium.querySelectorAll('[data-premium]').forEach(x => {
-      const p = x.dataset.premium;
-      x.disabled = (slForceKind === 'RB' && (p === 'fanfare' || p === 'silent'));
-      x.classList.toggle('is-on', p === slForcePremium);
-    });
-  }
-  if (el.slForceTiming){
-    const lock = (slForcePremium === 'fanfare');
-    el.slForceTiming.querySelectorAll('[data-timing]').forEach(x => {
-      const t = x.dataset.timing;
-      x.disabled = lock && t === 'after';
-      x.classList.toggle('is-on', lock ? t === 'first' : t === slForceTiming);
-    });
-  }
-}
 el.slForceBtn.addEventListener('click', () => {
   if (!online.socket) return;
   audio.play('button');
-  online.socket.emit('slot:forceBonus', {
-    kind: slForceKind, timing: slForceTiming, premium: slForcePremium || null
-  });
+  /* 'BB' | 'RB' | 'RANDOM'(???)。点灯タイミングとプレミアはサーバーがランダムに決める(v6.7) */
+  online.socket.emit('slot:forceBonus', { kind: slForceKind });
 });
 el.slResetMachineBtn.addEventListener('click', async () => {
   audio.play('button');
@@ -7843,7 +7824,8 @@ document.addEventListener('keydown', (e) => {
   if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
   /* オーバーレイが開いているときは触らせない */
   if (!el.slotDataOverlay.hidden || !el.rulesOverlay.hidden || !el.confirmOverlay.hidden ||
-      !el.slotSettingsOverlay.hidden || !el.slotHistoryOverlay.hidden) return;
+      !el.slotSettingsOverlay.hidden || !el.slotHistoryOverlay.hidden ||
+      !el.slPaytableOverlay.hidden) return;
 
   switch (e.key){
     case ' ': case 'Spacebar': e.preventDefault(); slLever(); break;
@@ -8227,7 +8209,7 @@ el.deletePass.addEventListener('keydown', (e) => { if (e.key === 'Enter') el.del
 
 /* --- ルール / 設定 --- */
 el.menuBtn.addEventListener('click', () => { audio.play('button'); renderSettings(); openOverlay(el.settingsOverlay); });
-el.rulesCloseBtn.addEventListener('click', () => closeOverlay(el.rulesOverlay));
+el.rulesCloseBtn.addEventListener('click', () => { closeOverlay(el.slPaytableOverlay); closeOverlay(el.rulesOverlay); });
 el.settingsCloseBtn.addEventListener('click', () => closeOverlay(el.settingsOverlay));
 
 el.bgmSwitch.addEventListener('click', () => {
@@ -8313,13 +8295,16 @@ el.chatStamps.addEventListener('click', (e) => {
 /* 招待通知(invitedOverlay)は誤タップで消えると困るので背景クリックでは閉じない */
 const closableOverlays = [el.accountOverlay, el.rulesOverlay, el.settingsOverlay,
   el.changelogOverlay, el.surrenderOverlay, el.devPinOverlay, el.devOverlay,
-  el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay];
+  el.friendOverlay, el.inviteOverlay, el.rankOverlay, el.noticeOverlay,
+  el.slPaytableOverlay, el.slHallYestOverlay];
 
 closableOverlays.forEach(node =>
   node.addEventListener('click', (e) => { if (e.target === node) closeOverlay(node); }));
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape'){
+    /* 小役一覧はルールの上に重なっているので、まず小役一覧だけを閉じる(v6.7) */
+    if (!el.slPaytableOverlay.hidden){ closeOverlay(el.slPaytableOverlay); return; }
     closableOverlays.forEach(n => { if (!n.hidden) closeOverlay(n); });
     if (!el.bonusOverlay.hidden) closeBonusPanel();
     if (!el.devDetailOverlay.hidden) closeOverlay(el.devDetailOverlay);

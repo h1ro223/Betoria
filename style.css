@@ -5170,6 +5170,21 @@ body.is-booting{ overflow: hidden; }
 }
 .sl-hall-count{ font-family: var(--font-display); letter-spacing: .06em; color: var(--led); }
 .sl-hall-note{ font-size: 12px; color: var(--smoke); }
+/* 前日の台設定ボタン(v6.7) */
+.sl-hall-count{ white-space: nowrap; flex: 0 0 auto; }   /* 「8台中 X台プレイ中」を折り返さない(v6.7) */
+.sl-hall-right{ display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+.sl-hall-yest-btn{
+  padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; white-space: nowrap;
+  color: var(--led); background: rgba(255,201,74,.08); border: 1px solid rgba(255,201,74,.45);
+  cursor: pointer; transition: background .15s, transform .05s;
+}
+.sl-hall-yest-btn:hover{ background: rgba(255,201,74,.16); }
+.sl-hall-yest-btn:active{ transform: translateY(1px); }
+@media (max-width: 420px){
+  .sl-hall-bar{ align-items: center; }
+  .sl-hall-note{ font-size: 11px; }
+  .sl-hall-yest-btn{ padding: 6px 10px; }
+}
 
 .sl-hall{
   display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px;
@@ -5653,15 +5668,89 @@ body.is-booting{ overflow: hidden; }
 .sl-owner-ctrl .seg{ margin: 0; }
 .sl-owner-ctrl .seg-btn{ padding: 6px 12px; font-size: 12px; }
 .sl-owner-ctrl .btn{ padding: 8px 16px; font-size: 13px; }
-/* 点灯タイミング・プレミアの指定(v6.6)。行の下に全幅で並べる */
-.sl-owner-sub{ flex: 1 1 100%; display: flex; flex-direction: column; gap: 6px; }
-.sl-owner-label{ font-size: 12px; color: var(--smoke); }
-.sl-owner-sub .seg{ margin: 0; }
-.sl-owner-sub .seg-btn{ padding: 8px 2px; font-size: 12px; white-space: nowrap; }
-.sl-owner-note{ font-size: 11px; color: var(--smoke); line-height: 1.5; }
+/* BIG / REG / ??? の3択(v6.7)。幅が狭い端末でも折り返さない */
+.sl-owner-ctrl .seg-3 .seg-btn{ padding: 6px 10px; white-space: nowrap; }
 .btn.is-danger{
   background: linear-gradient(180deg, #d9403f, #8e1b1a);
   border-color: rgba(255,140,140,.5); color: #fff;
 }
 .btn.is-danger:hover{ filter: brightness(1.1); }
 
+
+
+/* =========================================================
+   スロット: 小役一覧 (v6.7)
+   ルール画面(rulesOverlay)の上に重ねて開くので z-index を1段上げる
+   ========================================================= */
+.sl-pay-overlay{ z-index: 61; }
+.sl-pay-card{
+  width: min(430px, 100%);
+  max-height: 88dvh; overflow-y: auto;
+  padding: 22px 22px 18px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #24252c, #1b1c22);
+  border: 2px solid rgba(255,255,255,.14);
+  box-shadow: 0 24px 60px rgba(0,0,0,.7), inset 0 1px 0 rgba(255,255,255,.06);
+  -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+}
+.sl-pay-title{
+  margin: 0 0 10px; text-align: center;
+  font-family: var(--font-body); font-weight: 900; font-size: 22px;
+  letter-spacing: .32em; text-indent: .32em;       /* 字間ぶん右にずれるのを戻す */
+  color: #E8B62E;
+}
+.sl-pay-list{ list-style: none; margin: 0; padding: 0; }
+.sl-pay-row{
+  display: grid; grid-template-columns: 44% 1fr; align-items: center; gap: 14px;
+  padding: 12px 4px; border-bottom: 2px solid rgba(255,255,255,.08);
+}
+.sl-pay-row:last-child{ border-bottom: 0; }
+.sl-pay-syms{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; align-items: center; }
+/* チェリーは2つを中央寄せ(見本どおり) */
+.sl-pay-syms.is-pair{ grid-template-columns: repeat(2, 1fr); padding: 0 16%; }
+.sl-pay-syms img{
+  width: 100%; height: 36px; object-fit: contain; display: block;
+  pointer-events: none; -webkit-user-drag: none;
+}
+.sl-pay-text{ display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sl-pay-main{ font-size: 19px; font-weight: 700; color: var(--ivory); letter-spacing: .04em; }
+.sl-pay-main.is-name{ font-size: 17px; font-weight: 500; white-space: nowrap; }
+.sl-pay-sub{ font-size: 12.5px; color: #E8B62E; line-height: 1.55; }
+.sl-pay-foot{
+  margin: 12px 0 14px; text-align: center; font-size: 12.5px; color: var(--smoke);
+}
+.sl-pay-foot img{ height: 15px; width: auto; vertical-align: -3px; margin: 0 2px; }
+.sl-pay-close{
+  display: block; width: 100%; padding: 12px;
+  border-radius: 10px; border: 2px solid rgba(255,255,255,.18);
+  background: linear-gradient(180deg, #3a3b43, #2a2b31);
+  color: var(--ivory); font-size: 15px; font-weight: 700; letter-spacing: .1em;
+  cursor: pointer;
+}
+.sl-pay-close:hover{ filter: brightness(1.12); }
+@media (max-width: 440px){
+  .sl-pay-card{ padding: 20px 16px 16px; }
+  .sl-pay-main.is-name{ font-size: 15.5px; letter-spacing: .01em; }
+}
+@media (max-width: 380px){
+  .sl-pay-card{ padding: 18px 14px 14px; }
+  .sl-pay-row{ gap: 10px; }
+  .sl-pay-syms img{ height: 30px; }
+  .sl-pay-main{ font-size: 17px; }
+  .sl-pay-main.is-name{ font-size: 14px; letter-spacing: 0; }
+  .sl-pay-sub{ font-size: 11.5px; }
+}
+
+/* ルールの「小役一覧を見る」ボタン(v6.7) */
+.sl-pay-open-btn{
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  width: 100%; padding: 12px 14px; cursor: pointer;
+  border-radius: 10px; border: 1px solid rgba(232,182,46,.55);
+  background: linear-gradient(180deg, rgba(232,182,46,.14), rgba(232,182,46,.05));
+  color: #E8B62E; font-size: 15px; font-weight: 700; letter-spacing: .08em;
+  transition: background .15s, transform .05s;
+}
+.sl-pay-open-btn:hover{ background: linear-gradient(180deg, rgba(232,182,46,.22), rgba(232,182,46,.08)); }
+.sl-pay-open-btn:active{ transform: translateY(1px); }
+.sl-pay-open-icons{ display: flex; gap: 4px; }
+.sl-pay-open-icons img{ height: 20px; width: 34px; object-fit: contain; pointer-events: none; }

@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.6)
+   Betoria - server.js  (v6.7)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.6.0';
+const APP_VERSION = '6.7.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1692,9 +1692,7 @@ function makeSlotMachine(no){
     bonusPaid: 0,
     bonusLog: [],
 
-    forceLamp: false,    // オーナーが仕込んだときだけ true。次のレバーで必ず点灯させる
-    forceTiming: 'first',// 仕込んだときの点灯タイミング 'first'(先ペカ) | 'after'(後ペカ)(v6.6)
-    forcePremium: null,  // 仕込んだときのプレミア 'fanfare' | 'silent' | 'strong' | null(v6.6)
+    forceLamp: false,    // オーナーが仕込んだときだけ true。次のレバーで当選扱いにする
 
     /* 回している最中の情報。slot:spin で作り slot:stop で使う */
     spin: null,          // { id, flags, seed, bet, at }
@@ -1821,14 +1819,6 @@ function slPublicPremium(flags){
   const p = (flags && flags.premium) || SL_PREM_NONE;
   return { fanfare: !!p.fanfare, silent: !!p.silent, strong: !!(p.strong && flags.peka) };
 }
-/* オーナーが仕込んだプレミア。BB専用のものをRBで選んだ場合は付けない */
-function slForcedPremium(want, kind){
-  if (want === 'strong') return { fanfare: false, silent: false, strong: true };
-  if (kind !== 'BB') return SL_PREM_NONE;
-  if (want === 'fanfare') return { fanfare: true, silent: false, strong: false };
-  if (want === 'silent')  return { fanfare: false, silent: true, strong: false };
-  return SL_PREM_NONE;
-}
 
 /* ---------------------------------------------------------
    抽選(レバーONのときサーバーが1回だけ実行)
@@ -1875,23 +1865,22 @@ function slDrawGame(m){
   /* ステップ3: プレミア演出(v6.6)。自然に新規当選したときだけ。
      ボーナス・小役の抽選が済んでから引く。演出を決めるだけなので、
      当たり方(確率・出玉)には関わらない */
+  /* オーナーが仕込んだボーナスは、このレバーで「自然に当選した」ものとして扱う(v6.7)。
+     点灯タイミング(先ペカ/後ペカ)もプレミアも、自然当選とまったく同じ抽選にかける */
+  let fresh = newBonus;
+  if (m.forceLamp && m.bonusFlag && !m.lampLit && !m.lampPending){
+    m.forceLamp = false;
+    fresh = true;
+  }
+
   let premium = SL_PREM_NONE;
-  if (newBonus){
+  if (fresh){
     premium = slRollPremium(m.bonusFlag);
   }
 
-  /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%)。
-     オーナーが仕込んだ場合は、仕込んだときに選んだタイミングで点ける */
+  /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%) */
   let peka = false;
-  if (m.forceLamp && m.bonusFlag && !m.lampLit){
-    premium = slForcedPremium(m.forcePremium, m.bonusFlag);
-    m.forceLamp = false;
-    m.forcePremium = null;
-    /* ファンファーレは0確演出なので、後ペカを選んでいても必ず先ペカ */
-    if (m.forceTiming === 'after' && !premium.fanfare) m.lampPending = true;
-    else { m.lampLit = true; peka = true; }
-    m.forceTiming = 'first';
-  } else if (newBonus && !m.lampLit){
+  if (fresh && !m.lampLit){
     /* レバーONファンファーレは必ず先ペカ(先ペカの抽選より優先する) */
     if (premium.fanfare || slRandom() < SL_PEKA_FIRST){ m.lampLit = true; peka = true; }
     else m.lampPending = true;
@@ -1969,9 +1958,7 @@ async function cashOutSlot(io, m, reason){
     replayPending: m.replayPending,
     /* オーナーの仕込み(v6.6)。これを消すと、仕込んだボーナスが
        点灯しないまま台に残ってしまう */
-    forceLamp: m.forceLamp,
-    forceTiming: m.forceTiming,
-    forcePremium: m.forcePremium
+    forceLamp: m.forceLamp
   };
   Object.assign(m, makeSlotMachine(m.no), keep);
 
@@ -4256,20 +4243,18 @@ io.on('connection', (socket) => {
     if (m.phase !== 'idle') return socket.emit('room:error', 'リールが回っています');
     if (m.inBonus) return socket.emit('room:error', 'いまボーナス中です');
 
-    const p = payload || {};
-    const kind = (p.kind === 'RB') ? 'RB' : 'BB';
-    /* 点灯タイミングとプレミア(v6.6)。知らない値は既定に倒す */
-    const timing  = (p.timing === 'after') ? 'after' : 'first';
-    let premium = ['fanfare', 'silent', 'strong'].includes(p.premium) ? p.premium : null;
-    if (kind === 'RB' && premium !== 'strong') premium = null;   // BB専用のプレミア
+    /* 'BB' | 'RB' | 'RANDOM'(???)。
+       ???はサーバーでBB/RBを五分五分で決め、ブラウザには伏せたまま返す(v6.7)。
+       点灯タイミングとプレミアは、どれを選んでも自然当選と同じ抽選になる */
+    const want = (payload || {}).kind;
+    const hidden = (want === 'RANDOM');
+    const kind = hidden ? (slRandom() < 0.5 ? 'BB' : 'RB') : (want === 'RB' ? 'RB' : 'BB');
     m.bonusFlag = kind;
     m.lampLit = false;
     m.lampPending = false;
-    m.forceLamp = true;          // 次のレバーで必ず点灯させる
-    m.forceTiming = (premium === 'fanfare') ? 'first' : timing;
-    m.forcePremium = premium;
+    m.forceLamp = true;          // 次のレバーで当選扱いにする
     sendSlotState(io, m);
-    socket.emit('slot:forced', { kind, timing: m.forceTiming, premium });
+    socket.emit('slot:forced', { kind: hidden ? 'RANDOM' : kind });
   });
 
   /* この台をまっさらにする。設定も振り直して、席も立つ */
