@@ -99,7 +99,7 @@
       <div class="title-suits"><span>♠</span><span>♥</span><span>♦</span><span>♣</span></div>
       <h1 class="title-logo">BETORIA</h1>
       <p class="title-sub">無料で遊べる、みんなのオンラインカジノ</p>
-      <button type="button" class="version-badge" id="changelogBtn">v6.5 更新履歴</button>
+      <button type="button" class="version-badge" id="changelogBtn">v6.6 更新履歴</button>
     </div>
 
     <nav class="title-menu">
@@ -677,12 +677,11 @@
         </div>
 
         <div class="sl-under">
+          <!-- GOGO!CHANCE(v6.6)。透過画像を赤パネルの上に直接置く。
+               点灯・消灯は script.js が src を Chance_0 ⇔ Chance_1 に差し替える -->
           <div class="sl-gogo" id="slGogo">
-            <!-- 土台。見えないが、この1枚が枠の高さを決める(v6.2) -->
-            <img id="slGogoBase" src="./slot/GOGO/GOGOCHANCE_0.png" alt="" draggable="false" aria-hidden="true">
-            <img id="slGogoOff" src="./slot/GOGO/GOGOCHANCE_0.png" alt="GOGO!CHANCE" draggable="false">
-            <img id="slGogoOn"  src="./slot/GOGO/GOGOCHANCE_1.png" alt="" draggable="false">
-            <img id="slGogoRainbow" src="./slot/GOGO/GOGOCHANCE_2.png" alt="" draggable="false">
+            <img id="slGogoImg" src="./slot/chance/Chance_0.png" alt="GOGO!CHANCE"
+                 width="768" height="768" draggable="false" decoding="sync">
           </div>
           <div class="sl-seg">
             <div class="sl-seg-box"><span class="sl-seg-value" id="slSegCredit">0</span><span class="sl-seg-label">CREDIT</span></div>
@@ -1448,6 +1447,24 @@
             </div>
             <button type="button" class="btn primary" id="slForceBtn">点灯</button>
           </div>
+          <!-- 点灯タイミングとプレミアの指定(v6.6)。動作確認用 -->
+          <div class="sl-owner-sub">
+            <span class="sl-owner-label">点灯タイミング</span>
+            <div class="seg seg-2" id="slForceTiming">
+              <button type="button" class="seg-btn is-on" data-timing="first">先ペカ</button>
+              <button type="button" class="seg-btn" data-timing="after">後ペカ</button>
+            </div>
+          </div>
+          <div class="sl-owner-sub">
+            <span class="sl-owner-label">プレミア</span>
+            <div class="seg seg-4" id="slForcePremium">
+              <button type="button" class="seg-btn is-on" data-premium="">なし</button>
+              <button type="button" class="seg-btn" data-premium="fanfare">ファンファーレ</button>
+              <button type="button" class="seg-btn" data-premium="strong">強ガコッ</button>
+              <button type="button" class="seg-btn" data-premium="silent">無音</button>
+            </div>
+            <small class="sl-owner-note">ファンファーレと無音はBIGのみ。ファンファーレは必ず先ペカになります</small>
+          </div>
         </div>
 
         <div class="sl-owner-row">
@@ -1634,6 +1651,14 @@
     </div>
     <div class="sheet-body">
       <div class="sheet-section">
+        <h3>v6.6</h3>
+        <ul class="rule-list">
+          <li><b>スロットの絵柄とGOGO!CHANCEのランプを新しい画像にしました。</b></li>
+          <li><b>後ペカのGOGO!CHANCEが、第3停止ボタンを離した瞬間に光る</b>ようになりました。押し込んでいる間はまだ光りません。</li>
+          <li>ボーナスを引いたとき、ごくまれに<b>いつもと違う演出</b>が起きるようになりました。見られたらラッキーです。</li>
+        </ul>
+      </div>
+      <div class="sheet-section">
         <h3>v6.5</h3>
         <ul class="rule-list">
           <li><b>ボーナス中に総回転数が増えてしまう</b>のを直しました。総回転数は通常時に回した数だけを数えます(合成確率が正しくなります)。</li>
@@ -1772,7 +1797,7 @@
       <div class="sheet-section">
         <h3>v4.0</h3>
         <ul class="rule-list">
-          <li><b>サイト名が「Betoria(ベトリア)」になりました。</b>ブラックジャックだけでなく、いろいろなトランプゲームで遊べる<b>無料オンラインカジノ</b>を目指していきます。</li>
+          <li><b>サイト名が「Betoria(ベトリア)」になりました。</b>ブラックジャックだけでなく、いろいろなカジノゲームで遊べる<b>無料オンラインカジノ</b>を目指していきます。</li>
           <li>タイトル画面に<b>ゲーム選択</b>を追加しました。ここから遊ぶゲームを選びます。</li>
           <li><b>ランキングをゲームごとに分けました。</b>これまでのブラックジャックの記録はそのまま残っています。</li>
         </ul>

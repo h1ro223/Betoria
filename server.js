@@ -1,5 +1,5 @@
 /* =========================================================
-   Betoria - server.js  (v6.5)
+   Betoria - server.js  (v6.6)
    made by hiro/ヒロ   https://github.com/h1ro223
    無料で遊べるオンラインカジノ
      ・BLACKJACK 4(ブラックジャック)
@@ -19,7 +19,7 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const SECRET = process.env.AUTH_SECRET || crypto.randomBytes(32).toString('hex');
 const TOKEN_DAYS = 30;
-const APP_VERSION = '6.5.0';
+const APP_VERSION = '6.6.0';
 
 /* =========================================================
    1. データベース層(PostgreSQL / メモリ フォールバック)
@@ -1613,6 +1613,14 @@ let slYesterday = { dayKey: null, settings: [] };
 
 const SL_MACHINES   = 8;      // ホールの台数(v6.2で6台から増やした)
 const SL_PEKA_FIRST = 0.15;   // 先ペカ(レバーON時点灯)の割合。残り85%は後ペカ
+
+/* プレミア演出(v6.6)。ジャグラーシミュレーター v4.2 と同じ発生率。
+   ★どれも示唆演出だけ。抽選・停止制御・出玉には一切影響させないこと。
+   抽選するのは「ボーナスを自然に新規当選したゲーム」のレバーONだけ */
+const SL_PREM_LEVER_FF = 0.004;  // レバーONファンファーレ(BBのみ)。必ず先ペカになる
+const SL_PREM_SILENT   = 0.008;  // 無音(BBのみ)。ファンファーレに外れたときだけ抽選
+const SL_PREM_STRONG   = 0.03;   // 強ガコッ(BB/RB)。上の2つとは独立して抽選
+const SL_PREM_NONE = Object.freeze({ fanfare: false, silent: false, strong: false });
 const SL_CREDIT_MAX = 50;     // クレジット上限
 const SL_RENT_MEDAL = 1000;   // 貸出1回で使う所持メダル
 const SL_RENT_COIN  = 50;     // 貸出1回で得られるコイン(=1枚20メダル。20スロ)
@@ -1685,6 +1693,8 @@ function makeSlotMachine(no){
     bonusLog: [],
 
     forceLamp: false,    // オーナーが仕込んだときだけ true。次のレバーで必ず点灯させる
+    forceTiming: 'first',// 仕込んだときの点灯タイミング 'first'(先ペカ) | 'after'(後ペカ)(v6.6)
+    forcePremium: null,  // 仕込んだときのプレミア 'fanfare' | 'silent' | 'strong' | null(v6.6)
 
     /* 回している最中の情報。slot:spin で作り slot:stop で使う */
     spin: null,          // { id, flags, seed, bet, at }
@@ -1791,13 +1801,44 @@ function slSlotWaitLeft(m){
 }
 
 /* ---------------------------------------------------------
+   プレミア演出の抽選(v6.6)
+   ファンファーレと無音は排他(ファンファーレを先に引く)。強ガコッは独立。
+   ファンファーレと無音はBBのときだけ。
+   --------------------------------------------------------- */
+function slRollPremium(kind){
+  let fanfare = false, silent = false;
+  if (kind === 'BB'){
+    if (slRandom() < SL_PREM_LEVER_FF) fanfare = true;
+    else if (slRandom() < SL_PREM_SILENT) silent = true;
+  }
+  const strong = slRandom() < SL_PREM_STRONG;
+  return { fanfare, silent, strong };
+}
+/* ブラウザへ送るプレミア。強ガコッは「点灯した瞬間」の演出なので、
+   後ペカのときはレバーONでは送らず、点灯する slot:stop の結果に乗せる。
+   レバーONで送ると、点灯前に当選が分かってしまうため(v6.6) */
+function slPublicPremium(flags){
+  const p = (flags && flags.premium) || SL_PREM_NONE;
+  return { fanfare: !!p.fanfare, silent: !!p.silent, strong: !!(p.strong && flags.peka) };
+}
+/* オーナーが仕込んだプレミア。BB専用のものをRBで選んだ場合は付けない */
+function slForcedPremium(want, kind){
+  if (want === 'strong') return { fanfare: false, silent: false, strong: true };
+  if (kind !== 'BB') return SL_PREM_NONE;
+  if (want === 'fanfare') return { fanfare: true, silent: false, strong: false };
+  if (want === 'silent')  return { fanfare: false, silent: true, strong: false };
+  return SL_PREM_NONE;
+}
+
+/* ---------------------------------------------------------
    抽選(レバーONのときサーバーが1回だけ実行)
    実行順序が極めて重要。この順番を変えないこと。
    --------------------------------------------------------- */
 function slDrawGame(m){
   /* ボーナス中は抽選せず毎ゲーム必ずブドウ */
   if (m.inBonus){
-    return { smallFlag: 'GRAPE', bonusFlag: null, dupCherry: false, peka: false };
+    return { smallFlag: 'GRAPE', bonusFlag: null, dupCherry: false, peka: false,
+             premium: SL_PREM_NONE };
   }
 
   const sp = SL_SETTINGS[m.setting - 1];
@@ -1831,21 +1872,41 @@ function slDrawGame(m){
     else if (r2 < (acc += SL_P_CLOWN))   smallFlag = 'CLOWN';
   }
 
+  /* ステップ3: プレミア演出(v6.6)。自然に新規当選したときだけ。
+     ボーナス・小役の抽選が済んでから引く。演出を決めるだけなので、
+     当たり方(確率・出玉)には関わらない */
+  let premium = SL_PREM_NONE;
+  if (newBonus){
+    premium = slRollPremium(m.bonusFlag);
+  }
+
   /* GOGO!CHANCEの点灯タイミング(先ペカ15% / 後ペカ85%)。
-     オーナーが仕込んだ場合だけは、待たせず必ずレバーONで点ける */
+     オーナーが仕込んだ場合は、仕込んだときに選んだタイミングで点ける */
   let peka = false;
   if (m.forceLamp && m.bonusFlag && !m.lampLit){
-    m.lampLit = true; peka = true; m.forceLamp = false;
+    premium = slForcedPremium(m.forcePremium, m.bonusFlag);
+    m.forceLamp = false;
+    m.forcePremium = null;
+    /* ファンファーレは0確演出なので、後ペカを選んでいても必ず先ペカ */
+    if (m.forceTiming === 'after' && !premium.fanfare) m.lampPending = true;
+    else { m.lampLit = true; peka = true; }
+    m.forceTiming = 'first';
   } else if (newBonus && !m.lampLit){
-    if (slRandom() < SL_PEKA_FIRST){ m.lampLit = true; peka = true; }
+    /* レバーONファンファーレは必ず先ペカ(先ペカの抽選より優先する) */
+    if (premium.fanfare || slRandom() < SL_PEKA_FIRST){ m.lampLit = true; peka = true; }
     else m.lampPending = true;
   }
 
+  /* ★ボーナス図柄を揃えられるのは、GOGO!CHANCEが点いているゲームだけ(v6.6)。
+     後ペカのゲーム(第3停止を離すまで点かない)は揃わない。揃えられるのは次ゲームから。
+     停止制御(slot-core)は bonusFlag が null ならボーナス図柄を蹴飛ばすので、ここで渡さない。
+     ついでに、点灯前にブラウザへ当選が漏れることも無くなる */
   return {
     smallFlag,
-    bonusFlag: m.bonusFlag,
+    bonusFlag: m.lampLit ? m.bonusFlag : null,
     dupCherry: !!(dupCherry || rareHit),
-    peka
+    peka,
+    premium
   };
 }
 
@@ -1905,7 +1966,12 @@ async function cashOutSlot(io, m, reason){
     inBonus: m.inBonus,           // ボーナス消化中
     bonusType: m.bonusType,
     bonusPaid: m.bonusPaid,
-    replayPending: m.replayPending
+    replayPending: m.replayPending,
+    /* オーナーの仕込み(v6.6)。これを消すと、仕込んだボーナスが
+       点灯しないまま台に残ってしまう */
+    forceLamp: m.forceLamp,
+    forceTiming: m.forceTiming,
+    forcePremium: m.forcePremium
   };
   Object.assign(m, makeSlotMachine(m.no), keep);
 
@@ -3917,6 +3983,7 @@ io.on('connection', (socket) => {
           waitMs: 0,
           bet: mine.spin.bet,
           peka: false,
+          premium: slPublicPremium(mine.spin.flags),   // 無音などは送り直しでも同じに(v6.6)
           totalG: mine.totalG,
           startG: mine.startG,
           resumed: true
@@ -4060,6 +4127,7 @@ io.on('connection', (socket) => {
       waitMs,
       bet: m.bet,
       peka: flags.peka,
+      premium: slPublicPremium(flags),   // プレミア演出(v6.6)。見た目と音だけに使う
       totalG: m.totalG,
       startG: m.startG
     });
@@ -4157,6 +4225,8 @@ io.on('connection', (socket) => {
       ended: ended ? ended.type : null,
       endedPaid: ended ? ended.paid : 0,
       peka: pekaNow,
+      /* 後ペカで強ガコッが当たっていたら、点灯と一緒に知らせる(v6.6) */
+      strong: !!(pekaNow && spin.flags.premium && spin.flags.premium.strong),
       lampLit: m.lampLit,
       inBonus: m.inBonus,
       bonusPaid: m.bonusPaid
@@ -4186,13 +4256,20 @@ io.on('connection', (socket) => {
     if (m.phase !== 'idle') return socket.emit('room:error', 'リールが回っています');
     if (m.inBonus) return socket.emit('room:error', 'いまボーナス中です');
 
-    const kind = ((payload || {}).kind === 'RB') ? 'RB' : 'BB';
+    const p = payload || {};
+    const kind = (p.kind === 'RB') ? 'RB' : 'BB';
+    /* 点灯タイミングとプレミア(v6.6)。知らない値は既定に倒す */
+    const timing  = (p.timing === 'after') ? 'after' : 'first';
+    let premium = ['fanfare', 'silent', 'strong'].includes(p.premium) ? p.premium : null;
+    if (kind === 'RB' && premium !== 'strong') premium = null;   // BB専用のプレミア
     m.bonusFlag = kind;
     m.lampLit = false;
     m.lampPending = false;
-    m.forceLamp = true;          // 次のレバーで必ず先ペカにする
+    m.forceLamp = true;          // 次のレバーで必ず点灯させる
+    m.forceTiming = (premium === 'fanfare') ? 'first' : timing;
+    m.forcePremium = premium;
     sendSlotState(io, m);
-    socket.emit('slot:forced', { kind });
+    socket.emit('slot:forced', { kind, timing: m.forceTiming, premium });
   });
 
   /* この台をまっさらにする。設定も振り直して、席も立つ */

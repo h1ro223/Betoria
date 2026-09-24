@@ -163,6 +163,7 @@ const audio = {
   master: null,
   bgmBus: null,
   started: false,
+  gainMul: 1,         // play(name, mul) のときだけ一時的に変わる音量倍率(v6.6)
 
   init(){
     if (this.ctx) return;
@@ -211,7 +212,7 @@ const audio = {
     osc.type = type || 'sine';
     osc.frequency.setValueAtTime(freq, t0);
     g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(gain || 0.2, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime((gain || 0.2) * this.gainMul, t0 + 0.012);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
     osc.connect(g); g.connect(this.master);
     osc.start(t0); osc.stop(t0 + dur + 0.02);
@@ -230,17 +231,24 @@ const audio = {
     f.type = 'highpass';
     f.frequency.value = hp || 1400;
     const g = this.ctx.createGain();
-    g.gain.value = gain || 0.18;
+    g.gain.value = (gain || 0.18) * this.gainMul;
     src.connect(f); f.connect(g); g.connect(this.master);
     src.start();
   },
 
-  play(name){
+  /* mul は音量の倍率(省略時1)。スロットの強ガコッ(×1.6)で使う(v6.6)。
+     音はこの関数の中で同期的に予約されるので、終わったら倍率を戻してよい */
+  play(name, mul){
     if (!settings.seOn) return;
     this.init();
     if (!this.ctx) return;
     this.resume();
+    this.gainMul = (typeof mul === 'number' && isFinite(mul) && mul > 0) ? mul : 1;
+    try { this.playRaw(name); }
+    finally { this.gainMul = 1; }
+  },
 
+  playRaw(name){
     switch (name){
       case 'deal':  this.noise(0.13, 0.16, 1800); this.tone(320, 0.07, 'triangle', 0.08); break;
       case 'chip':  this.tone(880, 0.05, 'square', 0.07); this.tone(1320, 0.06, 'square', 0.05, 0.03); break;
@@ -462,6 +470,9 @@ const el = {
   slLampWait: $('slLampWait'),
   slLampInsert: $('slLampInsert'),
   slGogo: $('slGogo'),
+  slGogoImg: $('slGogoImg'),
+  slForceTiming: $('slForceTiming'),
+  slForcePremium: $('slForcePremium'),
   slSegCredit: $('slSegCredit'),
   slSegCount: $('slSegCount'),
   slSegPayout: $('slSegPayout'),
@@ -4215,7 +4226,7 @@ const SC = window.SlotCore;          // shared/slot-core.js
 const SL_KOMA = SC.KOMA;
 
 const SL_SYM_IMG = {
-  1: './slot/Reel/Grape.png',
+  1: './slot/Reel/Suica.png',   // v6.6 ブドウの絵柄をスイカの画像に差し替え(役はブドウのまま)
   2: './slot/Reel/Cherry.png',
   3: './slot/Reel/Clown.png',
   4: './slot/Reel/Bell.png',
@@ -4245,6 +4256,22 @@ const SL_BB_FIN_MS    = 1800;  // BB終了演出。この間は操作できな�
 const SL_PAY_LOCK_MS  = 900;   // ブドウ・ベルの払い出しが終わるまで
 const SL_PAY_TAIL_MS  = 500;   // 1枚ずつ払い出したあとの余韻
 const SL_BONUS_BLINK  = 1000;  // ヘッダーのBB/RB数字の点滅周期
+/* プレミア演出(v6.6)。ジャグラーシミュレーター v4.2 と同じ値 */
+const SL_STRONG_GOGO_VOL = 1.6;  // 強ガコッのときのGOGO音の音量倍率
+const SL_STRONG_GAKO_MS  = 900;  // 強ガコッの光り方(.is-strong)を付けておく時間
+
+/* GOGO!CHANCEの画像(v6.6)。img 1枚の src を差し替えて点灯・消灯する。
+   ★差し替え先がまだデコードされていないと、初回だけ一瞬空白になる(特にSafari)。
+     読み込み時に2枚とも先読みして decode まで済ませ、参照を持ち続けておく */
+const SL_GOGO_IMG_OFF = './slot/chance/Chance_0.png';
+const SL_GOGO_IMG_ON  = './slot/chance/Chance_1.png';
+const SL_GOGO_PRELOAD = [SL_GOGO_IMG_OFF, SL_GOGO_IMG_ON].map(src => {
+  const im = new Image();
+  im.decoding = 'sync';
+  im.src = src;
+  if (im.decode) im.decode().catch(() => {});
+  return im;
+});
 const SL_COIN_VALUE   = 19;    // 精算レート。server.js と合わせること
 const SL_RENT_MEDAL   = 1000;
 
@@ -4325,9 +4352,15 @@ const slot = {
   betLock: false,          // BB終了演出の間は何も操作できない
   gogoSndEnd: 0,           // GOGO点灯演出が終わる時刻
   pendingBonus: null,      // 第3停止を押し込んでいる間、突入を待たせる
+  pendingPeka: null,       // 第3停止を押し込んでいる間、後ペカの点灯を待たせる(v6.6)
+  payDeferred: false,      // 後ペカを待たせている間、払い出しの演出も待たせている(v6.6)
   thirdStopPressed: false,
   stopHeld: false,
   bonusTimers: [],
+  payNeed: false,          // この回に数字を動かす必要があるか(払い出しを待たせるとき用)
+  premium: null,           // このゲームのプレミア演出 { fanfare, silent, strong }(v6.6)
+  gogoShown: null,         // いま画面に出しているGOGOの状態(src を無駄に書き換えないため)
+  strongTimer: 0,          // 強ガコッの光り方を外すタイマー
 
   /* 見た目に出す台データ(サーバーが返した値をそのまま持つ) */
   view: { bb: 0, rb: 0, startG: 0, totalG: 0, inBonus: false, bonusType: null,
@@ -4564,6 +4597,11 @@ function slEnterMachine(st){
   slot.thirdStopPressed = false;
   slot.stopHeld = false;
   slot.pendingBonus = null;
+  slot.pendingPeka = null;
+  slot.payDeferred = false;
+  slot.premium = null;
+  slot.gogoShown = null;          // 次の描画で必ずGOGOの画像を合わせ直す
+  slClearStrongGako();
   slot.reels = [0, 1, 2].map(slMakeReel);
 
   slot.view = {
@@ -4583,6 +4621,11 @@ function slEnterMachine(st){
   slot.betLampShown = 0;
   slot.betCtUntil = 0;
   slot.dispPayout = 0;
+  /* ★目標も0に戻す(v6.6)。払い出しのカウント中に座り直す・裏から戻ると、
+     表示だけ0で目標が残り、slPayingOut() が「払い出し中」のままになって
+     レバーも貸出も押せなくなっていた */
+  slot.payTarget = 0;
+  slot.payNeed = false;
   slot.dispCount = st.bonusPaid || 0;
   slot.dispCredit = st.credit;
   slot.dispCoin = (st.coins != null ? st.coins : st.credit);
@@ -4753,6 +4796,8 @@ function slClearBonusShow(){
   slot.bonusPhase = '';
   slot.betLock = false;
   slot.pendingBonus = null;
+  slot.pendingPeka = null;
+  slot.payDeferred = false;
   if (el.slBanner) el.slBanner.classList.remove('is-bonus', 'is-hit');
   el.slDataBB.classList.remove('is-blink');
   el.slDataRB.classList.remove('is-blink');
@@ -4768,7 +4813,9 @@ function slStartBonusShow(type){
   slot.countHidden = false;
   slot.dispCount = 0;
   slot.countTarget = 0;
-  audio.play('win');
+  slot.premium = null;                // プレミアの効果はボーナス突入で終わる(v6.6)
+  slClearStrongGako();
+  slSe('bonus');
 
   if (el.slBanner) el.slBanner.classList.add('is-hit');
   (type === 'BB' ? el.slDataBB : el.slDataRB).classList.add('is-blink');
@@ -4860,13 +4907,13 @@ function slSetConn(state){
 function slRent(){
   if (!online.socket) return;
   online.socket.emit('slot:rent');
-  audio.play('chip');
+  slSe('rent');
 }
 
 /* いまBETできる上限 */
 function slBetCapNow(){
   if (slot.view.inBonus) return 2;
-  if (slotOpt.oneBetOnLamp && slot.view.lampLit) return 1;
+  if (slotOpt.oneBetOnLamp && slLampShown()) return 1;
   return 3;
 }
 
@@ -4890,7 +4937,7 @@ function slBet(n){
   if (wasFirst) slSetBetLamps(0);   // 前のゲームのぶんを消してから
   slSetBetLamps(slot.bet);
   online.socket.emit('slot:bet', n === undefined ? { n: cap } : { n: add });
-  audio.play('chip');
+  slSe('bet');
   slRenderAll();
 }
 
@@ -4910,6 +4957,9 @@ function slLever(){
   if (!st || slot.phase !== 'idle') return;
   if (slot.inWait) return;
   if (slBetCtActive()) return;
+  /* 第3停止を押し込んだままでは次のゲームに進めない(v6.6)。
+     離した瞬間に後ペカ・ボーナス突入が起きるので、先にレバーを通すと順番が狂う */
+  if (slot.stopHeld) return;
 
   if (slot.bet === 0 && st.replayPending === 0){
     if (!slotOpt.easyLever){ slMsg('メダルをBETしてください'); return; }
@@ -4946,20 +4996,33 @@ function onSlotSpin(d){
   slot.betSum += d.bet;
   slot.view.totalG = d.totalG;
   slot.view.startG = d.startG;
+  /* ★前のゲームの押し込み状態は必ずここで戻す。
+     残っていると、画面のどこかで指を離しただけで誤って点灯してしまう */
+  slot.thirdStopPressed = false;
+  slot.stopHeld = false;
+  slot.pendingBonus = null;
+  slot.pendingPeka = null;
+  slot.payDeferred = false;
+  /* プレミア演出(v6.6)。前のゲームのぶんはここで入れ替わる */
+  const pm = d.premium || {};
+  slot.premium = { fanfare: !!pm.fanfare, silent: !!pm.silent, strong: !!pm.strong };
 
   const start = () => {
     slot.phase = 'spinning';
     slot.stopEnableAt = performance.now() + SL_STOP_GATE_MS;
     el.slLever.classList.add('is-pulled');
     setTimeout(() => el.slLever.classList.remove('is-pulled'), 160);
-    audio.play('button');
+    /* レバー音。ファンファーレのときは代わりにファンファーレ、無音のときは鳴らさない */
+    if (slot.premium && slot.premium.fanfare) slSe('fanfare');
+    else slSe('lever');
     slMsg('');
     el.slReelWindow.classList.remove('is-win');
     /* ★BETランプはここで消さない。実機は回転中も点いたままで、
        次のゲームのBETを入れるときに切り替わる(v6.1で修正) */
     slot.reels.forEach((r, i) => slStartSpin(r, i * SL_START_DELAY));
     slStartLoop();
-    if (d.peka){ slot.view.lampLit = true; audio.play('win'); slMsg('GOGO! CHANCE 点灯!'); }
+    /* 先ペカ。レバーONの瞬間に点灯する */
+    if (d.peka) slLightLamp(false);
     slRenderAll();
   };
 
@@ -4993,7 +5056,7 @@ function slStop(i){
   /* ★離すまで沈んだままにする。ここでクラスを消さないこと(v6.2) */
   const btn = el['slStop' + i];
   if (btn) btn.classList.add('is-pushed');
-  audio.play('chip');
+  slSe('stop');
   slSyncStopButtons();
 }
 
@@ -5010,11 +5073,117 @@ function slReleaseStopVisual(){
 function slOnStopRelease(){
   slReleaseStopVisual();
   if (!slot.thirdStopPressed) return;
+  /* 1回離したら終わり。残しておくと、次に画面のどこかを触って離しただけで
+     もう一度ここに来てしまう(v6.6) */
+  slot.thirdStopPressed = false;
   slot.stopHeld = false;
   if (slot.pendingBonus){
     const type = slot.pendingBonus;
     slot.pendingBonus = null;
     slStartBonusShow(type);
+  }
+  /* 後ペカ(v6.6)。押し込んでいる間に結果が届いていたら、ここで点灯する。
+     まだ届いていなければ、届いた瞬間に onSlotResult が点灯させる */
+  if (slot.pendingPeka){
+    slot.pendingPeka = null;
+    slLightLamp(true);
+    /* 待たせていた払い出しは、GOGOの点灯演出が終わってから始める */
+    if (slot.payDeferred){
+      slot.payDeferred = false;
+      slSchedulePayout();
+    }
+  }
+}
+
+/* ---------------------------------------------------------
+   GOGO!CHANCE の点灯(v6.6)
+   先ペカ(レバーON)・後ペカ(第3停止を離した瞬間)の両方がここを通る
+   --------------------------------------------------------- */
+function slLightLamp(after){
+  slot.view.lampLit = true;
+  const strong = !!(slot.premium && slot.premium.strong);
+  slSe('gogo', strong ? SL_STRONG_GOGO_VOL : 1);
+  if (strong) slStartStrongGako();
+  if (after){
+    slMsg('GOGO!CHANCE!!  ボーナス図柄を狙え!');
+    /* 点灯演出が終わるまで、払い出しのカウントアップを待たせる(仕様書§9-1) */
+    slot.gogoSndEnd = performance.now() + SL_GOGO_MS;
+  } else {
+    slMsg('GOGO! CHANCE 点灯!');
+  }
+  /* ★画像は描画を待たずにこの場で差し替える。点灯の瞬間に遅れを出さないため */
+  slRenderGogo();
+  slSyncButtons();
+}
+
+/* いま画面上でGOGOを光らせてよいか。
+   サーバーでは点灯済みでも、第3停止を押し込んでいる間は消灯のまま見せる */
+function slLampShown(){
+  return !!slot.view.lampLit && !slot.pendingPeka;
+}
+
+/* GOGOの画像を合わせる。src は変わるときだけ書き換える */
+function slRenderGogo(){
+  if (!el.slGogo || !el.slGogoImg) return;
+  const lit = slLampShown();
+  if (slot.gogoShown === lit) return;
+  slot.gogoShown = lit;
+  el.slGogoImg.src = lit ? SL_GOGO_IMG_ON : SL_GOGO_IMG_OFF;
+  el.slGogo.classList.toggle('is-lit', lit);
+  if (!lit) slClearStrongGako();
+}
+
+/* 強ガコッ(プレミア)。ランプを一瞬強く光らせる */
+function slStartStrongGako(){
+  if (!el.slGogo) return;
+  clearTimeout(slot.strongTimer);
+  el.slGogo.classList.remove('is-strong');
+  void el.slGogo.offsetWidth;          // 続けて起きてもアニメを最初からやり直す
+  el.slGogo.classList.add('is-strong');
+  slot.strongTimer = setTimeout(slClearStrongGako, SL_STRONG_GAKO_MS);
+}
+function slClearStrongGako(){
+  clearTimeout(slot.strongTimer);
+  slot.strongTimer = 0;
+  if (el.slGogo) el.slGogo.classList.remove('is-strong');
+}
+
+/* 払い出しの演出(リールの光り・払い出し音・数字のカウントアップ)を始める。
+   GOGOが光った直後なら、点灯演出が終わるまで待たせる */
+function slSchedulePayout(){
+  const wait = Math.max(0, slot.gogoSndEnd - performance.now());
+  if (wait > 0) slot.bonusTimers.push(setTimeout(slRunPayout, wait));
+  else slRunPayout();
+  if (slot.payNeed) slSyncButtons();     /* 払い出しの間は押せなくする */
+  else slDrawSeg();
+}
+function slRunPayout(){
+  if (slot.payTarget > 0){
+    el.slReelWindow.classList.add('is-win');
+    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
+    slSe('pay');
+  }
+  if (slot.payNeed) slStartCountAnim();
+}
+
+/* ---------------------------------------------------------
+   スロットの効果音はすべてここを通す(v6.6)
+   ・無音プレミアのときは、レバー音と停止音だけを止める
+   ・今はBetoria共通の合成音を当てているだけ。スロット専用の音源を
+     用意したら、この中身だけ差し替えればよい(呼び出し側は触らなくてよい)
+   ・音源の長さに合わせて SL_GOGO_MS / SL_BB_HIT_MS なども見直すこと
+   --------------------------------------------------------- */
+function slSe(name, mul){
+  const pm = slot.premium || {};
+  switch (name){
+    case 'lever':   if (pm.silent) return; audio.play('button'); break;
+    case 'stop':    if (pm.silent) return; audio.play('chip');   break;
+    case 'gogo':    audio.play('win', mul); break;       // GOGO!CHANCE点灯
+    case 'fanfare': audio.play('bj');       break;       // レバーONファンファーレ(仮。BB当選曲の代わり)
+    case 'bonus':   audio.play('win');      break;       // ボーナス突入
+    case 'pay':     audio.play('chip');     break;       // 払い出し
+    case 'bet':     audio.play('chip');     break;
+    case 'rent':    audio.play('chip');     break;
   }
 }
 
@@ -5107,9 +5276,28 @@ function onSlotResult(d){
   if (slot.log.length > 5000) slot.log.shift();
 
   slot.replayLamp = !!d.replay;
-  slot.view.lampLit = !!d.lampLit;
   slot.view.inBonus = !!d.inBonus;
   slot.view.bonusPaid = d.bonusPaid || 0;
+
+  /* ★後ペカ(v6.6)。第3停止を押し込んだままなら、まだ点けない。
+     離した瞬間(slOnStopRelease)に点灯する。
+     すでに離していれば、この場で点灯する。
+     lampLit はサーバーの値を入れておくが、pendingPeka がある間は
+     slLampShown() が「消灯」として扱うので画面には出ない */
+  slot.view.lampLit = !!d.lampLit;
+  if (d.peka){
+    /* 強ガコッは後ペカのとき、点灯と一緒に届く */
+    if (d.strong){
+      if (!slot.premium) slot.premium = { fanfare: false, silent: false, strong: false };
+      slot.premium.strong = true;
+    }
+    if (slot.stopHeld){
+      slot.pendingPeka = true;
+      slMsg('');
+    } else {
+      slLightLamp(true);
+    }
+  }
 
   /* 払い出しはパラパラと増やす */
   slot.payTarget = d.pay || 0;
@@ -5118,19 +5306,17 @@ function onSlotResult(d){
   if (d.inBonus) slot.countTarget = d.bonusPaid || 0;
   const need = slot.payTarget > 0 || slCountTarget() > slot.dispCount ||
                slot.dispCredit !== slot.creditTarget || slot.dispCoin !== slot.coinTarget;
-  if (need){
-    /* GOGOが光った直後は、点灯演出が終わってから数字を動かし始める */
-    const gogoWait = Math.max(0, slot.gogoSndEnd - performance.now());
-    if (gogoWait > 0) slot.bonusTimers.push(setTimeout(slStartCountAnim, gogoWait));
-    else slStartCountAnim();
-    slSyncButtons();     /* 払い出しの間は押せなくする */
-  } else slDrawSeg();
-
-  if (d.pay > 0){
-    el.slReelWindow.classList.add('is-win');
-    setTimeout(() => el.slReelWindow.classList.remove('is-win'), 1300);
-    audio.play('chip');
+  slot.payNeed = need;
+  if (slot.pendingPeka){
+    /* 後ペカを待たせている間は、払い出しの演出も待たせる。
+       (点灯 → GOGOの演出 → 払い出し、の順番を守るため) */
+    slot.payDeferred = true;
+    if (need) slSyncButtons();
+    else slDrawSeg();
+  } else {
+    slSchedulePayout();
   }
+
   if (d.started){
     slot.bonusLog.push({ type: d.started, at: slot.view.startG, g: slot.view.totalG });
     /* ★第3停止を押し込んだままなら、まだ突入させない。
@@ -5144,10 +5330,7 @@ function onSlotResult(d){
   } else if (d.ended){
     slEndBonusShow(d.ended, d.endedPaid);
   } else if (d.peka){
-    audio.play('win');
-    slMsg('GOGO!CHANCE!!  ボーナス図柄を狙え!');
-    /* 点灯演出が終わるまで、払い出しのカウントアップを待たせる(仕様書§9-1) */
-    slot.gogoSndEnd = performance.now() + SL_GOGO_MS;
+    /* 点灯の処理とメッセージは上(slLightLamp)で済ませている(v6.6) */
   } else if (d.replay){
     slMsg('リプレイ');
   } else if (d.pay > 0){
@@ -5163,7 +5346,9 @@ function onSlotResult(d){
 
 /* オーナーがボーナスを仕込んだ(v6.2) */
 function onSlotForced(d){
-  toast((d.kind === 'BB' ? 'BIG' : 'REG') + 'を仕込みました。レバーを引いてください');
+  const PREM = { fanfare: 'レバーONファンファーレ', silent: '無音', strong: '強ガコッ' };
+  const how = (d.timing === 'after' ? '後ペカ' : '先ペカ') + (d.premium ? '・' + PREM[d.premium] : '');
+  toast((d.kind === 'BB' ? 'BIG' : 'REG') + 'を仕込みました(' + how + ')。レバーを引いてください');
   closeOverlay(el.slotSettingsOverlay);
 }
 
@@ -5233,8 +5418,9 @@ function slRenderAll(){
      0に戻すのは次のBETが入る瞬間なので、ここでは減らさない */
   if (slot.bet > slot.betLampShown && !slot.betLampTimer) slSetBetLamps(slot.bet);
 
-  /* GOGO!CHANCE。点灯・消灯はCSSのopacityでやるので、hiddenは触らない(v6.2) */
-  el.slGogo.classList.toggle('is-lit', !!v.lampLit);
+  /* GOGO!CHANCE。img 1枚の src を差し替える(v6.6)。
+     第3停止を押し込んでいる間は、点灯済みでも消灯のまま見せる */
+  slRenderGogo();
 
   slUpdateStateLamps();
   slRenderBonusGraph();
@@ -7549,18 +7735,58 @@ el.slOptEasyLever.addEventListener('change', () => {
 
 /* --- オーナー専用(v6.2) --- */
 let slForceKind = 'BB';
+let slForceTiming = 'first';     // 'first'(先ペカ) | 'after'(後ペカ)(v6.6)
+let slForcePremium = '';         // '' | 'fanfare' | 'silent' | 'strong'(v6.6)
 el.slForceKind.addEventListener('click', (e) => {
   const b = e.target.closest('[data-kind]');
   if (!b) return;
   slForceKind = b.dataset.kind;
   el.slForceKind.querySelectorAll('.seg-btn').forEach(x =>
     x.classList.toggle('is-on', x === b));
+  slSyncForceOptions();
   audio.play('button');
 });
+if (el.slForceTiming) el.slForceTiming.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-timing]');
+  if (!b || b.disabled) return;
+  slForceTiming = b.dataset.timing;
+  slSyncForceOptions();
+  audio.play('button');
+});
+if (el.slForcePremium) el.slForcePremium.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-premium]');
+  if (!b || b.disabled) return;
+  slForcePremium = b.dataset.premium;
+  slSyncForceOptions();
+  audio.play('button');
+});
+/* 選べない組み合わせを押せなくする(v6.6)
+   ・ファンファーレと無音はBB専用
+   ・ファンファーレは必ず先ペカ */
+function slSyncForceOptions(){
+  if (slForceKind === 'RB' && (slForcePremium === 'fanfare' || slForcePremium === 'silent')) slForcePremium = '';
+  if (el.slForcePremium){
+    el.slForcePremium.querySelectorAll('[data-premium]').forEach(x => {
+      const p = x.dataset.premium;
+      x.disabled = (slForceKind === 'RB' && (p === 'fanfare' || p === 'silent'));
+      x.classList.toggle('is-on', p === slForcePremium);
+    });
+  }
+  if (el.slForceTiming){
+    const lock = (slForcePremium === 'fanfare');
+    el.slForceTiming.querySelectorAll('[data-timing]').forEach(x => {
+      const t = x.dataset.timing;
+      x.disabled = lock && t === 'after';
+      x.classList.toggle('is-on', lock ? t === 'first' : t === slForceTiming);
+    });
+  }
+}
 el.slForceBtn.addEventListener('click', () => {
   if (!online.socket) return;
   audio.play('button');
-  online.socket.emit('slot:forceBonus', { kind: slForceKind });
+  online.socket.emit('slot:forceBonus', {
+    kind: slForceKind, timing: slForceTiming, premium: slForcePremium || null
+  });
 });
 el.slResetMachineBtn.addEventListener('click', async () => {
   audio.play('button');
@@ -7600,7 +7826,16 @@ for (let i = 0; i < 3; i++){
 /* ★離すのは window で受ける。ボタンの外に指をずらして離すと
    ボタン自身の pointerup が鳴らず、押し込んだまま固まってしまう(v6.2) */
 window.addEventListener('pointerup', () => { if (screen === 'slot') slOnStopRelease(); });
-window.addEventListener('pointercancel', () => { if (screen === 'slot') slReleaseStopVisual(); });
+/* iOSは指の動きがジェスチャー扱いになると pointerup の代わりに pointercancel が来る。
+   そのままだと押し込んだまま固まり、後ペカが点かなくなるので「離した」として扱う(v6.6) */
+window.addEventListener('pointercancel', () => { if (screen === 'slot') slOnStopRelease(); });
+/* 押し込んだまま別のウィンドウに移った場合も、離したことにする(v6.6) */
+window.addEventListener('blur', () => { if (screen === 'slot') slOnStopRelease(); });
+/* 保険(v6.6)。第3停止を押すとボタンが disabled になるため、ブラウザによっては
+   pointerup が届かないことがある。タッチの終わりは disabled でも必ず届くので、ここでも拾う。
+   slOnStopRelease は2回呼ばれても1回目で thirdStopPressed を戻すので害は無い */
+window.addEventListener('touchend',    () => { if (screen === 'slot') slOnStopRelease(); }, { passive: true });
+window.addEventListener('touchcancel', () => { if (screen === 'slot') slOnStopRelease(); }, { passive: true });
 
 /* キーボード操作(PC向け) */
 document.addEventListener('keydown', (e) => {
